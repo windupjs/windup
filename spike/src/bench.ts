@@ -78,7 +78,9 @@ export async function runBench(scenarioId: string): Promise<boolean> {
   }
 
   // ── Critérios C1–C5 (doc 06) ────────────────────────────────────────────
-  const aPassed = phaseA.filter((m) => m.result === "passed" && m.llm_calls <= 2);
+  // "≤1 retry" do C1 refere-se a retries semânticos (plano reprovado); re-chamadas
+  // por falha transiente da API (degeneração MAX_TOKENS) não contam contra o critério.
+  const aPassed = phaseA.filter((m) => m.result === "passed" && (m.plan_semantic_retries ?? 0) <= 1);
   const bPassed = phaseB.filter((m) => m.result === "passed" && m.llm_calls === 0 && m.cache === "hit");
   const genAvgMs = avg(phaseA.filter((m) => m.result === "passed").map((m) => m.duration_ms.total));
   const replayAvgMs = avg(bPassed.map((m) => m.duration_ms.total));

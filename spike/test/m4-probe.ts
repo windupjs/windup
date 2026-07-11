@@ -28,7 +28,7 @@ let fakeCalls = 0;
 const fakePlanner: Planner = {
   async generate() {
     fakeCalls += 1;
-    return { plan, llm_calls: 1, model: "fake", planning_mode: "full" as const, tokens: { input: 1000, output: 100 } };
+    return { plan, llm_calls: 1, model: "fake", planning_mode: "full" as const, tokens: { input: 1000, output: 100 }, semantic_retries: 0 };
   },
 };
 

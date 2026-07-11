@@ -75,12 +75,16 @@ export interface RunMetrics {
   llm_calls: number;
   llm_model: string | null;
   planning_mode: "full" | "incremental" | null;
+  /** Retries semânticos do planejador (doc 03 permite ≤1); null se não planejou. */
+  plan_semantic_retries: number | null;
   tokens: { input: number; output: number };
   estimated_cost_usd: number;
   duration_ms: { total: number; planning: number; execution: number };
   actions: ActionMetrics[];
   result: "passed" | "failed";
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
+  /** Plano executado (diagnóstico; ausente se a geração falhou antes de haver plano). */
+  plan?: Plan;
 }
 
 export const DEFAULT_TIMEOUT_MS = 5000;

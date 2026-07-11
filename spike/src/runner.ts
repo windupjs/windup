@@ -10,6 +10,8 @@ export interface PlanGeneration {
   model: string;
   planning_mode: "full" | "incremental";
   tokens: { input: number; output: number };
+  /** Retries semânticos usados (plano reprovado na validação); exclui re-chamadas transientes. */
+  semantic_retries: number;
 }
 
 /** Única fronteira com o LLM (implementada em planner.ts; fake nos testes). */
@@ -51,6 +53,7 @@ export async function runScenario(
     llm_calls: 0,
     llm_model: null,
     planning_mode: null,
+    plan_semantic_retries: null,
     tokens: { input: 0, output: 0 },
     estimated_cost_usd: 0,
     duration_ms: { total: 0, planning: 0, execution: 0 },
@@ -65,6 +68,7 @@ export async function runScenario(
 
     if (cached) {
       metrics.cache = "hit";
+      metrics.plan = cached.plan;
       const execStart = Date.now();
       const result = await executePlan(browser, cached.plan);
       metrics.duration_ms.execution = Date.now() - execStart;
@@ -131,8 +135,10 @@ async function generateAndExecute(
   metrics.llm_calls += generation.llm_calls;
   metrics.llm_model = generation.model;
   metrics.planning_mode = generation.planning_mode;
+  metrics.plan_semantic_retries = generation.semantic_retries;
   metrics.tokens.input += generation.tokens.input;
   metrics.tokens.output += generation.tokens.output;
+  metrics.plan = generation.plan;
 
   const execStart = Date.now();
   const result: ExecutionResult = await executePlan(browser, generation.plan);
