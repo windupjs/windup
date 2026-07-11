@@ -1,0 +1,30 @@
+{
+  "name": "rubberduck-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "spike": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^3.6.0",
+    "@google/genai": "^2.11.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.2",
+    "picomatch": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/picomatch": "^4.0.3",
+    "tsx": "^4.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
