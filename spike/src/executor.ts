@@ -65,6 +65,9 @@ async function performAction(browser: Browser, action: Action, timeoutMs: number
   }
 }
 
+/** Pausa entre ações para acompanhamento visual (SLOWMO_MS); 0 = desligado. */
+const SLOWMO_MS = Number.parseInt(process.env.SLOWMO_MS ?? "0", 10) || 0;
+
 /**
  * Loop determinístico do doc 03: navega para start_url e executa as ações
  * do plano em ordem, verificando pós-condições após cada uma. Zero LLM.
@@ -122,6 +125,8 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
         },
       };
     }
+
+    if (SLOWMO_MS > 0) await new Promise((r) => setTimeout(r, SLOWMO_MS));
   }
 
   return { ok: true, actions: metrics, failure: null };
