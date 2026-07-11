@@ -97,6 +97,7 @@ export async function launchBrowser(): Promise<Browser> {
     env: "LOCAL",
     verbose: 0,
     disablePino: true,
+    logger: () => {},
     localBrowserLaunchOptions: {
       headless: process.env.HEADLESS !== "false",
       ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
