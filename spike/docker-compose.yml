@@ -1,0 +1,12 @@
+services:
+  spike:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Sem o volume do .cache todo run é cache miss e a validação de replay
+      # não funciona (doc 05).
+      - ./.cache:/app/.cache
+      - ./runs:/app/runs
+      - ./scenarios:/app/scenarios:ro

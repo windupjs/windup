@@ -51,17 +51,23 @@ Responda somente com o JSON do plano.`;
  * +1 retry se a validação falhar, com a mensagem de erro no prompt.
  */
 export class GeminiPlanner implements Planner {
-  private readonly ai: GoogleGenAI;
+  // Preguiçoso de propósito: replays de cache nunca planejam, então não
+  // devem exigir a chave do Gemini.
+  private ai: GoogleGenAI | null = null;
 
-  constructor() {
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GOOGLE_GENERATIVE_AI_API_KEY não definida (necessária para planejar; replays de cache não usam LLM)");
+  private client(): GoogleGenAI {
+    if (!this.ai) {
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!apiKey) {
+        throw new Error("GOOGLE_GENERATIVE_AI_API_KEY não definida (necessária para planejar; replays de cache não usam LLM)");
+      }
+      this.ai = new GoogleGenAI({ apiKey });
     }
-    this.ai = new GoogleGenAI({ apiKey });
+    return this.ai;
   }
 
   async generate(scenario: Scenario, browser: Browser, failureContext?: string): Promise<PlanGeneration> {
+    const ai = this.client();
     await browser.goto(scenario.start_url);
     // Espera o app renderizar antes do snapshot (SPA: load não basta).
     await waitForAnyInteractive(browser);
@@ -74,7 +80,7 @@ export class GeminiPlanner implements Planner {
     let prompt = buildPrompt(scenario, pageTree, interactive, failureContext);
 
     for (let attempt = 1; attempt <= 2; attempt++) {
-      const response = await this.ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: MODEL,
         contents: prompt,
         config: {
