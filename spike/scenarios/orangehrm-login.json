@@ -1,0 +1,5 @@
+{
+  "scenario_id": "orangehrm-login",
+  "start_url": "https://opensource-demo.orangehrmlive.com",
+  "task": "Fazer login no OrangeHRM com o usuário Admin e a senha admin123 e verificar que o dashboard aparece (URL contém /dashboard)."
+}

@@ -19,6 +19,11 @@ describe("urlMatches", () => {
   it("casa URL exata sem glob", () => {
     expect(urlMatches("https://www.saucedemo.com/", "https://www.saucedemo.com/")).toBe(true);
   });
+
+  it("casa padrão escrito como caminho puro contra o pathname", () => {
+    expect(urlMatches("https://opensource-demo.orangehrmlive.com/web/index.php/dashboard/index", "/web/index.php/dashboard/index")).toBe(true);
+    expect(urlMatches("https://x.com/a/b", "/outro/caminho")).toBe(false);
+  });
 });
 
 describe("resolveValue", () => {

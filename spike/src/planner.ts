@@ -256,6 +256,12 @@ export function normalizeActions(data: unknown): unknown {
         break;
     }
   }
+  // Ids são contabilidade interna (nada os referencia): renumerar é sempre
+  // seguro e elimina toda uma classe de reprovação ("1", "step-2", "action3"...).
+  (plan.actions as Record<string, unknown>[]).forEach((action, i) => {
+    if (action !== null && typeof action === "object") action.id = `a${i + 1}`;
+  });
+
   // O modelo às vezes expressa a verificação final como wait_for em vez de
   // expect (ou vice-versa). wait_for(X) ≡ expect.selector X — normaliza nos
   // dois sentidos sem mudar o significado.

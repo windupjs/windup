@@ -18,8 +18,15 @@ export interface VerifyResult {
 export function urlMatches(current: string, pattern: string): boolean {
   const clean = current.split(/[?#]/)[0];
   const isMatch = picomatch(pattern, { dot: true });
-  // picomatch trata "/" como separador; URLs completas casam com padrões "**/..."
-  return isMatch(clean) || isMatch(clean.replace(/^https?:\/\//, ""));
+  // picomatch trata "/" como separador; URLs completas casam com padrões "**/...".
+  // O pathname cobre padrões escritos como caminho puro ("/dashboard/index").
+  let pathname = "";
+  try {
+    pathname = new URL(clean).pathname;
+  } catch {
+    // current não é URL absoluta; segue só com as outras formas
+  }
+  return isMatch(clean) || isMatch(clean.replace(/^https?:\/\//, "")) || (pathname !== "" && isMatch(pathname));
 }
 
 /**
