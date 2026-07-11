@@ -76,8 +76,6 @@ export const PLAN_GEMINI_SCHEMA = {
     start_url: { type: "string" },
     actions: {
       type: "array",
-      minItems: 1,
-      maxItems: 30,
       items: {
         type: "object",
         required: ["id", "type"],
