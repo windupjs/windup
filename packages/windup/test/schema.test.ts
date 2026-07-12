@@ -55,7 +55,7 @@ describe("validatePlan", () => {
     delete plan.actions[2].expect;
     const result = validatePlan(plan);
     expect(result.ok).toBe(false);
-    expect(result.errors.join()).toContain("última ação");
+    expect(result.errors.join()).toContain("final action");
   });
 
   it("rejeita fill com value E value_ref", () => {
@@ -63,7 +63,7 @@ describe("validatePlan", () => {
     plan.actions[1].value_ref = "ENV:SAUCE_PASSWORD";
     const result = validatePlan(plan);
     expect(result.ok).toBe(false);
-    expect(result.errors.join()).toContain("exatamente um");
+    expect(result.errors.join()).toContain("exactly one");
   });
 
   it("rejeita fill sem value nem value_ref", () => {
@@ -100,7 +100,7 @@ describe("validatePlan", () => {
     plan.actions[1].id = "a1";
     const result = validatePlan(plan);
     expect(result.ok).toBe(false);
-    expect(result.errors.join()).toContain("duplicado");
+    expect(result.errors.join()).toContain("duplicate");
   });
 
   it("rejeita plan_version desconhecida", () => {

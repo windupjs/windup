@@ -40,6 +40,6 @@ describe("resolveValue", () => {
   });
 
   it("falha se a variável não existe", () => {
-    expect(() => resolveValue({ ...base, value_ref: "ENV:SPIKE_NAO_EXISTE" })).toThrow(/não definida/);
+    expect(() => resolveValue({ ...base, value_ref: "ENV:SPIKE_NAO_EXISTE" })).toThrow(/is not set/);
   });
 });

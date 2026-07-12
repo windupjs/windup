@@ -3,25 +3,25 @@ import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * `windup init` — cria windup.config.ts, .windup/ (gitignored) e um cenário
- * de exemplo. Idempotente: config existente aborta sem sobrescrever.
- * A detecção de framework só é GRAVADA por ora (gancho do P2/scan).
+ * `windup init` — creates windup.config.ts, .windup/ (gitignored) and an
+ * example scenario. Idempotent: an existing config aborts without overwrite.
+ * Framework detection is only RECORDED for now (used by `windup scan`).
  */
 export async function runInit(cwd: string = process.cwd()): Promise<void> {
   const configFile = path.join(cwd, "windup.config.ts");
   if (await exists(configFile)) {
-    console.log(`[windup] ${configFile} já existe — nada a fazer (edite-o diretamente).`);
+    console.log(`windup.config.ts already exists — nothing to do. Edit it directly.`);
     return;
   }
 
-  intro("windup init — dê corda uma vez, o replay anda sozinho");
+  intro("windup init");
 
   const framework = await detectFramework(cwd);
-  if (framework) note(`Framework detectado: ${framework}`, "detecção");
+  if (framework) note(`Framework detected: ${framework}`, "project");
 
-  const baseUrl = await ask("URL base do app em teste?", "http://localhost:3000");
-  const model = await ask("Modelo de LLM para o planejador?", "gemini-3.1-flash-lite");
-  const scenariosDir = await ask("Pasta dos cenários?", "e2e/scenarios");
+  const baseUrl = await ask("Base URL of the app under test", "http://localhost:3000");
+  const model = await ask("LLM model for the planner", "gemini-3.1-flash-lite");
+  const scenariosDir = await ask("Scenarios directory", "e2e/scenarios");
 
   const config = `import { defineConfig } from "windupjs";
 
@@ -30,9 +30,9 @@ export default defineConfig({
   llm: { provider: "google", model: ${JSON.stringify(model)} },
   scenarios: ${JSON.stringify(scenariosDir)},
   framework: ${JSON.stringify(framework)},
-  // P2 — indexação do projeto (ainda não usado):
+  // Project indexing (windup scan):
   // scan: { include: ["src/**"], dynamic: { enabled: false }, llmAssist: { enabled: true, maxCalls: 20 } },
-  // Manifesto do projeto (SPEC-001): convenções, credenciais por ENV, vocabulário do domínio.
+  // Project manifest: conventions, ENV-referenced credentials, domain vocabulary.
   context: {},
 });
 `;
@@ -43,16 +43,16 @@ export default defineConfig({
 
   const scenariosPath = path.join(cwd, scenariosDir);
   await mkdir(scenariosPath, { recursive: true });
-  const exampleFile = path.join(scenariosPath, "exemplo.json");
+  const exampleFile = path.join(scenariosPath, "example.json");
   if (!(await exists(exampleFile))) {
     await writeFile(
       exampleFile,
       `${JSON.stringify(
         {
-          scenario_id: "exemplo",
+          scenario_id: "example",
           start_url: "/",
-          task: "Descreva a tarefa em linguagem natural e termine dizendo o que verificar (ex.: '...e verificar que o título X aparece'). Segredos: use value_ref na dica abaixo.",
-          hints: ["Opcional: conhecimento do site que ajude o planejador (padrões de seletor, fluxos). Apague se não precisar."],
+          task: "Describe the test in natural language and end with what to verify, e.g. '...and verify that the dashboard heading appears'. For secrets, reference environment variables instead of literal values.",
+          hints: ["Optional: site-specific knowledge that helps the planner (selector patterns, flows). Delete if not needed."],
         },
         null,
         2,
@@ -60,19 +60,23 @@ export default defineConfig({
     );
   }
 
-  outro(`Pronto: windup.config.ts + ${scenariosDir}/exemplo.json + .windup/ (gitignored).
-Próximo passo: escreva um cenário e rode "npx windup run <id>". Defina GOOGLE_GENERATIVE_AI_API_KEY no .env.`);
+  outro(`Created windup.config.ts, ${scenariosDir}/example.json and .windup/ (gitignored).
+
+  Next steps:
+    1. Add GOOGLE_GENERATIVE_AI_API_KEY to your .env
+    2. npx windup scan          index your project's routes into the site map
+    3. Write a scenario in ${scenariosDir}/ and run: npx windup run <scenario-id>`);
 }
 
 async function ask(message: string, defaultValue: string): Promise<string> {
-  // Sem TTY (CI, pipes): usa defaults em vez de travar no prompt.
+  // No TTY (CI, pipes): fall back to defaults instead of hanging on a prompt.
   if (!process.stdin.isTTY) {
-    console.log(`[windup] ${message} → ${defaultValue} (sem TTY, usando default)`);
+    console.log(`${message}: ${defaultValue} (no TTY, using default)`);
     return defaultValue;
   }
   const answer = await text({ message, placeholder: defaultValue, defaultValue });
   if (isCancel(answer)) {
-    cancel("init cancelado.");
+    cancel("init cancelled.");
     process.exit(1);
   }
   return answer || defaultValue;
@@ -91,7 +95,7 @@ async function detectFramework(cwd: string): Promise<string | null> {
   try {
     const pkg = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8"));
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    if (pkg.workspaces) console.log("[windup] aviso: monorepo detectado — índice por app fica para depois (SPEC-002); seguindo com a raiz.");
+    if (pkg.workspaces) console.log("warning: monorepo detected — per-app indexes are on the roadmap; proceeding with the repository root.");
     if (deps.next) return "next";
     if (deps["@remix-run/react"] || deps["@remix-run/node"]) return "remix";
     if (deps["react-router"] || deps["react-router-dom"]) return "react-router";

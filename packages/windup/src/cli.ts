@@ -10,9 +10,9 @@ import type { RunMetrics } from "./types.js";
 
 const program = new Command();
 
-program.name("windup").description("Windup — testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho");
+program.name("windup").description("Natural-language E2E tests with deterministic replay — the LLM plans once, replays run without it");
 
-// Todos os comandos (menos init) resolvem windup.config.* e montam o contexto.
+// Every command except init resolves windup.config.* and builds the context.
 program.hook("preAction", async (_this, actionCommand) => {
   if (actionCommand.name() === "init") return;
   const { createContextFromConfig, setContext } = await import("./context.js");
@@ -21,70 +21,71 @@ program.hook("preAction", async (_this, actionCommand) => {
 
 program
   .command("init")
-  .description("Cria windup.config.ts, .windup/ e um cenário de exemplo")
+  .description("Create windup.config.ts, .windup/ and an example scenario")
   .action(async () => {
     const { runInit } = await import("./init.js");
     await runInit();
   });
 
-function printRun(metrics: RunMetrics, file: string | null = null): void {
-  const status = metrics.result === "passed" ? "PASSOU" : "FALHOU";
+function printRun(metrics: RunMetrics): void {
+  const status = metrics.result === "passed" ? "PASS" : "FAIL";
   console.log(
-    `[windup] ${metrics.scenario_id}: ${status} | cache=${metrics.cache} llm_calls=${metrics.llm_calls} ` +
+    `${status}  ${metrics.scenario_id}  cache=${metrics.cache} llm_calls=${metrics.llm_calls} ` +
       `total=${metrics.duration_ms.total}ms (plan=${metrics.duration_ms.planning}ms exec=${metrics.duration_ms.execution}ms) ` +
-      `custo=US$${metrics.estimated_cost_usd}`,
+      `cost=$${metrics.estimated_cost_usd}`,
   );
   if (metrics.failure) {
-    console.log(`[windup]   falha: [${metrics.failure.kind}] ação=${metrics.failure.action_id ?? "-"} ${metrics.failure.message}`);
+    console.log(`      failure [${metrics.failure.kind}] action=${metrics.failure.action_id ?? "-"}: ${metrics.failure.message}`);
   }
 }
 
 program
-  .command("run <cenario>")
-  .description("Executa um cenário (usa cache se existir, senão planeja via Gemini)")
-  .option("--no-cache", "ignora e não grava cache (mede o caminho LLM isoladamente)")
-  .option("--no-map", "não usa o mapa do site no prompt do planejador (A/B do E2)")
-  .option("--repeat <n>", "executa N vezes em sequência", "1")
-  .action(async (cenario: string, opts: { cache: boolean; map: boolean; repeat: string }) => {
-    const scenario = await loadScenario(cenario);
+  .command("run <scenario>")
+  .description("Run a scenario (replays from cache when available, plans via LLM otherwise)")
+  .option("--no-cache", "bypass the trajectory cache (always plan; nothing is cached)")
+  .option("--no-map", "exclude site-map knowledge from the planner prompt")
+  .option("--repeat <n>", "run N times in sequence", "1")
+  .action(async (scenarioId: string, opts: { cache: boolean; map: boolean; repeat: string }) => {
+    const scenario = await loadScenario(scenarioId);
     const planner = new GeminiPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
     let failures = 0;
     for (let i = 1; i <= repeat; i++) {
-      if (repeat > 1) console.log(`[windup] execução ${i}/${repeat}`);
+      if (repeat > 1) console.log(`run ${i}/${repeat}`);
       const metrics = await runScenario(scenario, planner, { useCache: opts.cache });
       printRun(metrics);
       if (metrics.result !== "passed") failures += 1;
     }
-    if (repeat > 1) console.log(`[windup] ${repeat - failures}/${repeat} execuções passaram`);
+    if (repeat > 1) console.log(`${repeat - failures}/${repeat} runs passed`);
     process.exitCode = failures === 0 ? 0 : 1;
   });
 
 program
-  .command("bench <cenario>")
-  .description("Roda o protocolo completo de validação (doc 06) e imprime o comparativo C1–C5")
-  .option("--no-map", "não usa o mapa do site no prompt do planejador (A/B do E2)")
-  .action(async (cenario: string, opts: { map: boolean }) => {
-    const ok = await runBench(cenario, { useMap: opts.map });
+  .command("bench <scenario>")
+  .description("Run the full validation protocol (generation, replay, failure recovery) and report criteria")
+  .option("--no-map", "exclude site-map knowledge from the planner prompt")
+  .action(async (scenarioId: string, opts: { map: boolean }) => {
+    const ok = await runBench(scenarioId, { useMap: opts.map });
     process.exitCode = ok ? 0 : 1;
   });
 
 program
   .command("scan")
-  .description("Indexação estática do projeto (rotas por convenção + elementos) → mapa do site")
-  .option("--update", "re-indexa só o que mudou desde o último scan (git diff)")
+  .description("Statically index the project (routes + interactive elements) into the site map")
+  .option("--update", "incremental: re-index only files changed since the last scan (git diff)")
   .action(async (opts: { update?: boolean }) => {
     const { runScan } = await import("./scan/scan.js");
     const summary = await runScan({ update: opts.update });
     console.log(
-      `[windup] scan: framework=${summary.framework ?? "?"} rotas=${summary.routes} elementos=${summary.elements} → ${summary.mapFile}`,
+      `scan complete (${summary.mode}): framework=${summary.framework ?? "unknown"} routes=${summary.routes} elements=${summary.elements}`,
     );
+    console.log(`site map: ${summary.mapFile}`);
   });
 
 program
   .command("sig <url>")
-  .description("Calcula a assinatura estrutural de uma página (E1) — ferramenta de diagnóstico")
-  .option("--repeat <n>", "recalcula N vezes com re-navegação (teste de estabilidade)", "1")
+  .description("Compute the structural signature of a page (diagnostics)")
+  .option("--repeat <n>", "recompute N times with re-navigation (stability check)", "1")
   .action(async (url: string, opts: { repeat: string }) => {
     const { launchBrowser } = await import("./browser.js");
     const browser = await launchBrowser();
@@ -99,10 +100,10 @@ program
         }
         const sig = await browser.pageSignature();
         sigs.push(sig);
-        console.log(`[windup] ${i}/${repeat} ${sig}`);
+        console.log(`${i}/${repeat} ${sig}`);
       }
       const stable = new Set(sigs).size === 1;
-      if (repeat > 1) console.log(`[windup] estabilidade: ${stable ? "ESTÁVEL" : "INSTÁVEL"} (${new Set(sigs).size} sig(s) distinta(s))`);
+      if (repeat > 1) console.log(`stability: ${stable ? "STABLE" : "UNSTABLE"} (${new Set(sigs).size} distinct signature(s))`);
       process.exitCode = stable ? 0 : 1;
     } finally {
       await browser.close();
@@ -111,7 +112,7 @@ program
 
 program
   .command("status")
-  .description("Estado do índice: páginas por origem, staleness, cenários cacheados, fragmentos")
+  .description("Index status: pages by source, staleness, cached scenarios, fragments")
   .action(async () => {
     const { getContext } = await import("./context.js");
     const { SiteMapStore } = await import("./sitemap.js");
@@ -121,40 +122,41 @@ program
 
     const store = await SiteMapStore.load(ctx.paths.mapFile);
     const bySource = store.countBySource();
-    console.log(`[windup] mapa do site: ${store.pageCount} página(s)${store.lastScanSha ? ` | último scan: ${store.lastScanSha.slice(0, 8)}` : " | nunca escaneado"}`);
-    for (const [source, count] of Object.entries(bySource)) console.log(`[windup]   ${source}: ${count}`);
+    console.log(`site map: ${store.pageCount} page(s)${store.lastScanSha ? ` | last scan: ${store.lastScanSha.slice(0, 8)}` : " | never scanned"}`);
+    for (const [source, count] of Object.entries(bySource)) console.log(`  ${source}: ${count}`);
 
     let cached: string[] = [];
     try {
       cached = (await readdir(ctx.paths.cacheDir)).filter((f) => f.endsWith(".json") && !f.includes(".stale-"));
     } catch {
-      // sem cache ainda
+      // no cache yet
     }
-    console.log(`[windup] cenários cacheados: ${cached.length}${cached.length ? ` (${cached.map((f) => f.replace(".json", "")).join(", ")})` : ""}`);
+    console.log(`cached scenarios: ${cached.length}${cached.length ? ` (${cached.map((f) => f.replace(".json", "")).join(", ")})` : ""}`);
 
     const fragments = await loadFragments();
-    console.log(`[windup] fragmentos: ${fragments.length}${fragments.length ? ` (${fragments.map((f) => f.fragment_id).join(", ")})` : ""}`);
+    console.log(`fragments: ${fragments.length}${fragments.length ? ` (${fragments.map((f) => f.fragment_id).join(", ")})` : ""}`);
   });
 
-const fragment = program.command("fragment").description("Gerencia fragmentos de trajetória (blocos reutilizáveis)");
+const fragment = program.command("fragment").description("Manage trajectory fragments (reusable, tested action blocks)");
 fragment
-  .command("extract <cenario> <range>")
-  .description("Promove um trecho de plano cacheado a fragmento (ex.: windup fragment extract login a1..a3 --id login-padrao --description 'Login padrão')")
-  .requiredOption("--id <id>", "id do fragmento (kebab-case)")
-  .requiredOption("--description <desc>", "descrição humana (vai ao prompt do planejador)")
-  .action(async (cenario: string, range: string, opts: { id: string; description: string }) => {
+  .command("extract <scenario> <range>")
+  .description("Promote a slice of a cached plan to a fragment (e.g. windup fragment extract login a1..a3 --id login --description 'Standard login')")
+  .requiredOption("--id <id>", "fragment id (kebab-case)")
+  .requiredOption("--description <desc>", "human description (shown to the planner)")
+  .action(async (scenarioId: string, range: string, opts: { id: string; description: string }) => {
     const { extractFragment } = await import("./fragments.js");
-    const file = await extractFragment(cenario, range, opts);
-    console.log(`[windup] fragmento criado: ${file} (commite-o — é conhecimento curado do projeto)`);
+    const file = await extractFragment(scenarioId, range, opts);
+    console.log(`fragment created: ${file}`);
+    console.log(`commit it — fragments are curated project knowledge.`);
   });
 
-const cache = program.command("cache").description("Gerencia o cache de trajetórias");
+const cache = program.command("cache").description("Manage the trajectory cache");
 cache
   .command("clear")
-  .description("Apaga o cache de trajetórias")
+  .description("Delete the trajectory cache (next runs will re-plan)")
   .action(async () => {
     await clearCache();
-    console.log("[windup] cache de trajetórias apagado");
+    console.log("trajectory cache cleared");
   });
 
 program.parseAsync(process.argv);

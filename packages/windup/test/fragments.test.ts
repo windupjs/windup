@@ -39,12 +39,12 @@ describe("expandPlan (E3)", () => {
   });
 
   it("fragmento desconhecido é erro", () => {
-    expect(() => expandPlan(composedPlan, [])).toThrow(/inexistente/);
+    expect(() => expandPlan(composedPlan, [])).toThrow(/unknown fragment/);
   });
 
   it("fragmento aninhando fragmento é erro (profundidade 1)", () => {
     const nested: Fragment = { ...loginFragment, actions: [{ id: "a1", type: "use", use: "outro" }] };
-    expect(() => expandPlan(composedPlan, [nested])).toThrow(/profundidade/);
+    expect(() => expandPlan(composedPlan, [nested])).toThrow(/depth/);
   });
 });
 
@@ -64,7 +64,7 @@ describe("validatePlan com use (E3)", () => {
     const plan: Plan = { ...composedPlan, actions: [{ id: "a1", type: "use" }] };
     const result = validatePlan(plan);
     expect(result.ok).toBe(false);
-    expect(result.errors.join()).toContain("exige o campo use");
+    expect(result.errors.join()).toContain("requires the use field");
   });
 });
 

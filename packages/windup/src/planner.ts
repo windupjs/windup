@@ -110,7 +110,7 @@ export class GeminiPlanner implements Planner {
     if (!this.ai) {
       const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
       if (!apiKey) {
-        throw new Error("GOOGLE_GENERATIVE_AI_API_KEY não definida (necessária para planejar; replays de cache não usam LLM)");
+        throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set (required for planning; cached replays do not use the LLM)");
       }
       this.ai = new GoogleGenAI({ apiKey });
     }
@@ -253,7 +253,7 @@ Devolva o plano completo corrigido. Responda APENAS com o JSON do plano.`;
     }
 
     throw new PlanGenerationError(
-      `plano inválido após retry: ${lastErrors.join("; ")}`,
+      `invalid plan after retry: ${lastErrors.join("; ")}`,
       tokens,
       llmCalls,
     );

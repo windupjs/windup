@@ -132,7 +132,7 @@ export interface ValidationResult {
 export function validatePlan(data: unknown): ValidationResult {
   if (!validateStructure(data)) {
     const errors = (validateStructure.errors ?? []).map(
-      (e) => `${e.instancePath || "/"} ${e.message ?? "inválido"}`,
+      (e) => `${e.instancePath || "/"} ${e.message ?? "invalid"}`,
     );
     return { ok: false, errors };
   }
@@ -142,25 +142,25 @@ export function validatePlan(data: unknown): ValidationResult {
   const seenIds = new Set<string>();
 
   for (const action of plan.actions) {
-    const where = `ação ${action.id}`;
+    const where = `action ${action.id}`;
 
-    if (seenIds.has(action.id)) errors.push(`${where}: id duplicado`);
+    if (seenIds.has(action.id)) errors.push(`${where}: duplicate id`);
     seenIds.add(action.id);
 
     if ((action.type === "click" || action.type === "fill" || action.type === "wait_for") && !action.target?.selector) {
-      errors.push(`${where}: type=${action.type} exige target.selector`);
+      errors.push(`${where}: type=${action.type} requires target.selector`);
     }
     if (action.type === "goto" && !action.url) {
-      errors.push(`${where}: type=goto exige url`);
+      errors.push(`${where}: type=goto requires url`);
     }
     if (action.type === "use" && !action.use) {
-      errors.push(`${where}: type=use exige o campo use com o id do fragmento`);
+      errors.push(`${where}: type=use requires the use field with a fragment id`);
     }
     if (action.type === "fill") {
       const hasValue = action.value !== undefined;
       const hasRef = action.value_ref !== undefined;
       if (hasValue === hasRef) {
-        errors.push(`${where}: type=fill exige value OU value_ref (exatamente um)`);
+        errors.push(`${where}: type=fill requires value OR value_ref (exactly one)`);
       }
     }
   }
@@ -169,7 +169,7 @@ export function validatePlan(data: unknown): ValidationResult {
   const lastExpect = last.expect ?? {};
   // type=use termina em fragmento cuja última ação carrega a própria pós-condição.
   if (last.type !== "use" && !lastExpect.selector && !lastExpect.url && !lastExpect.selector_value) {
-    errors.push(`ação ${last.id}: a última ação do plano exige expect (selector, url ou selector_value)`);
+    errors.push(`action ${last.id}: the final action must declare expect (selector, url or selector_value)`);
   }
 
   return { ok: errors.length === 0, errors };

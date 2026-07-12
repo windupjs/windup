@@ -272,7 +272,7 @@ export class SiteMapStore {
       await writeFile(tmp, JSON.stringify(this.map, null, 2));
       await rename(tmp, this.file);
     } catch (err) {
-      console.warn(`[windup] aviso: falha ao salvar mapa do site: ${err instanceof Error ? err.message : err}`);
+      console.warn(`warning: failed to save site map: ${err instanceof Error ? err.message : err}`);
     }
   }
 }

@@ -25,7 +25,7 @@ export async function loadFragments(): Promise<Fragment[]> {
         fragments.push(fragment);
       }
     } catch {
-      console.warn(`[windup] aviso: fragmento ilegível ignorado: ${file}`);
+      console.warn(`warning: skipping unreadable fragment: ${file}`);
     }
   }
   return fragments;
@@ -45,11 +45,11 @@ export function expandPlan(plan: Plan, fragments: Fragment[]): Plan {
     }
     const fragment = byId.get(action.use ?? "");
     if (!fragment) {
-      throw new Error(`plano referencia fragmento inexistente: "${action.use}"`);
+      throw new Error(`plan references unknown fragment: "${action.use}"`);
     }
     for (const fragAction of fragment.actions) {
       if (fragAction.type === "use") {
-        throw new Error(`fragmento "${fragment.fragment_id}" aninha outro fragmento — profundidade máxima é 1`);
+        throw new Error(`fragment "${fragment.fragment_id}" nests another fragment — maximum depth is 1`);
       }
       actions.push({ ...fragAction });
     }
@@ -68,16 +68,16 @@ export async function extractFragment(
   opts: { id: string; description: string },
 ): Promise<string> {
   const match = range.match(/^(a\d+)\.\.(a\d+)$/);
-  if (!match) throw new Error(`range inválido "${range}" — use o formato a1..a3`);
+  if (!match) throw new Error(`invalid range "${range}" — use the form a1..a3`);
   const scenario = await loadScenario(scenarioId);
   const cached = await getCached(scenario);
-  if (!cached) throw new Error(`cenário "${scenarioId}" não tem plano cacheado (rode-o com sucesso primeiro)`);
+  if (!cached) throw new Error(`scenario "${scenarioId}" has no cached plan (run it successfully first)`);
 
   const ids = cached.plan.actions.map((a) => a.id);
   const start = ids.indexOf(match[1]);
   const end = ids.indexOf(match[2]);
   if (start === -1 || end === -1 || end < start) {
-    throw new Error(`range ${range} não existe no plano cacheado (ações: ${ids.join(", ")})`);
+    throw new Error(`range ${range} does not exist in the cached plan (actions: ${ids.join(", ")})`);
   }
 
   const actions = cached.plan.actions.slice(start, end + 1).map((a) => ({ ...a }));

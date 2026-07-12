@@ -54,7 +54,7 @@ export async function verify(
   if (expect.url) {
     while (!urlMatches(browser.url(), expect.url)) {
       if (Date.now() + POLL_INTERVAL_MS > deadline) {
-        return fail(`url: esperado ${expect.url}, atual ${browser.url()}`);
+        return fail(`url: expected ${expect.url}, got ${browser.url()}`);
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
@@ -64,7 +64,7 @@ export async function verify(
     // waitForVisible nativo acompanha navegações/frames (polling de isVisible
     // sobre frame obsoleto falhava após navegação com pausas longas).
     if (!(await browser.waitForVisible(expect.selector, remaining()))) {
-      return fail(`selector: ${expect.selector} não visível`);
+      return fail(`selector: ${expect.selector} not visible`);
     }
   }
 
@@ -79,7 +79,7 @@ export async function verify(
       }
       if (actual === value) break;
       if (Date.now() + POLL_INTERVAL_MS > deadline) {
-        return fail(`selector_value: ${selector} esperado "${value}", atual "${actual ?? "(inexistente)"}"`);
+        return fail(`selector_value: ${selector} expected "${value}", got "${actual ?? "(missing)"}"`);
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }

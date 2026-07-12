@@ -97,7 +97,7 @@ export async function runScenario(
         // invalida e re-planeja, como numa falha de verificação.
         await invalidate(cached);
         metrics.cache = "invalidated";
-        const context = `O plano cacheado ficou inválido: ${err instanceof Error ? err.message : err}`;
+        const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
         const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context);
         if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
         return metrics;
@@ -114,7 +114,7 @@ export async function runScenario(
         metrics.sig_mismatch = result.start_sig !== cached.key.start_sig;
         if (metrics.sig_mismatch) {
           console.warn(
-            `[windup] aviso: assinatura da página inicial mudou (${cached.key.start_sig} → ${result.start_sig}) — replay segue (política leniente)`,
+            `warning: start-page signature changed (${cached.key.start_sig} -> ${result.start_sig}) — replaying anyway (lenient mode)`,
           );
         }
       }
@@ -134,7 +134,7 @@ export async function runScenario(
       // Replay falhou por verificação: invalida → re-planeja o fluxo inteiro (doc 03).
       await invalidate(cached);
       metrics.cache = "invalidated";
-      const failureContext = `O plano anterior falhou na ação ${result.failure?.action_id}: ${result.failure?.message}`;
+      const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
       const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;

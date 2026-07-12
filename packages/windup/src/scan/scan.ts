@@ -53,10 +53,10 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
         store.markStaleByFiles([...changedAbs]);
         routes = routes.filter((route) => (sources.get(route) ?? []).some((f) => changedAbs.has(path.resolve(f))));
       } else {
-        console.log("[windup] scan --update: sem git utilizável — caindo para scan completo");
+        console.log("scan --update: git unavailable — falling back to a full scan");
       }
     } else if (opts.update) {
-      console.log("[windup] scan --update: sem SHA de scan anterior — rodando scan completo");
+      console.log("scan --update: no previous scan recorded — running a full scan");
     }
 
     for (const route of routes) {
@@ -77,7 +77,7 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;
   } else {
     console.log(
-      `[windup] scan: indexador para ${framework ?? "framework não detectado"} ainda não existe (P2 cobre Next.js; react-router é o próximo). Nada indexado.`,
+      `scan: no static indexer for ${framework ?? "this project"} yet (Next.js is supported; react-router is next on the roadmap). Nothing was indexed — the site map will still be fed by executions.`,
     );
   }
 

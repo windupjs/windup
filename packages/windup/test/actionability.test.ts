@@ -38,14 +38,14 @@ describe("actionability do clique (doc 07-A2)", () => {
   });
 
   it("FALHA ao clicar em elemento coberto por overlay", async () => {
-    await expect(browser.click("#coberto")).rejects.toThrow(/coberto/);
+    await expect(browser.click("#coberto")).rejects.toThrow(/covered/);
   });
 
   it("falha ao clicar em elemento desabilitado", async () => {
-    await expect(browser.click("#desabilitado")).rejects.toThrow(/desabilitado/);
+    await expect(browser.click("#desabilitado")).rejects.toThrow(/disabled/);
   });
 
   it("falha ao clicar em elemento inexistente", async () => {
-    await expect(browser.click("#nao-existe")).rejects.toThrow(/não encontrado/);
+    await expect(browser.click("#nao-existe")).rejects.toThrow(/not found/);
   });
 });

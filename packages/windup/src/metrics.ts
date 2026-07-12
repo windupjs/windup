@@ -30,7 +30,7 @@ export function estimateCostUsd(tokens: { input: number; output: number }, model
   if (!price) {
     if (model && !warned.has(model)) {
       warned.add(model);
-      console.warn(`[windup] aviso: modelo "${model}" sem preço na tabela (asOf ${PRICING.asOf}) — custo estimado com fallback`);
+      console.warn(`warning: no price entry for model "${model}" (as of ${PRICING.asOf}) — cost estimated with fallback rates`);
     }
     price = PRICING.fallback;
   }

@@ -62,28 +62,28 @@ class StagehandBrowser implements Browser {
     // engolido pelo Stagehand como "Uncaught" sem a mensagem).
     const problem = await this.page.evaluate<string | null, string>((sel) => {
       const el = document.querySelector(sel) as HTMLElement | null;
-      if (!el) return "elemento não encontrado";
+      if (!el) return "element not found";
       el.scrollIntoView({ block: "center" });
       const style = window.getComputedStyle(el);
       if (style.display === "none" || style.visibility === "hidden") {
-        return "elemento não visível (display/visibility)";
+        return "element not visible (display/visibility)";
       }
       if ((el as HTMLButtonElement).disabled === true || el.getAttribute("disabled") !== null || el.getAttribute("aria-disabled") === "true") {
-        return "elemento desabilitado";
+        return "element is disabled";
       }
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) {
-        return "elemento sem área visível";
+        return "element has no visible area";
       }
       const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
       const related = hit !== null && (hit === el || el.contains(hit) || hit.contains(el));
       if (!related) {
-        return `elemento coberto por ${hit ? `<${hit.tagName.toLowerCase()}${hit.id ? ` id=${hit.id}` : ""}>` : "(nada no ponto central)"}`;
+        return `element covered by ${hit ? `<${hit.tagName.toLowerCase()}${hit.id ? ` id=${hit.id}` : ""}>` : "(nothing at center point)"}`;
       }
       el.click();
       return null;
     }, selector);
-    if (problem) throw new Error(`clique em ${selector}: ${problem}`);
+    if (problem) throw new Error(`click ${selector}: ${problem}`);
   }
 
   async fill(selector: string, value: string): Promise<void> {

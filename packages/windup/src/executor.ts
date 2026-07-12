@@ -70,16 +70,16 @@ export function resolveValue(action: Action): string {
     const varName = action.value_ref.replace(/^ENV:/, "");
     const resolved = process.env[varName];
     if (resolved === undefined) {
-      throw new Error(`value_ref ${action.value_ref}: variável de ambiente ${varName} não definida`);
+      throw new Error(`value_ref ${action.value_ref}: environment variable ${varName} is not set`);
     }
     return resolved;
   }
-  throw new Error(`ação ${action.id}: fill sem value nem value_ref`);
+  throw new Error(`action ${action.id}: fill has neither value nor value_ref`);
 }
 
 async function waitForVisible(browser: Browser, selector: string, timeoutMs: number): Promise<void> {
   if (!(await browser.waitForVisible(selector, timeoutMs))) {
-    throw new Error(`elemento ${selector} não ficou visível em ${timeoutMs}ms`);
+    throw new Error(`element ${selector} did not become visible within ${timeoutMs}ms`);
   }
 }
 
@@ -167,7 +167,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
         failure: {
           kind: "verification",
           action_id: action.id,
-          message: `pós-condição falhou: ${result.failed_condition}`,
+          message: `postcondition failed: ${result.failed_condition}`,
         },
         start_sig: startSig,
       };
