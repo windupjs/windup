@@ -37,12 +37,8 @@ export function resolveValue(action: Action): string {
 }
 
 async function waitForVisible(browser: Browser, selector: string, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await browser.isVisible(selector))) {
-    if (Date.now() > deadline) {
-      throw new Error(`elemento ${selector} não ficou visível em ${timeoutMs}ms`);
-    }
-    await new Promise((r) => setTimeout(r, 100));
+  if (!(await browser.waitForVisible(selector, timeoutMs))) {
+    throw new Error(`elemento ${selector} não ficou visível em ${timeoutMs}ms`);
   }
 }
 
@@ -88,6 +84,9 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
   for (const action of plan.actions) {
     const timeoutMs = action.timeout_ms ?? DEFAULT_TIMEOUT_MS;
     const started = Date.now();
+    if (process.env.LOG_LEVEL === "debug") {
+      console.error(`[executor] ${action.id} ${action.type} ${action.target?.selector ?? action.url ?? ""} | url=${browser.url()}`);
+    }
 
     try {
       await performAction(browser, action, timeoutMs);

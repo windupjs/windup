@@ -13,6 +13,8 @@ export interface Browser {
   click(selector: string): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
   isVisible(selector: string): Promise<boolean>;
+  /** Espera o seletor ficar visível (acompanha navegações/frames). false se estourar o timeout. */
+  waitForVisible(selector: string, timeoutMs: number): Promise<boolean>;
   inputValue(selector: string): Promise<string>;
   url(): string;
   /** Árvore de acessibilidade formatada da página atual (insumo do planejador). */
@@ -35,7 +37,18 @@ class StagehandBrowser implements Browser {
   }
 
   async click(selector: string): Promise<void> {
-    await this.page.locator(selector).click();
+    // el.click() em vez do clique por coordenadas do Stagehand: o burst de
+    // Input.dispatchMouseEvent perde cliques de forma aleatória quando há
+    // pausa ociosa antes da ação (reproduzido com SLOWMO_MS em qualquer
+    // modo). el.click() dispara handlers E default actions (submit de form).
+    // Ressalva para o MVP: eventos ficam isTrusted=false — apps que checam
+    // isso exigirão clique "real" com actionability checks (ex.: Playwright).
+    await this.page.evaluate((sel) => {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      if (!el) throw new Error(`elemento não encontrado: ${sel}`);
+      el.scrollIntoView({ block: "center" });
+      el.click();
+    }, selector);
   }
 
   async fill(selector: string, value: string): Promise<void> {
@@ -45,6 +58,20 @@ class StagehandBrowser implements Browser {
   async isVisible(selector: string): Promise<boolean> {
     try {
       return await this.page.locator(selector).isVisible();
+    } catch (err) {
+      if (process.env.LOG_LEVEL === "debug") {
+        console.error(`[browser] isVisible(${selector}) lançou: ${err instanceof Error ? err.message : err}`);
+      }
+      return false;
+    }
+  }
+
+  async waitForVisible(selector: string, timeoutMs: number): Promise<boolean> {
+    // waitForSelector nativo: re-resolve o frame a cada verificação, ao
+    // contrário de um polling de isVisible sobre um frame possivelmente
+    // obsoleto após navegação (falhava com pausas longas entre ações).
+    try {
+      return await this.page.waitForSelector(selector, { state: "visible", timeout: timeoutMs });
     } catch {
       return false;
     }
@@ -100,8 +127,12 @@ export async function launchBrowser(): Promise<Browser> {
     logger: () => {},
     localBrowserLaunchOptions: {
       headless: process.env.HEADLESS !== "false",
+      // Viewport fixo E janela real do mesmo tamanho: o clique do Stagehand é
+      // por coordenadas (CDP) — com viewport emulado maior que a janela real,
+      // cliques abaixo da borda da janela caem no vazio (só no headful).
+      viewport: { width: 1280, height: 900 },
       ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
-      ...(process.env.CHROME_ARGS ? { args: process.env.CHROME_ARGS.split(" ") } : {}),
+      args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
     },
   });
   await stagehand.init();

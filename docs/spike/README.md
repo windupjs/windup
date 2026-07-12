@@ -14,6 +14,7 @@ Decisões desta spike: LLM = **Gemini** (`gemini-2.5-flash`); alvo = **saucedemo
 | [04-schemas.md](04-schemas.md) | Schema do plano de ações v0.1, schema da entrada de cache, tratamento de segredos |
 | [05-ambiente.md](05-ambiente.md) | Docker, estrutura de pastas, variáveis de ambiente, comandos da CLI |
 | [06-criterios-validacao.md](06-criterios-validacao.md) | Protocolo de medição (bench) e critérios de aceite C1–C5 |
+| [07-ajustes-pos-review.md](07-ajustes-pos-review.md) | Correções pós-review: zero hardcode de site (princípio permanente), clique confiável, cache stale |
 
 ## Ordem de leitura
 

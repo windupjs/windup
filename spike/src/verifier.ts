@@ -43,37 +43,47 @@ export async function verify(
     return { ok: true, verify_ms: 0, failed_condition: null };
   }
 
-  let failed: string | null = null;
   const deadline = started + timeoutMs;
+  const remaining = () => Math.max(POLL_INTERVAL_MS, deadline - Date.now());
+  const fail = (condition: string): VerifyResult => ({
+    ok: false,
+    verify_ms: Date.now() - started,
+    failed_condition: condition,
+  });
 
-  while (true) {
-    failed = null;
+  if (expect.url) {
+    while (!urlMatches(browser.url(), expect.url)) {
+      if (Date.now() + POLL_INTERVAL_MS > deadline) {
+        return fail(`url: esperado ${expect.url}, atual ${browser.url()}`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+  }
 
-    if (expect.url && !urlMatches(browser.url(), expect.url)) {
-      failed = `url: esperado ${expect.url}, atual ${browser.url()}`;
+  if (expect.selector) {
+    // waitForVisible nativo acompanha navegações/frames (polling de isVisible
+    // sobre frame obsoleto falhava após navegação com pausas longas).
+    if (!(await browser.waitForVisible(expect.selector, remaining()))) {
+      return fail(`selector: ${expect.selector} não visível`);
     }
-    if (!failed && expect.selector && !(await browser.isVisible(expect.selector))) {
-      failed = `selector: ${expect.selector} não visível`;
-    }
-    if (!failed && expect.selector_value) {
-      const { selector, value } = expect.selector_value;
+  }
+
+  if (expect.selector_value) {
+    const { selector, value } = expect.selector_value;
+    while (true) {
       let actual: string | null = null;
       try {
         actual = await browser.inputValue(selector);
       } catch {
         actual = null;
       }
-      if (actual !== value) {
-        failed = `selector_value: ${selector} esperado "${value}", atual "${actual ?? "(inexistente)"}"`;
+      if (actual === value) break;
+      if (Date.now() + POLL_INTERVAL_MS > deadline) {
+        return fail(`selector_value: ${selector} esperado "${value}", atual "${actual ?? "(inexistente)"}"`);
       }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
-
-    if (!failed) {
-      return { ok: true, verify_ms: Date.now() - started, failed_condition: null };
-    }
-    if (Date.now() + POLL_INTERVAL_MS > deadline) {
-      return { ok: false, verify_ms: Date.now() - started, failed_condition: failed };
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
+
+  return { ok: true, verify_ms: Date.now() - started, failed_condition: null };
 }
