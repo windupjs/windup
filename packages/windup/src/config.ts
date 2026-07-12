@@ -38,7 +38,7 @@ export interface WindupConfig {
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {
-  llm: { provider: "google", model: "gemini-2.5-flash" },
+  llm: { provider: "google", model: "gemini-3.1-flash-lite" },
   scenarios: "e2e/scenarios",
 };
 

@@ -126,7 +126,8 @@ export class GeminiPlanner implements Planner {
         responseSchema: PLAN_GEMINI_SCHEMA,
         // Planejar é transcrição de tarefa em ações, não raciocínio longo:
         // thinking desligado corta ~10x de latência e custo no flash.
-        thinkingConfig: { thinkingBudget: 0 },
+        // Os modelos *pro* não aceitam budget 0 — usam o mínimo (128).
+        thinkingConfig: { thinkingBudget: MODEL().includes("pro") ? 128 : 0 },
         // Um plano de 30 ações cabe em ~3k tokens; o teto limita o custo
         // de gerações degeneradas (observado: 65k tokens num run).
         maxOutputTokens: 8192,

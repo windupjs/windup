@@ -20,7 +20,7 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
   if (framework) note(`Framework detectado: ${framework}`, "detecção");
 
   const baseUrl = await ask("URL base do app em teste?", "http://localhost:3000");
-  const model = await ask("Modelo de LLM para o planejador?", "gemini-2.5-flash");
+  const model = await ask("Modelo de LLM para o planejador?", "gemini-3.1-flash-lite");
   const scenariosDir = await ask("Pasta dos cenários?", "e2e/scenarios");
 
   const config = `import { defineConfig } from "windupjs";

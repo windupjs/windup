@@ -9,20 +9,32 @@ export function runsDir(): string {
 }
 
 /**
- * Preço por 1M de tokens do gemini-2.5-flash (USD).
- * Preços mudam — manter a data. Última conferência: tabela vigente desde 2026-07-02.
+ * Preço por 1M de tokens (USD), por modelo. Preços mudam — manter a data.
+ * Última conferência: 2026-07-12 (ai.google.dev/gemini-api/docs/pricing).
+ * Modelo fora da tabela usa o fallback e loga aviso (estimativa, não fatura).
  */
 export const PRICING = {
-  model: "gemini-2.5-flash",
-  inputPerMTokens: 0.3,
-  outputPerMTokens: 2.5,
-  asOf: "2026-07-02",
+  asOf: "2026-07-12",
+  models: {
+    "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
+    "gemini-3.5-flash": { input: 1.5, output: 9.0 },
+    "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+  } as Record<string, { input: number; output: number }>,
+  fallback: { input: 0.3, output: 2.5 },
 } as const;
 
-export function estimateCostUsd(tokens: { input: number; output: number }): number {
-  const cost =
-    (tokens.input / 1_000_000) * PRICING.inputPerMTokens +
-    (tokens.output / 1_000_000) * PRICING.outputPerMTokens;
+const warned = new Set<string>();
+
+export function estimateCostUsd(tokens: { input: number; output: number }, model?: string | null): number {
+  let price = model ? PRICING.models[model] : undefined;
+  if (!price) {
+    if (model && !warned.has(model)) {
+      warned.add(model);
+      console.warn(`[windup] aviso: modelo "${model}" sem preço na tabela (asOf ${PRICING.asOf}) — custo estimado com fallback`);
+    }
+    price = PRICING.fallback;
+  }
+  const cost = (tokens.input / 1_000_000) * price.input + (tokens.output / 1_000_000) * price.output;
   return Number(cost.toFixed(6));
 }
 

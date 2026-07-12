@@ -145,7 +145,7 @@ export async function runScenario(
     return metrics;
   } finally {
     metrics.duration_ms.total = Date.now() - startedMs;
-    metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens);
+    metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
     await browser.close();
     await mapStore.save();
     await writeRunMetrics(metrics);
