@@ -39,6 +39,24 @@ Os critérios C1–C5 passaram nos **dois** cenários. A hipótese central — L
 6. **Stagehand v3 cumpriu o prometido** — `env: "LOCAL"`, `page.locator()` determinístico e `page.snapshot()` (a11y tree sem LLM) cobriram 100% do executor/verificador/contexto. A árvore a11y não expõe seletores CSS; a extração complementar de `id/name/data-test` via `evaluate()` foi essencial para o modelo não alucinar seletores.
 7. **(pós-validação) O clique por coordenadas do Stagehand perde cliques após pausas ociosas** — descoberto ao adicionar modo demo (SLOWMO_MS): com pausa entre ações, o burst de `Input.dispatchMouseEvent` deixa de registrar cliques aleatoriamente, em headless e headful. O executor passou a usar `el.click()` via `evaluate` (dispara handlers e default actions; bench re-executado: C1 5/5, replay 738ms/30x). Ressalva para o MVP: `el.click()` gera eventos `isTrusted=false` — apps que exigem eventos confiáveis precisarão de clique real com actionability checks (padrão Playwright). Idem: gates de visibilidade devem usar `waitForSelector` nativo (que re-resolve frames após navegação), não polling de `isVisible` sobre frame possivelmente obsoleto.
 
+## Adendo pós-review (doc 07) — evidência limpa do C1 multi-página
+
+A review do PO apontou (doc [07-ajustes-pos-review.md](07-ajustes-pos-review.md)) que o prompt do planejador continha seletores do saucedemo hardcoded, contaminando o C1 dos fluxos multi-página. Os três ajustes foram aplicados (A1 zero-hardcode + `hints` opcionais no cenário; A2 pré-checks de actionability no clique; A3 preservação de cache stale com stats acumulados e `plan_generation`), e a Fase A foi re-executada **sem hints**:
+
+| Cenário (multi-página) | C1 com dicas no prompt (contaminado) | C1 sem hints (limpo) |
+|---|---|---|
+| saucedemo-checkout (12 ações, 4 páginas) | 5/5 | **3/5** ❌ |
+| saucedemo-compra-dupla (14 ações, 6 páginas) | — | **5/5** ✅ |
+
+**Leitura:** sem conhecimento do site, a previsão multi-página fica na fronteira da capacidade — 8/10 no agregado, mas instável por cenário. As 2 falhas do checkout foram o mesmo erro: seletor inferido plausível-mas-errado para página não vista (`#shopping_cart_container`, o div contêiner, em vez do link `.shopping_cart_link` — e `el.click()` no contêiner não aciona o handler do filho; o clique por coordenadas teria acertado por hit-testing, nuance a considerar no clique do MVP).
+
+**Consequências para o MVP (conforme previsto no doc 07):**
+1. **Planejamento incremental por página sobe no roadmap** — é a resposta estrutural para fluxos multi-página confiáveis sem hints.
+2. `hints` do autor do cenário são o paliativo legítimo (conhecimento por input, não por código) e já estão implementados.
+3. Efeito colateral medido: com o prompt sem dicas, a degeneração do flash virou regra (10/10 gerações com `llm_calls ≥ 4`, ~100s e ~US$ 0,065/geração — antes ~20–40% dos runs). O retry transiente segurou a validação, mas o custo/latência reforça a prioridade de testar outro modelo no planejador.
+
+O parágrafo de C1 na tabela principal permanece válido para os cenários de 1 página; para multi-página, a evidência limpa é a deste adendo.
+
 ## Decisões tomadas na implementação (para ADRs futuros)
 
 | Decisão | Escolha | Nota |

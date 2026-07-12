@@ -40,6 +40,8 @@ export interface Scenario {
   scenario_id: string;
   start_url: string;
   task: string;
+  /** Conhecimento site-específico fornecido pelo AUTOR do cenário (doc 07: nada de site hardcoded no motor). */
+  hints?: string[];
 }
 
 export type CacheStatus = "active" | "stale";
@@ -54,6 +56,8 @@ export interface CacheEntry {
     last_replayed_at: string | null;
     replay_count: number;
     replay_failures: number;
+    /** Quantas vezes o plano deste cenário já foi (re)gerado — detector de cenário instável. */
+    plan_generation: number;
   };
 }
 

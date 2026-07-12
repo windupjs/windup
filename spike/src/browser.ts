@@ -37,18 +37,40 @@ class StagehandBrowser implements Browser {
   }
 
   async click(selector: string): Promise<void> {
-    // el.click() em vez do clique por coordenadas do Stagehand: o burst de
-    // Input.dispatchMouseEvent perde cliques de forma aleatória quando há
-    // pausa ociosa antes da ação (reproduzido com SLOWMO_MS em qualquer
-    // modo). el.click() dispara handlers E default actions (submit de form).
-    // Ressalva para o MVP: eventos ficam isTrusted=false — apps que checam
-    // isso exigirão clique "real" com actionability checks (ex.: Playwright).
-    await this.page.evaluate((sel) => {
+    // LIMITAÇÃO CONHECIDA DA SPIKE (doc 07-A2): el.click() em vez do clique
+    // por coordenadas do Stagehand, cujo burst de Input.dispatchMouseEvent
+    // perde cliques de forma aleatória quando há pausa ociosa antes da ação
+    // (reproduzido com SLOWMO_MS em qualquer modo). el.click() dispara
+    // handlers E default actions, mas gera eventos isTrusted=false — o MVP
+    // exige clique real com actionability (estilo Playwright) ou correção
+    // upstream no Stagehand. Para não "clicar cego", pré-checks de
+    // actionability rodam antes: visível, habilitado e não coberto.
+    // O evaluate devolve o problema como string (throw dentro do evaluate é
+    // engolido pelo Stagehand como "Uncaught" sem a mensagem).
+    const problem = await this.page.evaluate<string | null, string>((sel) => {
       const el = document.querySelector(sel) as HTMLElement | null;
-      if (!el) throw new Error(`elemento não encontrado: ${sel}`);
+      if (!el) return "elemento não encontrado";
       el.scrollIntoView({ block: "center" });
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") {
+        return "elemento não visível (display/visibility)";
+      }
+      if ((el as HTMLButtonElement).disabled === true || el.getAttribute("disabled") !== null || el.getAttribute("aria-disabled") === "true") {
+        return "elemento desabilitado";
+      }
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return "elemento sem área visível";
+      }
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const related = hit !== null && (hit === el || el.contains(hit) || hit.contains(el));
+      if (!related) {
+        return `elemento coberto por ${hit ? `<${hit.tagName.toLowerCase()}${hit.id ? ` id=${hit.id}` : ""}>` : "(nada no ponto central)"}`;
+      }
       el.click();
+      return null;
     }, selector);
+    if (problem) throw new Error(`clique em ${selector}: ${problem}`);
   }
 
   async fill(selector: string, value: string): Promise<void> {

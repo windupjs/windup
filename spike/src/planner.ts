@@ -9,6 +9,11 @@ const PAGE_CONTEXT_MAX_CHARS = 32_000;
 const MODEL = (process.env.LLM_MODEL ?? "google/gemini-2.5-flash").replace(/^google\//, "");
 
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], failureContext?: string): string {
+  // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
+  // Conhecimento site-específico só entra por hints do autor do cenário.
+  const hintsSection = scenario.hints?.length
+    ? `\n# Dicas fornecidas pelo autor do cenário\n${scenario.hints.join("\n")}\n`
+    : "";
   return `Você é um planejador de automação de testes em browser. Gere um plano de ações JSON \
 que cumpra a tarefa abaixo. O plano será executado de forma DETERMINÍSTICA, ação por ação, \
 sem nenhuma inteligência em tempo de execução — os seletores precisam estar exatos.
@@ -29,11 +34,10 @@ ${interactive.join("\n")}
 # Regras
 - scenario_id deve ser exatamente "${scenario.scenario_id}"; start_url exatamente "${scenario.start_url}"; plan_version "0.1".
 - ids das ações sequenciais: a1, a2, a3...
-- Use APENAS seletores CSS de elementos presentes no contexto acima (prefira #id). \
-Para páginas seguintes à inicial, que você não está vendo, use os seletores CONVENCIONAIS \
-do site conforme a tarefa (o saucedemo usa ids estáveis como #checkout, #continue, #finish, \
-#first-name, #last-name, #postal-code, botões #add-to-cart-<nome-do-produto-em-kebab-case>, \
-link do carrinho .shopping_cart_link).
+- Para a página inicial, use APENAS seletores CSS de elementos presentes no contexto acima \
+(prefira #id). Para páginas seguintes, que você não está vendo, infira seletores prováveis \
+a partir da tarefa e das convenções comuns da web (ids/names semânticos, data-test). \
+Prefira seletores estáveis.
 - Toda ação click/fill/wait_for exige target.selector E target.description (descrição humana do elemento).
 - fill usa "value" com o texto literal — exceto quando a tarefa mandar usar uma referência \
 de ambiente; nesse caso use "value_ref": "ENV:NOME_DA_VARIAVEL" e NÃO inclua "value".
@@ -60,7 +64,7 @@ URL esperada após a ação vai em expect.url (aceita glob).
 }
 
 LEMBRETE FINAL: a última ação do plano DEVE conter o campo "expect" comprovando a tarefa cumprida.
-${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
+${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
 Responda somente com o JSON do plano.`;
 }
 
