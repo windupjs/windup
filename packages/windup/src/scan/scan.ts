@@ -6,6 +6,7 @@ import { getContext } from "../context.js";
 import { SiteMapStore } from "../sitemap.js";
 import { extractElements, formatElement } from "./extract.js";
 import { collectRouteSources, indexNextRoutes, type StaticRoute } from "./nextjs.js";
+import { indexReactRouterRoutes } from "./react-router.js";
 
 const exec = promisify(execFile);
 
@@ -38,8 +39,8 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
   let elementsCount = 0;
   let mode: "full" | "incremental" = "full";
 
-  if (framework === "next") {
-    let routes = await indexNextRoutes(root);
+  if (framework === "next" || framework === "react-router" || framework === "remix") {
+    let routes = framework === "next" ? await indexNextRoutes(root) : await indexReactRouterRoutes(root);
     const sources = new Map<StaticRoute, string[]>();
     for (const route of routes) {
       sources.set(route, await collectRouteSources(route, root));
@@ -77,7 +78,7 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;
   } else {
     console.log(
-      `scan: no static indexer for ${framework ?? "this project"} yet (Next.js is supported; react-router is next on the roadmap). Nothing was indexed — the site map will still be fed by executions.`,
+      `scan: no static indexer for ${framework ?? "this project"} yet (supported: Next.js, react-router, remix). Nothing was indexed — the site map will still be fed by executions.`,
     );
   }
 
