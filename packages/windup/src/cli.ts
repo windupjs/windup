@@ -109,6 +109,33 @@ program
     }
   });
 
+program
+  .command("status")
+  .description("Estado do índice: páginas por origem, staleness, cenários cacheados, fragmentos")
+  .action(async () => {
+    const { getContext } = await import("./context.js");
+    const { SiteMapStore } = await import("./sitemap.js");
+    const { loadFragments } = await import("./fragments.js");
+    const { readdir } = await import("node:fs/promises");
+    const ctx = getContext();
+
+    const store = await SiteMapStore.load(ctx.paths.mapFile);
+    const bySource = store.countBySource();
+    console.log(`[windup] mapa do site: ${store.pageCount} página(s)${store.lastScanSha ? ` | último scan: ${store.lastScanSha.slice(0, 8)}` : " | nunca escaneado"}`);
+    for (const [source, count] of Object.entries(bySource)) console.log(`[windup]   ${source}: ${count}`);
+
+    let cached: string[] = [];
+    try {
+      cached = (await readdir(ctx.paths.cacheDir)).filter((f) => f.endsWith(".json") && !f.includes(".stale-"));
+    } catch {
+      // sem cache ainda
+    }
+    console.log(`[windup] cenários cacheados: ${cached.length}${cached.length ? ` (${cached.map((f) => f.replace(".json", "")).join(", ")})` : ""}`);
+
+    const fragments = await loadFragments();
+    console.log(`[windup] fragmentos: ${fragments.length}${fragments.length ? ` (${fragments.map((f) => f.fragment_id).join(", ")})` : ""}`);
+  });
+
 const fragment = program.command("fragment").description("Gerencia fragmentos de trajetória (blocos reutilizáveis)");
 fragment
   .command("extract <cenario> <range>")

@@ -84,8 +84,10 @@ export class SiteMapStore {
       existing.interactive = obs.interactive;
       existing.last_seen = now;
       existing.seen_count += 1;
-      // O que foi visto rodando vale mais do que o inferido do código.
+      // O que foi visto rodando vale mais do que o inferido do código —
+      // e observação fresca limpa o stale.
       existing.source = "execution";
+      existing.stale = false;
     } else {
       this.map.pages[obs.sig] = {
         urls_seen: [obs.url],
@@ -131,15 +133,27 @@ export class SiteMapStore {
     }
   }
 
-  /** P3: marca stale os nós estáticos cujo fonte está entre os arquivos alterados. */
+  /**
+   * P3: fontes alterados desde o último scan. Marca stale (a) os nós estáticos
+   * afetados — que o scan --update re-indexa em seguida — e (b) os nós de
+   * EXECUÇÃO da mesma url: o runtime observado pode ter mudado com o código,
+   * e conhecimento stale sai da fatia do prompt até nova observação.
+   */
   markStaleByFiles(changedFiles: string[]): string[] {
     const changed = new Set(changedFiles.map((f) => path.resolve(f)));
     const marked: string[] = [];
+    const affectedPatterns = new Set<string>();
     for (const [sig, page] of Object.entries(this.map.pages)) {
       if (page.source !== "static" || !page.files) continue;
       if (page.files.some((f) => changed.has(path.resolve(f)))) {
         page.stale = true;
         marked.push(sig);
+        affectedPatterns.add(page.url_pattern);
+      }
+    }
+    for (const page of Object.values(this.map.pages)) {
+      if (page.source === "execution" && affectedPatterns.has(page.url_pattern)) {
+        page.stale = true;
       }
     }
     return marked;
@@ -201,6 +215,7 @@ export class SiteMapStore {
 
     const terms = tokenize(task);
     const scored = [...depths.keys()]
+      .filter((sig) => !this.map.pages[sig].stale)
       .map((sig) => ({ sig, page: this.map.pages[sig], score: score(this.map.pages[sig], terms) }))
       .sort((a, b) => b.score - a.score);
 
