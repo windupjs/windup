@@ -12,5 +12,6 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "test", "tsup.config.ts"]
+  "include": ["src", "test", "tsup.config.ts"],
+  "exclude": ["test/fixtures"]
 }

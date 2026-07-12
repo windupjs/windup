@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -23,6 +24,10 @@ export interface MapPage {
   first_seen: string;
   last_seen: string;
   seen_count: number;
+  /** Fontes que definem a página (só source: static; insumo do P3 diff→stale). */
+  files?: string[];
+  /** P3: fonte alterada desde o último scan — dica desatualizada, sai da fatia. */
+  stale?: boolean;
 }
 
 export interface MapTransition {
@@ -95,6 +100,69 @@ export class SiteMapStore {
     }
   }
 
+  /**
+   * Nó vindo da indexação estática (P2). Vive em chave própria (`static:`);
+   * nunca sobrescreve conhecimento de execução — a precedência
+   * execution > static é aplicada na fatia do prompt, por url.
+   */
+  upsertStaticPage(route: string, elements: string[], files: string[]): void {
+    const sig = `static:${createHash("sha256").update(route).digest("hex").slice(0, 16)}`;
+    const now = new Date().toISOString();
+    const existing = this.map.pages[sig];
+    if (existing) {
+      existing.interactive = elements;
+      existing.files = files;
+      existing.last_seen = now;
+      existing.seen_count += 1;
+      existing.stale = false;
+    } else {
+      this.map.pages[sig] = {
+        urls_seen: [route],
+        url_pattern: `**${route}`,
+        title: "",
+        interactive: elements,
+        source: "static",
+        first_seen: now,
+        last_seen: now,
+        seen_count: 1,
+        files,
+        stale: false,
+      };
+    }
+  }
+
+  /** P3: marca stale os nós estáticos cujo fonte está entre os arquivos alterados. */
+  markStaleByFiles(changedFiles: string[]): string[] {
+    const changed = new Set(changedFiles.map((f) => path.resolve(f)));
+    const marked: string[] = [];
+    for (const [sig, page] of Object.entries(this.map.pages)) {
+      if (page.source !== "static" || !page.files) continue;
+      if (page.files.some((f) => changed.has(path.resolve(f)))) {
+        page.stale = true;
+        marked.push(sig);
+      }
+    }
+    return marked;
+  }
+
+  get lastScanSha(): string | null {
+    return this.map.last_scan_sha;
+  }
+
+  set lastScanSha(sha: string | null) {
+    this.map.last_scan_sha = sha;
+  }
+
+  /** Contagem por origem, para o windup status. */
+  countBySource(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const page of Object.values(this.map.pages)) {
+      const key = page.stale ? `${page.source} (stale)` : page.source;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   recordTransition(from: string, action: { type: string; selector: string }, to: string): void {
     const existing = this.map.transitions.find(
       (t) => t.from === from && t.to === to && t.action.type === action.type && t.action.selector === action.selector,
@@ -112,23 +180,24 @@ export class SiteMapStore {
    * pelo orçamento de chars. Devolve string vazia se nada alcançável.
    */
   sliceForPrompt(startSig: string, task: string, budgetChars: number): string {
-    if (!this.map.pages[startSig]) return "";
-
-    // BFS
-    const depths = new Map<string, number>([[startSig, 0]]);
-    const queue = [startSig];
-    while (queue.length) {
-      const sig = queue.shift()!;
-      const depth = depths.get(sig)!;
-      if (depth >= 3) continue;
-      for (const t of this.map.transitions) {
-        if (t.from === sig && !depths.has(t.to) && this.map.pages[t.to]) {
-          depths.set(t.to, depth + 1);
-          queue.push(t.to);
+    // BFS pelas transições observadas em execução.
+    const depths = new Map<string, number>();
+    if (this.map.pages[startSig]) {
+      depths.set(startSig, 0);
+      const queue = [startSig];
+      while (queue.length) {
+        const sig = queue.shift()!;
+        const depth = depths.get(sig)!;
+        if (depth >= 3) continue;
+        for (const t of this.map.transitions) {
+          if (t.from === sig && !depths.has(t.to) && this.map.pages[t.to]) {
+            depths.set(t.to, depth + 1);
+            queue.push(t.to);
+          }
         }
       }
+      depths.delete(startSig); // a página inicial já entra viva no prompt
     }
-    depths.delete(startSig); // a página inicial já entra viva no prompt
 
     const terms = tokenize(task);
     const scored = [...depths.keys()]
@@ -137,12 +206,31 @@ export class SiteMapStore {
 
     const blocks: string[] = [];
     let used = 0;
+    const coveredPaths = new Set<string>(
+      this.map.pages[startSig] ? [this.map.pages[startSig].url_pattern] : [],
+    );
     for (const { sig, page } of scored) {
+      const block = this.formatPage(sig, page);
+      if (used + block.length > budgetChars) continue;
+      blocks.push(block);
+      coveredPaths.add(page.url_pattern);
+      used += block.length;
+    }
+
+    // Nós estáticos (P2): entram no orçamento restante quando a execução ainda
+    // não cobriu a mesma url — precedência execution > static (SPEC-002).
+    const staticScored = Object.entries(this.map.pages)
+      .filter(([, p]) => p.source === "static" && !p.stale && !coveredPaths.has(p.url_pattern))
+      .map(([sig, page]) => ({ sig, page, score: score(page, terms) }))
+      .filter(({ score: s }) => s > 0)
+      .sort((a, b) => b.score - a.score);
+    for (const { sig, page } of staticScored) {
       const block = this.formatPage(sig, page);
       if (used + block.length > budgetChars) continue;
       blocks.push(block);
       used += block.length;
     }
+
     return blocks.join("\n\n");
   }
 
@@ -152,10 +240,11 @@ export class SiteMapStore {
       .slice(0, 3)
       .map((t) => `- chega-se aqui com ${t.action.type} '${t.action.selector}' a partir de ${this.map.pages[t.from].url_pattern}`);
     const elements = page.interactive.slice(0, 30);
+    const provenance = page.source === "static" ? " (detectada no código-fonte; pode divergir do runtime)" : "";
     return [
-      `## Página conhecida: ${page.url_pattern}${page.title ? ` — ${page.title}` : ""}`,
+      `## Página conhecida: ${page.url_pattern}${page.title ? ` — ${page.title}` : ""}${provenance}`,
       ...routes,
-      `Elementos interativos observados:`,
+      `Elementos interativos ${page.source === "static" ? "declarados" : "observados"}:`,
       ...elements,
     ].join("\n");
   }

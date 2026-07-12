@@ -70,6 +70,18 @@ program
   });
 
 program
+  .command("scan")
+  .description("Indexação estática do projeto (rotas por convenção + elementos) → mapa do site")
+  .option("--update", "re-indexa só o que mudou desde o último scan (git diff)")
+  .action(async (opts: { update?: boolean }) => {
+    const { runScan } = await import("./scan/scan.js");
+    const summary = await runScan({ update: opts.update });
+    console.log(
+      `[windup] scan: framework=${summary.framework ?? "?"} rotas=${summary.routes} elementos=${summary.elements} → ${summary.mapFile}`,
+    );
+  });
+
+program
   .command("sig <url>")
   .description("Calcula a assinatura estrutural de uma página (E1) — ferramenta de diagnóstico")
   .option("--repeat <n>", "recalcula N vezes com re-navegação (teste de estabilidade)", "1")
