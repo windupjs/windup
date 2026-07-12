@@ -181,4 +181,7 @@ cache
     console.log("trajectory cache cleared");
   });
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).finally(async () => {
+  const { shutdownBrowserEngine } = await import("./browser.js");
+  await shutdownBrowserEngine();
+});

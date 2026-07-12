@@ -7,6 +7,7 @@ export { GeminiPlanner } from "./planner.js";
 export { loadScenario } from "./scenario.js";
 export { clearCache } from "./cache.js";
 export { runBench } from "./bench.js";
+export { shutdownBrowserEngine } from "./browser.js";
 export { createContext, createContextFromConfig, getContext, setContext, type WindupContext, type WindupPaths } from "./context.js";
 export { defineConfig, loadWindupConfig, type WindupConfig, type LoadedConfig } from "./config.js";
 export { computeSignature, type RawElement } from "./signature.js";

@@ -1,6 +1,6 @@
 {
   "name": "windupjs",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Windup — testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho",
   "type": "module",
   "license": "MIT",
@@ -29,7 +29,6 @@
     "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "^3.6.0",
     "@clack/prompts": "^1.7.0",
     "@google/genai": "^2.11.0",
     "ajv": "^8.20.0",
@@ -38,7 +37,8 @@
     "commander": "^14.0.3",
     "dotenv": "^17.4.2",
     "jiti": "^2.7.0",
-    "picomatch": "^4.0.5"
+    "picomatch": "^4.0.5",
+    "playwright": "^1.61.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

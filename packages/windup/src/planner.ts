@@ -68,7 +68,9 @@ ${siteKnowledge}\n`
     ? `\n# Fragmentos disponíveis (blocos de ações prontos, já testados)
 Quando um fragmento cobrir parte da tarefa, use UMA ação \
 { "id": "aN", "type": "use", "use": "<fragment_id>" } no lugar dessas ações — \
-NÃO regenere as ações que o fragmento já cobre.
+NÃO regenere as ações que o fragmento já cobre. Após um "use", o estado é a \
+PÓS-CONDIÇÃO do fragmento: continue dali (não repita fills/cliques do fragmento; \
+a página já mudou).
 
 ${fragmentsCatalog}\n`
     : "";

@@ -1,12 +1,14 @@
 services:
-  spike:
-    build: .
+  windup:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
     volumes:
-      # Sem o volume do .cache todo run é cache miss e a validação de replay
-      # não funciona (doc 05).
-      - ./.cache:/app/.cache
-      - ./runs:/app/runs
-      - ./scenarios:/app/scenarios:ro
+      # Without the .windup volume every run is a cache miss and replay
+      # validation cannot work.
+      - ../.windup:/app/.windup
+      - ../scenarios:/app/scenarios:ro
+      - ../fragments:/app/fragments:ro

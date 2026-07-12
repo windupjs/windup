@@ -59,8 +59,10 @@ export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean
   const cacheFile = path.join(cacheDir(), `${scenarioId}.json`);
   try {
     const entry = JSON.parse(await readFile(cacheFile, "utf8")) as CacheEntry;
-    const clickAction = entry.plan.actions.find((a) => a.type === "click" && a.target);
-    if (!clickAction) throw new Error("nenhuma ação click no plano cacheado para quebrar");
+    // Pós-E3 um plano pode ser só { use } + verificações: quebra a primeira
+    // ação com target (click/fill/wait_for), não apenas click.
+    const clickAction = entry.plan.actions.find((a) => (a.type === "click" || a.type === "fill" || a.type === "wait_for") && a.target);
+    if (!clickAction) throw new Error("no breakable action (with target) in the cached plan");
     clickAction.target!.selector = `${clickAction.target!.selector}-x`;
     await writeFile(cacheFile, JSON.stringify(entry, null, 2));
     console.log(`[bench]   seletor quebrado: ${clickAction.target!.selector} (ação ${clickAction.id})`);

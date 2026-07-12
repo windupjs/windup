@@ -1,48 +1,50 @@
-import { Stagehand } from "@browserbasehq/stagehand";
+import { chromium, type Browser as PWBrowser, type BrowserContext, type Page } from "playwright";
 import { computeSignature, type RawElement } from "./signature.js";
 
-/** Elemento interativo cru extraído da página (base de prompt, sig e mapa). */
+/**
+ * Single boundary with the browser engine — Playwright since v0.6 (the spike
+ * validated on Stagehand v3; the swap fixed isTrusted clicks and cut the
+ * dependency tree). Executor, verifier and planner only ever talk to this
+ * interface; nothing here calls an LLM.
+ *
+ * E5: one Chromium process per CLI invocation (lazy singleton engine), one
+ * fresh BrowserContext per run — repeat/bench pay the launch cost once while
+ * every run keeps incognito-grade isolation. No daemon across invocations by
+ * design (SPEC-001 forbids that complexity until metrics demand it).
+ */
 export interface RawPageElement extends RawElement {
   placeholder?: string;
   text?: string;
 }
 
-/**
- * Fronteira única com o Stagehand v3. Executor, verificador e planejador
- * falam apenas com esta interface — se for preciso trocar o motor (ex.:
- * Playwright puro), muda só este arquivo.
- *
- * Nenhum método aqui usa LLM: só page/locator determinísticos e snapshot
- * da árvore de acessibilidade (page.snapshot() é CDP puro).
- */
 export interface Browser {
   goto(url: string): Promise<void>;
   click(selector: string): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
   isVisible(selector: string): Promise<boolean>;
-  /** Espera o seletor ficar visível (acompanha navegações/frames). false se estourar o timeout. */
+  /** Wait until the selector is visible (frame-safe). false on timeout. */
   waitForVisible(selector: string, timeoutMs: number): Promise<boolean>;
   inputValue(selector: string): Promise<string>;
   url(): string;
-  /** Árvore de acessibilidade formatada da página atual (insumo do planejador). */
+  /** Accessibility tree of the current page, as text (planner context). */
   snapshotTree(): Promise<string>;
-  /** Ids/names/data-test dos elementos interativos (complemento do contexto do planejador). */
+  /** Prompt-formatted interactive elements (planner context). */
   interactiveElements(): Promise<string[]>;
-  /** Elementos interativos estruturados (base da assinatura e do mapa do site). */
+  /** Structured interactive elements (signature + site map). */
   interactiveElementsRaw(): Promise<RawPageElement[]>;
-  /** Assinatura estrutural da página atual (E1). */
+  /** Structural signature of the current page (E1). */
   pageSignature(): Promise<string>;
-  /** Título da página atual (metadado do mapa do site). */
+  /** Current page title (site-map metadata). */
   title(): Promise<string>;
   close(): Promise<void>;
 }
 
-type StagehandPage = NonNullable<ReturnType<Stagehand["context"]["activePage"]>>;
+const ACTION_TIMEOUT_MS = () => Number.parseInt(process.env.WINDUP_ACTION_TIMEOUT_MS ?? "10000", 10) || 10_000;
 
-class StagehandBrowser implements Browser {
+class PlaywrightSession implements Browser {
   constructor(
-    private readonly stagehand: Stagehand,
-    private readonly page: StagehandPage,
+    private readonly context: BrowserContext,
+    private readonly page: Page,
   ) {}
 
   async goto(url: string): Promise<void> {
@@ -50,70 +52,34 @@ class StagehandBrowser implements Browser {
   }
 
   async click(selector: string): Promise<void> {
-    // LIMITAÇÃO CONHECIDA DA SPIKE (doc 07-A2): el.click() em vez do clique
-    // por coordenadas do Stagehand, cujo burst de Input.dispatchMouseEvent
-    // perde cliques de forma aleatória quando há pausa ociosa antes da ação
-    // (reproduzido com SLOWMO_MS em qualquer modo). el.click() dispara
-    // handlers E default actions, mas gera eventos isTrusted=false — o MVP
-    // exige clique real com actionability (estilo Playwright) ou correção
-    // upstream no Stagehand. Para não "clicar cego", pré-checks de
-    // actionability rodam antes: visível, habilitado e não coberto.
-    // O evaluate devolve o problema como string (throw dentro do evaluate é
-    // engolido pelo Stagehand como "Uncaught" sem a mensagem).
-    const problem = await this.page.evaluate<string | null, string>((sel) => {
-      const el = document.querySelector(sel) as HTMLElement | null;
-      if (!el) return "element not found";
-      el.scrollIntoView({ block: "center" });
-      const style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") {
-        return "element not visible (display/visibility)";
-      }
-      if ((el as HTMLButtonElement).disabled === true || el.getAttribute("disabled") !== null || el.getAttribute("aria-disabled") === "true") {
-        return "element is disabled";
-      }
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
-        return "element has no visible area";
-      }
-      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      const related = hit !== null && (hit === el || el.contains(hit) || hit.contains(el));
-      if (!related) {
-        return `element covered by ${hit ? `<${hit.tagName.toLowerCase()}${hit.id ? ` id=${hit.id}` : ""}>` : "(nothing at center point)"}`;
-      }
-      el.click();
-      return null;
-    }, selector);
-    if (problem) throw new Error(`click ${selector}: ${problem}`);
+    // Native actionability (visible/stable/enabled/receives-events) with
+    // trusted input events — settles doc 07-A2 for good.
+    await this.page.locator(selector).first().click({ timeout: ACTION_TIMEOUT_MS() });
   }
 
   async fill(selector: string, value: string): Promise<void> {
-    await this.page.locator(selector).fill(value);
+    await this.page.locator(selector).first().fill(value, { timeout: ACTION_TIMEOUT_MS() });
   }
 
   async isVisible(selector: string): Promise<boolean> {
     try {
-      return await this.page.locator(selector).isVisible();
-    } catch (err) {
-      if (process.env.LOG_LEVEL === "debug") {
-        console.error(`[browser] isVisible(${selector}) lançou: ${err instanceof Error ? err.message : err}`);
-      }
+      return await this.page.locator(selector).first().isVisible();
+    } catch {
       return false;
     }
   }
 
   async waitForVisible(selector: string, timeoutMs: number): Promise<boolean> {
-    // waitForSelector nativo: re-resolve o frame a cada verificação, ao
-    // contrário de um polling de isVisible sobre um frame possivelmente
-    // obsoleto após navegação (falhava com pausas longas entre ações).
     try {
-      return await this.page.waitForSelector(selector, { state: "visible", timeout: timeoutMs });
+      await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs });
+      return true;
     } catch {
       return false;
     }
   }
 
   async inputValue(selector: string): Promise<string> {
-    return this.page.locator(selector).inputValue();
+    return this.page.locator(selector).first().inputValue({ timeout: ACTION_TIMEOUT_MS() });
   }
 
   url(): string {
@@ -121,12 +87,13 @@ class StagehandBrowser implements Browser {
   }
 
   async snapshotTree(): Promise<string> {
-    const snapshot = await this.page.snapshot();
-    return snapshot.formattedTree;
+    // YAML aria snapshot (Playwright ≥1.59). "default" mode on purpose: the
+    // "ai" mode's [ref=eN] handles are session-scoped — useless in a replayed
+    // plan that must address elements by CSS selector.
+    return this.page.ariaSnapshot();
   }
 
-  // Um único evaluate serve o prompt do planejador (interactiveElements),
-  // a assinatura de página (pageSignature) e o mapa do site.
+  // One evaluate feeds prompt context, page signature and the site map.
   async interactiveElementsRaw(): Promise<RawPageElement[]> {
     return this.page.evaluate<RawPageElement[]>(() => {
       const els = Array.from(
@@ -170,27 +137,39 @@ class StagehandBrowser implements Browser {
   }
 
   async close(): Promise<void> {
-    await this.stagehand.close();
+    // Closes only the session (context); the engine stays warm for the next
+    // run in this process (E5).
+    await this.context.close();
   }
 }
 
-export async function launchBrowser(): Promise<Browser> {
-  const stagehand = new Stagehand({
-    env: "LOCAL",
-    verbose: 0,
-    disablePino: true,
-    logger: () => {},
-    localBrowserLaunchOptions: {
-      headless: process.env.HEADLESS !== "false",
-      // Viewport fixo E janela real do mesmo tamanho: o clique do Stagehand é
-      // por coordenadas (CDP) — com viewport emulado maior que a janela real,
-      // cliques abaixo da borda da janela caem no vazio (só no headful).
-      viewport: { width: 1280, height: 900 },
-      ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
-      args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
-    },
+let engine: Promise<PWBrowser> | null = null;
+
+function getEngine(): Promise<PWBrowser> {
+  engine ??= chromium.launch({
+    headless: process.env.HEADLESS !== "false",
+    ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
+    args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
   });
-  await stagehand.init();
-  const page = stagehand.context.activePage() ?? (await stagehand.context.newPage());
-  return new StagehandBrowser(stagehand, page);
+  return engine;
+}
+
+/** New isolated session (fresh context+page) on the warm engine. */
+export async function launchBrowser(): Promise<Browser> {
+  const browser = await getEngine();
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage();
+  return new PlaywrightSession(context, page);
+}
+
+/** Shut the engine down (CLI exit hook; API/test teardown). Safe to call twice. */
+export async function shutdownBrowserEngine(): Promise<void> {
+  if (!engine) return;
+  const current = engine;
+  engine = null;
+  try {
+    await (await current).close();
+  } catch {
+    // already gone
+  }
 }
