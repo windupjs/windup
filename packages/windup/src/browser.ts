@@ -1,4 +1,11 @@
 import { Stagehand } from "@browserbasehq/stagehand";
+import { computeSignature, type RawElement } from "./signature.js";
+
+/** Elemento interativo cru extraído da página (base de prompt, sig e mapa). */
+export interface RawPageElement extends RawElement {
+  placeholder?: string;
+  text?: string;
+}
 
 /**
  * Fronteira única com o Stagehand v3. Executor, verificador e planejador
@@ -21,6 +28,12 @@ export interface Browser {
   snapshotTree(): Promise<string>;
   /** Ids/names/data-test dos elementos interativos (complemento do contexto do planejador). */
   interactiveElements(): Promise<string[]>;
+  /** Elementos interativos estruturados (base da assinatura e do mapa do site). */
+  interactiveElementsRaw(): Promise<RawPageElement[]>;
+  /** Assinatura estrutural da página atual (E1). */
+  pageSignature(): Promise<string>;
+  /** Título da página atual (metadado do mapa do site). */
+  title(): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -112,28 +125,48 @@ class StagehandBrowser implements Browser {
     return snapshot.formattedTree;
   }
 
-  async interactiveElements(): Promise<string[]> {
-    return this.page.evaluate<string[]>(() => {
+  // Um único evaluate serve o prompt do planejador (interactiveElements),
+  // a assinatura de página (pageSignature) e o mapa do site.
+  async interactiveElementsRaw(): Promise<RawPageElement[]> {
+    return this.page.evaluate<RawPageElement[]>(() => {
       const els = Array.from(
         document.querySelectorAll("input, button, a, select, textarea"),
       );
       return els.map((el) => {
         const tag = el.tagName.toLowerCase();
-        const parts = [tag];
-        if (el.id) parts.push(`id=${el.id}`);
-        const name = el.getAttribute("name");
-        if (name) parts.push(`name=${name}`);
-        const dataTest = el.getAttribute("data-test");
-        if (dataTest) parts.push(`data-test=${dataTest}`);
-        const type = el.getAttribute("type");
-        if (type) parts.push(`type=${type}`);
-        const placeholder = el.getAttribute("placeholder");
-        if (placeholder) parts.push(`placeholder=${placeholder}`);
-        const text = (el.textContent ?? "").trim().slice(0, 40);
-        if (text && tag !== "input") parts.push(`text=${text}`);
-        return parts.join(" ");
+        return {
+          tag,
+          id: el.id || undefined,
+          name: el.getAttribute("name") ?? undefined,
+          dataTest: el.getAttribute("data-test") ?? undefined,
+          type: el.getAttribute("type") ?? undefined,
+          placeholder: el.getAttribute("placeholder") ?? undefined,
+          text: tag === "input" ? undefined : (el.textContent ?? "").trim().slice(0, 40) || undefined,
+        };
       });
     });
+  }
+
+  async interactiveElements(): Promise<string[]> {
+    const raw = await this.interactiveElementsRaw();
+    return raw.map((el) => {
+      const parts = [el.tag];
+      if (el.id) parts.push(`id=${el.id}`);
+      if (el.name) parts.push(`name=${el.name}`);
+      if (el.dataTest) parts.push(`data-test=${el.dataTest}`);
+      if (el.type) parts.push(`type=${el.type}`);
+      if (el.placeholder) parts.push(`placeholder=${el.placeholder}`);
+      if (el.text) parts.push(`text=${el.text}`);
+      return parts.join(" ");
+    });
+  }
+
+  async pageSignature(): Promise<string> {
+    return computeSignature(await this.interactiveElementsRaw());
+  }
+
+  async title(): Promise<string> {
+    return this.page.title();
   }
 
   async close(): Promise<void> {

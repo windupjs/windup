@@ -117,6 +117,7 @@ export class GeminiPlanner implements Planner {
     await waitForAnyInteractive(browser);
     const pageTree = (await browser.snapshotTree()).slice(0, PAGE_CONTEXT_MAX_CHARS);
     const interactive = await browser.interactiveElements();
+    const startSig = await browser.pageSignature();
 
     const tokens = { input: 0, output: 0 };
     let llmCalls = 0;
@@ -174,7 +175,7 @@ export class GeminiPlanner implements Planner {
         if (validation.ok) {
           plan.task = scenario.task;
           plan.generated_by = { model: MODEL, at: new Date().toISOString() };
-          return { plan, llm_calls: llmCalls, model: MODEL, planning_mode: "full", tokens, semantic_retries: attempt - 1 };
+          return { plan, llm_calls: llmCalls, model: MODEL, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig };
         }
         lastErrors = validation.errors;
         if (process.env.LOG_LEVEL === "debug") {

@@ -8,7 +8,7 @@ export function cacheDir(): string {
   return getContext().paths.cacheDir;
 }
 
-const CACHE_VERSION = "0.1";
+const CACHE_VERSION = "0.2";
 const PLAN_VERSION = "0.1";
 const MAX_STALE_FILES = 3;
 
@@ -68,11 +68,15 @@ async function previousStats(scenarioId: string): Promise<CacheEntry["stats"] | 
  * Contadores acumulam entre re-planos; plan_generation conta re-gerações —
  * insumo para detectar cenários instáveis.
  */
-export async function saveCached(scenario: Scenario, plan: Plan): Promise<void> {
+export async function saveCached(scenario: Scenario, plan: Plan, startSig?: string): Promise<void> {
   const prev = await previousStats(scenario.scenario_id);
   const entry: CacheEntry = {
     cache_version: CACHE_VERSION,
-    key: { scenario_id: scenario.scenario_id, start_url: scenario.start_url },
+    key: {
+      scenario_id: scenario.scenario_id,
+      start_url: scenario.start_url,
+      ...(startSig ? { start_sig: startSig } : {}),
+    },
     plan,
     status: "active",
     stats: {

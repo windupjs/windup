@@ -13,6 +13,24 @@ export interface ExecutionResult {
   ok: boolean;
   actions: ActionMetrics[];
   failure: ExecutionFailure | null;
+  /** Assinatura da página inicial após o goto (E1); null se não pôde ser calculada. */
+  start_sig: string | null;
+}
+
+/**
+ * Sig da página inicial: espera o app renderizar (SPA: load não basta) antes
+ * de assinar, senão a sig do DOM pré-render seria instável.
+ */
+async function initialSignature(browser: Browser, timeoutMs = 5000): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  try {
+    while ((await browser.interactiveElementsRaw()).length === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return await browser.pageSignature();
+  } catch {
+    return null;
+  }
 }
 
 const NETWORK_ERROR_PATTERNS = [/net::ERR/i, /ENOTFOUND/i, /ECONNREFUSED/i, /ETIMEDOUT/i, /Timeout.*navigat/i, /navigat.*timeout/i];
@@ -78,8 +96,11 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
       ok: false,
       actions: metrics,
       failure: { kind: "network", action_id: null, message: `goto ${plan.start_url}: ${err instanceof Error ? err.message : err}` },
+      start_sig: null,
     };
   }
+
+  const startSig = await initialSignature(browser);
 
   for (const action of plan.actions) {
     const timeoutMs = action.timeout_ms ?? DEFAULT_TIMEOUT_MS;
@@ -101,6 +122,7 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
           action_id: action.id,
           message: err instanceof Error ? err.message : String(err),
         },
+        start_sig: startSig,
       };
     }
 
@@ -122,11 +144,12 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
           action_id: action.id,
           message: `pós-condição falhou: ${result.failed_condition}`,
         },
+        start_sig: startSig,
       };
     }
 
     if (SLOWMO_MS > 0) await new Promise((r) => setTimeout(r, SLOWMO_MS));
   }
 
-  return { ok: true, actions: metrics, failure: null };
+  return { ok: true, actions: metrics, failure: null, start_sig: startSig };
 }

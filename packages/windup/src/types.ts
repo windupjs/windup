@@ -47,8 +47,13 @@ export interface Scenario {
 export type CacheStatus = "active" | "stale";
 
 export interface CacheEntry {
-  cache_version: "0.1";
-  key: { scenario_id: string; start_url: string };
+  cache_version: "0.2";
+  key: {
+    scenario_id: string;
+    start_url: string;
+    /** Assinatura estrutural da página inicial no momento do plano (E1). */
+    start_sig?: string;
+  };
   plan: Plan;
   status: CacheStatus;
   stats: {
@@ -81,6 +86,11 @@ export interface RunMetrics {
   planning_mode: "full" | "incremental" | null;
   /** Retries semânticos do planejador (doc 03 permite ≤1); null se não planejou. */
   plan_semantic_retries: number | null;
+  /**
+   * E1, política leniente: true se a sig da página inicial divergiu da gravada
+   * no cache (o replay segue mesmo assim); null quando não havia sig comparável.
+   */
+  sig_mismatch: boolean | null;
   tokens: { input: number; output: number };
   estimated_cost_usd: number;
   duration_ms: { total: number; planning: number; execution: number };

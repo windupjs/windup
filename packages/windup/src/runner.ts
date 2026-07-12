@@ -12,6 +12,8 @@ export interface PlanGeneration {
   tokens: { input: number; output: number };
   /** Retries semânticos usados (plano reprovado na validação); exclui re-chamadas transientes. */
   semantic_retries: number;
+  /** Assinatura da página inicial capturada no snapshot do planejamento (E1). */
+  start_sig?: string;
 }
 
 /** Única fronteira com o LLM (implementada em planner.ts; fake nos testes). */
@@ -54,6 +56,7 @@ export async function runScenario(
     llm_model: null,
     planning_mode: null,
     plan_semantic_retries: null,
+    sig_mismatch: null,
     tokens: { input: 0, output: 0 },
     estimated_cost_usd: 0,
     duration_ms: { total: 0, planning: 0, execution: 0 },
@@ -74,6 +77,17 @@ export async function runScenario(
       metrics.duration_ms.execution = Date.now() - execStart;
       metrics.actions = result.actions;
 
+      // E1, política leniente: sig divergente é sinal, não bloqueio — o
+      // replay segue; se a verificação falhar, a invalidação normal age.
+      if (result.start_sig && cached.key.start_sig) {
+        metrics.sig_mismatch = result.start_sig !== cached.key.start_sig;
+        if (metrics.sig_mismatch) {
+          console.warn(
+            `[windup] aviso: assinatura da página inicial mudou (${cached.key.start_sig} → ${result.start_sig}) — replay segue (política leniente)`,
+          );
+        }
+      }
+
       if (result.ok) {
         await recordReplay(cached);
         metrics.result = "passed";
@@ -91,12 +105,12 @@ export async function runScenario(
       metrics.cache = "invalidated";
       const failureContext = `O plano anterior falhou na ação ${result.failure?.action_id}: ${result.failure?.message}`;
       const replanned = await generateAndExecute(scenario, planner, browser, metrics, failureContext);
-      if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!);
+      if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;
     }
 
     const generated = await generateAndExecute(scenario, planner, browser, metrics);
-    if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!);
+    if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
     metrics.duration_ms.total = Date.now() - startedMs;
@@ -112,7 +126,7 @@ async function generateAndExecute(
   browser: Browser,
   metrics: RunMetrics,
   failureContext?: string,
-): Promise<{ ok: boolean; plan?: Plan }> {
+): Promise<{ ok: boolean; plan?: Plan; start_sig?: string }> {
   const planningStart = Date.now();
   let generation: PlanGeneration;
   try {
@@ -152,5 +166,5 @@ async function generateAndExecute(
   }
 
   metrics.result = "passed";
-  return { ok: true, plan: generation.plan };
+  return { ok: true, plan: generation.plan, start_sig: generation.start_sig ?? result.start_sig ?? undefined };
 }

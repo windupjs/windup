@@ -52,6 +52,34 @@ program
     process.exitCode = ok ? 0 : 1;
   });
 
+program
+  .command("sig <url>")
+  .description("Calcula a assinatura estrutural de uma página (E1) — ferramenta de diagnóstico")
+  .option("--repeat <n>", "recalcula N vezes com re-navegação (teste de estabilidade)", "1")
+  .action(async (url: string, opts: { repeat: string }) => {
+    const { launchBrowser } = await import("./browser.js");
+    const browser = await launchBrowser();
+    try {
+      const repeat = Number.parseInt(opts.repeat, 10);
+      const sigs: string[] = [];
+      for (let i = 1; i <= repeat; i++) {
+        await browser.goto(url);
+        const deadline = Date.now() + 10_000;
+        while ((await browser.interactiveElementsRaw()).length === 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        const sig = await browser.pageSignature();
+        sigs.push(sig);
+        console.log(`[windup] ${i}/${repeat} ${sig}`);
+      }
+      const stable = new Set(sigs).size === 1;
+      if (repeat > 1) console.log(`[windup] estabilidade: ${stable ? "ESTÁVEL" : "INSTÁVEL"} (${new Set(sigs).size} sig(s) distinta(s))`);
+      process.exitCode = stable ? 0 : 1;
+    } finally {
+      await browser.close();
+    }
+  });
+
 const cache = program.command("cache").description("Gerencia o cache de trajetórias");
 cache
   .command("clear")
