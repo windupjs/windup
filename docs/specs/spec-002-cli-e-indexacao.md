@@ -87,7 +87,7 @@ Ordem relativa às fases E: P1 pode começar junto de E1; P2+ depende de E2 (map
 
 | Questão | Opções | Nota |
 |---|---|---|
-| Nome do pacote | Pesquisado em 2026-07-12: `rubberduck` ocupado (AOP tool deprecated, ~10 anos parado — cabível disputa via npm support), `rubber-duck` e `rubberducky` ocupados; `rubberduck-e2e`/`rubberduck-test`/`duckrunner` aparentemente livres; escopo `@rubberduck` a confirmar logado no npm | Plano: escopo próprio (`@rubberduck/cli` ou `@org/rubberduck`) + disputa pelo nome seco em paralelo. Atenção de marca: Rubberduck VBA domina buscas por "rubberduck testing" |
+| Nome do pacote | **Nome escolhido: Windup** (brinquedo de dar corda — dá corda uma vez [LLM planeja], anda sozinho [replay]; o pato de corda mantém a herança do RubberDuck no logo). Pesquisa 2026-07-12: npm `windup` ocupado por CSS framework abandonado (7 anos — cabível disputa); org `@windup` ocupada; GitHub org `windup` é da Red Hat (ferramenta de migração Java aposentada/rebatizada MTR — categoria distinta, risco baixo) | Plano: pacote `windupjs` ou `@windup-labs/*` + disputa pelo `windup` seco em paralelo; checar domínio (`windup.dev`, `getwindup.com`) e GitHub org alternativa (`windup-labs`) antes do P1. Descartados nesta pesquisa: rubberduck (ocupado), rubber-duck, rubberducky |
 | Formato do cenário | JSON atual vs YAML vs Gherkin-like | JSON até E3; a discussão real é junto com fragmentos (legibilidade) |
 | Parser AST | ts-morph vs oxc/swc | Decidir no P2 por benchmark de velocidade de scan |
 | Monorepos | workspace único vs índice por app | Adiar; detectar e avisar no `init` |
