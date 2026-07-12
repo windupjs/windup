@@ -43,10 +43,11 @@ program
   .command("run <cenario>")
   .description("Executa um cenário (usa cache se existir, senão planeja via Gemini)")
   .option("--no-cache", "ignora e não grava cache (mede o caminho LLM isoladamente)")
+  .option("--no-map", "não usa o mapa do site no prompt do planejador (A/B do E2)")
   .option("--repeat <n>", "executa N vezes em sequência", "1")
-  .action(async (cenario: string, opts: { cache: boolean; repeat: string }) => {
+  .action(async (cenario: string, opts: { cache: boolean; map: boolean; repeat: string }) => {
     const scenario = await loadScenario(cenario);
-    const planner = new GeminiPlanner();
+    const planner = new GeminiPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
     let failures = 0;
     for (let i = 1; i <= repeat; i++) {
@@ -62,8 +63,9 @@ program
 program
   .command("bench <cenario>")
   .description("Roda o protocolo completo de validação (doc 06) e imprime o comparativo C1–C5")
-  .action(async (cenario: string) => {
-    const ok = await runBench(cenario);
+  .option("--no-map", "não usa o mapa do site no prompt do planejador (A/B do E2)")
+  .action(async (cenario: string, opts: { map: boolean }) => {
+    const ok = await runBench(cenario, { useMap: opts.map });
     process.exitCode = ok ? 0 : 1;
   });
 

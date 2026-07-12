@@ -18,6 +18,29 @@ export interface ExecutionResult {
 }
 
 /**
+ * Coleta passiva para o mapa do site (E2): o executor já passa por cada
+ * página do fluxo; observar custa 1 evaluate por ação, zero rede/LLM.
+ * A coleta NUNCA pode derrubar uma execução — erros são engolidos.
+ */
+export interface StepCollector {
+  onPage(obs: { sig: string; url: string; title: string; interactive: string[] }): void;
+  onTransition(from: string, action: { type: string; selector: string }, to: string): void;
+}
+
+async function observePage(browser: Browser, sig: string, collector: StepCollector): Promise<void> {
+  try {
+    collector.onPage({
+      sig,
+      url: browser.url(),
+      title: await browser.title(),
+      interactive: await browser.interactiveElements(),
+    });
+  } catch {
+    // coleta é oportunista
+  }
+}
+
+/**
  * Sig da página inicial: espera o app renderizar (SPA: load não basta) antes
  * de assinar, senão a sig do DOM pré-render seria instável.
  */
@@ -86,7 +109,7 @@ const SLOWMO_MS = Number.parseInt(process.env.SLOWMO_MS ?? "0", 10) || 0;
  * Loop determinístico do doc 03: navega para start_url e executa as ações
  * do plano em ordem, verificando pós-condições após cada uma. Zero LLM.
  */
-export async function executePlan(browser: Browser, plan: Plan): Promise<ExecutionResult> {
+export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector): Promise<ExecutionResult> {
   const metrics: ActionMetrics[] = [];
 
   try {
@@ -101,6 +124,8 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
   }
 
   const startSig = await initialSignature(browser);
+  if (collector && startSig) await observePage(browser, startSig, collector);
+  let currentSig = startSig;
 
   for (const action of plan.actions) {
     const timeoutMs = action.timeout_ms ?? DEFAULT_TIMEOUT_MS;
@@ -146,6 +171,25 @@ export async function executePlan(browser: Browser, plan: Plan): Promise<Executi
         },
         start_sig: startSig,
       };
+    }
+
+    if (collector) {
+      try {
+        const sig = await browser.pageSignature();
+        if (sig && sig !== currentSig) {
+          await observePage(browser, sig, collector);
+          if (currentSig) {
+            collector.onTransition(
+              currentSig,
+              { type: action.type, selector: action.target?.selector ?? action.url ?? "" },
+              sig,
+            );
+          }
+          currentSig = sig;
+        }
+      } catch {
+        // coleta é oportunista
+      }
     }
 
     if (SLOWMO_MS > 0) await new Promise((r) => setTimeout(r, SLOWMO_MS));

@@ -20,9 +20,9 @@ const avg = (xs: number[]): number => (xs.length ? Math.round(xs.reduce((a, b) =
  * Protocolo de medição do doc 06 (Fases A, B e C) + critérios C1–C5.
  * Cada execução individual também grava seu runs/<ts>-<cenario>.json normal.
  */
-export async function runBench(scenarioId: string): Promise<boolean> {
+export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean } = {}): Promise<boolean> {
   const scenario = await loadScenario(scenarioId);
-  const planner = new GeminiPlanner();
+  const planner = new GeminiPlanner({ useMap: benchOpts.useMap });
 
   // ── Fase A — Geração (viabilidade do Gemini) ────────────────────────────
   console.log(`\n[bench] Fase A — 5 gerações com --no-cache (${scenarioId})`);
@@ -31,7 +31,7 @@ export async function runBench(scenarioId: string): Promise<boolean> {
   for (let i = 1; i <= 5; i++) {
     const m = await runScenario(scenario, planner, { useCache: false });
     console.log(
-      `[bench]   A${i}: ${m.result} llm_calls=${m.llm_calls} tokens=${m.tokens.input}/${m.tokens.output} ` +
+      `[bench]   A${i}: ${m.result} llm_calls=${m.llm_calls} tokens=${m.tokens.input}/${m.tokens.output} prompt_chars=${m.prompt_chars ?? "-"} ` +
         `custo=US$${m.estimated_cost_usd} total=${m.duration_ms.total}ms` +
         (m.failure ? ` [${m.failure.kind}] ${m.failure.message.slice(0, 80)}` : ""),
     );

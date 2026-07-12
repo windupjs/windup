@@ -1,0 +1,13 @@
+services:
+  windup:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file:
+      - path: ../.env
+        required: false
+    volumes:
+      # Sem o volume do .windup todo run e cache miss e a validacao de replay
+      # nao funciona (herdado do doc 05 da spike).
+      - ../.windup:/app/.windup
+      - ../scenarios:/app/scenarios:ro

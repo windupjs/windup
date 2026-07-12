@@ -91,6 +91,8 @@ export interface RunMetrics {
    * no cache (o replay segue mesmo assim); null quando não havia sig comparável.
    */
   sig_mismatch: boolean | null;
+  /** Tamanho do prompt de planejamento em chars (E2); null se não planejou. */
+  prompt_chars: number | null;
   tokens: { input: number; output: number };
   estimated_cost_usd: number;
   duration_ms: { total: number; planning: number; execution: number };

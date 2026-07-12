@@ -1,7 +1,9 @@
 import { launchBrowser, type Browser } from "./browser.js";
 import { getCached, invalidate, recordReplay, saveCached } from "./cache.js";
-import { executePlan, type ExecutionResult } from "./executor.js";
+import { getContext } from "./context.js";
+import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
+import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
 
 export interface PlanGeneration {
@@ -14,6 +16,8 @@ export interface PlanGeneration {
   semantic_retries: number;
   /** Assinatura da página inicial capturada no snapshot do planejamento (E1). */
   start_sig?: string;
+  /** Tamanho do prompt de planejamento em chars (exigência do critério E2). */
+  prompt_chars?: number;
 }
 
 /** Única fronteira com o LLM (implementada em planner.ts; fake nos testes). */
@@ -57,12 +61,21 @@ export async function runScenario(
     planning_mode: null,
     plan_semantic_retries: null,
     sig_mismatch: null,
+    prompt_chars: null,
     tokens: { input: 0, output: 0 },
     estimated_cost_usd: 0,
     duration_ms: { total: 0, planning: 0, execution: 0 },
     actions: [],
     result: "failed",
     failure: null,
+  };
+
+  // Coleta passiva do mapa (E2): sempre ligada — toda execução é coleta.
+  // O uso do mapa NO PROMPT é que é opcional (--no-map, no planejador).
+  const mapStore = await SiteMapStore.load(getContext().paths.mapFile);
+  const collector: StepCollector = {
+    onPage: (obs) => mapStore.upsertPage(obs),
+    onTransition: (from, action, to) => mapStore.recordTransition(from, action, to),
   };
 
   const browser = await launchBrowser();
@@ -73,7 +86,7 @@ export async function runScenario(
       metrics.cache = "hit";
       metrics.plan = cached.plan;
       const execStart = Date.now();
-      const result = await executePlan(browser, cached.plan);
+      const result = await executePlan(browser, cached.plan, collector);
       metrics.duration_ms.execution = Date.now() - execStart;
       metrics.actions = result.actions;
 
@@ -104,18 +117,19 @@ export async function runScenario(
       await invalidate(cached);
       metrics.cache = "invalidated";
       const failureContext = `O plano anterior falhou na ação ${result.failure?.action_id}: ${result.failure?.message}`;
-      const replanned = await generateAndExecute(scenario, planner, browser, metrics, failureContext);
+      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;
     }
 
-    const generated = await generateAndExecute(scenario, planner, browser, metrics);
+    const generated = await generateAndExecute(scenario, planner, browser, metrics, collector);
     if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens);
     await browser.close();
+    await mapStore.save();
     await writeRunMetrics(metrics);
   }
 }
@@ -125,6 +139,7 @@ async function generateAndExecute(
   planner: Planner,
   browser: Browser,
   metrics: RunMetrics,
+  collector?: StepCollector,
   failureContext?: string,
 ): Promise<{ ok: boolean; plan?: Plan; start_sig?: string }> {
   const planningStart = Date.now();
@@ -150,12 +165,13 @@ async function generateAndExecute(
   metrics.llm_model = generation.model;
   metrics.planning_mode = generation.planning_mode;
   metrics.plan_semantic_retries = generation.semantic_retries;
+  metrics.prompt_chars = generation.prompt_chars ?? null;
   metrics.tokens.input += generation.tokens.input;
   metrics.tokens.output += generation.tokens.output;
   metrics.plan = generation.plan;
 
   const execStart = Date.now();
-  const result: ExecutionResult = await executePlan(browser, generation.plan);
+  const result: ExecutionResult = await executePlan(browser, generation.plan, collector);
   metrics.duration_ms.execution += Date.now() - execStart;
   metrics.actions = result.actions;
 

@@ -5,19 +5,32 @@ import type { Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
 import { getContext } from "./context.js";
 
-/** Orçamento de contexto de página: ~8k tokens ≈ 32k chars (doc 03). */
+/**
+ * Orçamento COMBINADO de contexto (~8k tokens ≈ 32k chars, doc 03): quando o
+ * mapa do site contribui, a árvore da página inicial cede espaço para o mapa —
+ * o prompt total fica ≈ constante (crítico pela degeneração do flash).
+ */
 const PAGE_CONTEXT_MAX_CHARS = 32_000;
+const MAP_MAX_CHARS = 8_000;
 
 /** Modelo vem da config (windup.config.ts); env LLM_MODEL é override. */
 function MODEL(): string {
   return (process.env.LLM_MODEL ?? `${getContext().config.llm.provider}/${getContext().config.llm.model}`).replace(/^google\//, "");
 }
 
-function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], failureContext?: string): string {
+function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, failureContext?: string): string {
   // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
-  // Conhecimento site-específico só entra por hints do autor do cenário.
+  // Conhecimento site-específico só entra por hints do autor ou pelo mapa
+  // do site (observado em execuções — E2), nunca por código nosso.
   const hintsSection = scenario.hints?.length
     ? `\n# Dicas fornecidas pelo autor do cenário\n${scenario.hints.join("\n")}\n`
+    : "";
+  const knowledgeSection = siteKnowledge
+    ? `\n# Conhecimento do site (páginas já observadas em execuções anteriores)
+Para as páginas listadas abaixo, use EXATAMENTE os seletores listados; só infira \
+seletores quando a página não constar aqui.
+
+${siteKnowledge}\n`
     : "";
   return `Você é um planejador de automação de testes em browser. Gere um plano de ações JSON \
 que cumpra a tarefa abaixo. O plano será executado de forma DETERMINÍSTICA, ação por ação, \
@@ -69,7 +82,7 @@ URL esperada após a ação vai em expect.url (aceita glob).
 }
 
 LEMBRETE FINAL: a última ação do plano DEVE conter o campo "expect" comprovando a tarefa cumprida.
-${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
+${knowledgeSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
 Responda somente com o JSON do plano.`;
 }
 
@@ -81,6 +94,9 @@ export class GeminiPlanner implements Planner {
   // Preguiçoso de propósito: replays de cache nunca planejam, então não
   // devem exigir a chave do Gemini.
   private ai: GoogleGenAI | null = null;
+
+  /** useMap: false = A/B limpo sem o conhecimento do mapa no prompt (--no-map). */
+  constructor(private readonly opts: { useMap?: boolean } = {}) {}
 
   private client(): GoogleGenAI {
     if (!this.ai) {
@@ -120,14 +136,27 @@ export class GeminiPlanner implements Planner {
     await browser.goto(scenario.start_url);
     // Espera o app renderizar antes do snapshot (SPA: load não basta).
     await waitForAnyInteractive(browser);
-    const pageTree = (await browser.snapshotTree()).slice(0, PAGE_CONTEXT_MAX_CHARS);
-    const interactive = await browser.interactiveElements();
     const startSig = await browser.pageSignature();
+
+    // Fatia do mapa do site (E2): páginas alcançáveis a partir da inicial,
+    // priorizadas por casamento com a tarefa. A árvore cede espaço ao mapa
+    // para o prompt total ficar ≈ constante.
+    let siteKnowledge = "";
+    if (this.opts.useMap !== false) {
+      const { SiteMapStore } = await import("./sitemap.js");
+      const { getContext: ctx } = await import("./context.js");
+      const store = await SiteMapStore.load(ctx().paths.mapFile);
+      siteKnowledge = store.sliceForPrompt(startSig, scenario.task, MAP_MAX_CHARS);
+    }
+    const treeBudget = siteKnowledge ? PAGE_CONTEXT_MAX_CHARS - MAP_MAX_CHARS : PAGE_CONTEXT_MAX_CHARS;
+    const pageTree = (await browser.snapshotTree()).slice(0, treeBudget);
+    const interactive = await browser.interactiveElements();
 
     const tokens = { input: 0, output: 0 };
     let llmCalls = 0;
     let lastErrors: string[] = [];
-    let prompt = buildPrompt(scenario, pageTree, interactive, failureContext);
+    let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, failureContext);
+    const promptChars = prompt.length;
 
     // Dois níveis de retry, de natureza diferente:
     // - semântico (doc 03): plano reprovado na validação → 1 retry com o erro no prompt;
@@ -180,7 +209,7 @@ export class GeminiPlanner implements Planner {
         if (validation.ok) {
           plan.task = scenario.task;
           plan.generated_by = { model: MODEL(), at: new Date().toISOString() };
-          return { plan, llm_calls: llmCalls, model: MODEL(), planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig };
+          return { plan, llm_calls: llmCalls, model: MODEL(), planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
         }
         lastErrors = validation.errors;
         if (process.env.LOG_LEVEL === "debug") {
