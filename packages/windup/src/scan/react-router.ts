@@ -165,7 +165,7 @@ async function flatRoutes(dir: string): Promise<Array<{ route: string; file: str
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", ".next", ".git", "coverage", ".windup"]);
 const MAX_FILES = 2000;
 
-async function sourceFiles(projectRoot: string): Promise<string[]> {
+export async function sourceFiles(projectRoot: string): Promise<string[]> {
   const out: string[] = [];
   const roots = ["src", "app"].map((d) => path.join(projectRoot, d));
   const queue = (await Promise.all(roots.map(async (d) => ((await isDir(d)) ? [d] : [])))).flat();

@@ -19,8 +19,8 @@ export interface MapPage {
   title: string;
   /** Linhas no mesmo formato do prompt (tag id=... data-test=...). */
   interactive: string[];
-  /** Precedência de confiança: execution > crawl > static (SPEC-002). */
-  source: "static" | "crawl" | "execution";
+  /** Precedência de confiança: execution > crawl > static > llm (SPEC-002). */
+  source: "static" | "crawl" | "execution" | "llm";
   first_seen: string;
   last_seen: string;
   seen_count: number;
@@ -134,6 +134,37 @@ export class SiteMapStore {
   }
 
   /**
+   * Nó vindo do LLM-assist (P4): menor confiança de todas — chave própria,
+   * nunca sobrescreve nada; entra na fatia só quando nenhuma fonte melhor
+   * cobre a mesma url.
+   */
+  upsertLlmPage(route: string, elements: string[], file: string): void {
+    const sig = `llm:${createHash("sha256").update(route).digest("hex").slice(0, 16)}`;
+    const now = new Date().toISOString();
+    const existing = this.map.pages[sig];
+    if (existing) {
+      existing.interactive = elements;
+      existing.files = [file];
+      existing.last_seen = now;
+      existing.seen_count += 1;
+      existing.stale = false;
+    } else {
+      this.map.pages[sig] = {
+        urls_seen: [route],
+        url_pattern: `**${route}`,
+        title: "",
+        interactive: elements,
+        source: "llm",
+        first_seen: now,
+        last_seen: now,
+        seen_count: 1,
+        files: [file],
+        stale: false,
+      };
+    }
+  }
+
+  /**
    * P3: fontes alterados desde o último scan. Marca stale (a) os nós estáticos
    * afetados — que o scan --update re-indexa em seguida — e (b) os nós de
    * EXECUÇÃO da mesma url: o runtime observado pode ter mudado com o código,
@@ -232,18 +263,21 @@ export class SiteMapStore {
       used += block.length;
     }
 
-    // Nós estáticos (P2): entram no orçamento restante quando a execução ainda
-    // não cobriu a mesma url — precedência execution > static (SPEC-002).
-    const staticScored = Object.entries(this.map.pages)
-      .filter(([, p]) => p.source === "static" && !p.stale && !coveredPaths.has(p.url_pattern))
-      .map(([sig, page]) => ({ sig, page, score: score(page, terms) }))
-      .filter(({ score: s }) => s > 0)
-      .sort((a, b) => b.score - a.score);
-    for (const { sig, page } of staticScored) {
-      const block = this.formatPage(sig, page);
-      if (used + block.length > budgetChars) continue;
-      blocks.push(block);
-      used += block.length;
+    // Camadas de menor confiança entram no orçamento restante quando nenhuma
+    // fonte melhor cobre a mesma url: execution > static > llm (SPEC-002).
+    for (const tier of ["static", "llm"] as const) {
+      const tierScored = Object.entries(this.map.pages)
+        .filter(([, p]) => p.source === tier && !p.stale && !coveredPaths.has(p.url_pattern))
+        .map(([sig, page]) => ({ sig, page, score: score(page, terms) }))
+        .filter(({ score: s }) => s > 0)
+        .sort((a, b) => b.score - a.score);
+      for (const { sig, page } of tierScored) {
+        const block = this.formatPage(sig, page);
+        if (used + block.length > budgetChars) continue;
+        blocks.push(block);
+        coveredPaths.add(page.url_pattern);
+        used += block.length;
+      }
     }
 
     return blocks.join("\n\n");
@@ -255,11 +289,16 @@ export class SiteMapStore {
       .slice(0, 3)
       .map((t) => `- chega-se aqui com ${t.action.type} '${t.action.selector}' a partir de ${this.map.pages[t.from].url_pattern}`);
     const elements = page.interactive.slice(0, 30);
-    const provenance = page.source === "static" ? " (detectada no código-fonte; pode divergir do runtime)" : "";
+    const provenance =
+      page.source === "static"
+        ? " (detectada no código-fonte; pode divergir do runtime)"
+        : page.source === "llm"
+          ? " (inferida por IA do código-fonte; confiança baixa)"
+          : "";
     return [
       `## Página conhecida: ${page.url_pattern}${page.title ? ` — ${page.title}` : ""}${provenance}`,
       ...routes,
-      `Elementos interativos ${page.source === "static" ? "declarados" : "observados"}:`,
+      `Elementos interativos ${page.source === "execution" ? "observados" : "declarados"}:`,
       ...elements,
     ].join("\n");
   }

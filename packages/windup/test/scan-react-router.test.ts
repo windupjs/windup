@@ -44,7 +44,7 @@ describe("runScan with react-router", () => {
       paths: { ...createContext(FIXTURE).paths, mapFile: path.join(dataDir, "site-map.json") },
     });
 
-    const summary = await runScan();
+    const summary = await runScan({ assist: false });
     expect(summary.framework).toBe("react-router");
     expect(summary.routes).toBe(5);
     expect(summary.elements).toBeGreaterThan(5);

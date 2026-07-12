@@ -1,12 +1,14 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getContext } from "../context.js";
+import { estimateCostUsd } from "../metrics.js";
 import { SiteMapStore } from "../sitemap.js";
+import { runAssist, selectCandidates, type AssistCaller } from "./assist.js";
 import { extractElements, formatElement } from "./extract.js";
 import { collectRouteSources, indexNextRoutes, type StaticRoute } from "./nextjs.js";
-import { indexReactRouterRoutes } from "./react-router.js";
+import { indexReactRouterRoutes, sourceFiles } from "./react-router.js";
 
 const exec = promisify(execFile);
 
@@ -27,12 +29,13 @@ export interface ScanSummary {
   elements: number;
   mapFile: string;
   mode: "full" | "incremental";
+  assist: { calls: number; max_calls: number; est_cost_usd: number } | null;
 }
 
 /** Storage cap per page node; the prompt slice shows at most 30 anyway. */
 const MAX_ELEMENTS_PER_NODE = 150;
 
-export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSummary> {
+export async function runScan(opts: { update?: boolean; assist?: boolean; assistCaller?: AssistCaller } = {}): Promise<ScanSummary> {
   const ctx = getContext();
   const root = path.resolve(ctx.paths.root, ctx.config.scan?.root ?? ".");
   const framework = ctx.config.framework ?? (await detectFramework(root));
@@ -41,6 +44,7 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
   let routesCount = 0;
   let elementsCount = 0;
   let mode: "full" | "incremental" = "full";
+  let assistSummary: ScanSummary["assist"] = null;
 
   if (framework === "next" || framework === "react-router" || framework === "remix") {
     let routes = framework === "next" ? await indexNextRoutes(root) : await indexReactRouterRoutes(root);
@@ -86,6 +90,12 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
       console.log(`scan: ${droppedByCap} element(s) dropped by the ${MAX_ELEMENTS_PER_NODE}/page cap (prompt slices use at most 30/page anyway)`);
     }
 
+    // Camada 3 (P4): LLM-assist para o que as camadas estáticas não resolveram.
+    const assistEnabled = opts.assist !== false && (ctx.config.scan?.llmAssist?.enabled ?? true);
+    if (assistEnabled && mode === "full") {
+      assistSummary = await runAssistLayer(root, routes, sources, store, opts.assistCaller);
+    }
+
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;
   } else {
     console.log(
@@ -94,7 +104,68 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
   }
 
   await store.save();
-  return { framework, routes: routesCount, elements: elementsCount, mapFile: ctx.paths.mapFile, mode };
+  return { framework, routes: routesCount, elements: elementsCount, mapFile: ctx.paths.mapFile, mode, assist: assistSummary };
+}
+
+/** Seleciona candidatos, chama a LLM dentro do teto e grava o custo no ledger. */
+async function runAssistLayer(
+  root: string,
+  routes: StaticRoute[],
+  sources: Map<StaticRoute, string[]>,
+  store: SiteMapStore,
+  caller?: AssistCaller,
+): Promise<ScanSummary["assist"]> {
+  const ctx = getContext();
+  const maxCalls = ctx.config.scan?.llmAssist?.maxCalls ?? 20;
+
+  const coveredFiles = new Set<string>();
+  for (const route of routes) for (const f of sources.get(route) ?? route.files) coveredFiles.add(path.resolve(f));
+  const nodesWithoutElements = new Set<string>();
+  // (rotas cujo nó ficou sem elementos: os fontes valem uma segunda leitura via LLM)
+  for (const route of routes) {
+    const files = sources.get(route) ?? route.files;
+    let any = false;
+    for (const f of files) {
+      try {
+        if (extractElements(await readFile(f, "utf8")).length > 0) { any = true; break; }
+      } catch { /* ignore */ }
+    }
+    if (!any) for (const f of files) nodesWithoutElements.add(path.resolve(f));
+  }
+
+  const files: Array<{ file: string; content: string }> = [];
+  for (const file of await sourceFiles(root)) {
+    try {
+      files.push({ file: path.resolve(file), content: await readFile(file, "utf8") });
+    } catch { /* ignore */ }
+  }
+
+  const candidates = selectCandidates(files, coveredFiles, nodesWithoutElements);
+  if (candidates.length === 0) return { calls: 0, max_calls: maxCalls, est_cost_usd: 0 };
+
+  const outcome = await runAssist(candidates, caller);
+  for (const page of outcome.pages) {
+    store.upsertLlmPage(page.path, page.elements.slice(0, 150), page.file);
+  }
+
+  const cost = estimateCostUsd(outcome.tokens, outcome.model);
+  if (outcome.calls > 0) {
+    // Custo de IA do scan entra no MESMO ledger dos runs (windup costs).
+    await mkdir(ctx.paths.runsDir, { recursive: true });
+    const record = {
+      kind: "scan",
+      started_at: new Date().toISOString(),
+      llm_calls: outcome.calls,
+      llm_model: outcome.model,
+      tokens: outcome.tokens,
+      estimated_cost_usd: cost,
+      files_analyzed: Math.min(candidates.length, outcome.calls),
+      pages_inferred: outcome.pages.length,
+    };
+    const stamp = record.started_at.replace(/[:.]/g, "-");
+    await writeFile(path.join(ctx.paths.runsDir, `scan-${stamp}.json`), JSON.stringify(record, null, 2));
+  }
+  return { calls: outcome.calls, max_calls: maxCalls, est_cost_usd: cost };
 }
 
 /** Arquivos alterados desde o SHA (commits + staged + worktree); null se git indisponível. */

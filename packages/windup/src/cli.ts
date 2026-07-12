@@ -73,11 +73,13 @@ program
   .command("scan")
   .description("Statically index the project (routes + interactive elements) into the site map")
   .option("--update", "incremental: re-index only files changed since the last scan (git diff)")
-  .action(async (opts: { update?: boolean }) => {
+  .option("--no-assist", "skip the LLM-assist layer (static layers only, zero LLM cost)")
+  .action(async (opts: { update?: boolean; assist: boolean }) => {
     const { runScan } = await import("./scan/scan.js");
-    const summary = await runScan({ update: opts.update });
+    const summary = await runScan({ update: opts.update, assist: opts.assist });
     console.log(
-      `scan complete (${summary.mode}): framework=${summary.framework ?? "unknown"} routes=${summary.routes} elements=${summary.elements}`,
+      `scan complete (${summary.mode}): framework=${summary.framework ?? "unknown"} routes=${summary.routes} elements=${summary.elements}` +
+        (summary.assist ? `  assist=${summary.assist.calls}/${summary.assist.max_calls} calls ($${summary.assist.est_cost_usd})` : ""),
     );
     console.log(`site map: ${summary.mapFile}`);
   });
