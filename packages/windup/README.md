@@ -43,6 +43,16 @@ import { run } from "windupjs";
 const result = await run("checkout");   // RunMetrics: result, llm_calls, custo, ações
 ```
 
+## Integração com vitest/jest
+
+```ts
+// e2e/windup.test.ts
+import { windupSuite } from "windupjs/vitest";
+await windupSuite();   // um it() por cenário, com report nativo do runner
+```
+
+Ou caso a caso: `it("checkout", () => windupTest("checkout"))`. Timeout por cenário e filtro via opções.
+
 ## Como funciona
 
 Plano é **dado, não programa**: JSON validado por schema, executado deterministicamente com verificação de pós-condições após cada ação. Falha de verificação invalida o cache e re-planeja sozinho. Toda execução alimenta um **mapa do site** que dá contexto real ao planejador — e o `scan` popula esse mapa direto do seu código antes do primeiro run. O motor não contém conhecimento de nenhum site específico.

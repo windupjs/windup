@@ -1,6 +1,6 @@
 {
   "name": "windupjs",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Windup — testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho",
   "type": "module",
   "license": "MIT",
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./vitest": {
+      "types": "./dist/adapters/vitest.d.ts",
+      "import": "./dist/adapters/vitest.js"
     }
   },
   "files": [
@@ -61,5 +65,13 @@
     "playwright-alternative",
     "natural-language",
     "ai-testing"
-  ]
+  ],
+  "peerDependencies": {
+    "vitest": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
 }
