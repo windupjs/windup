@@ -17,6 +17,14 @@ describe("indexReactRouterRoutes", () => {
     expect(paths).toEqual(["/about", "/dashboard", "/login", "/orders/:id", "/settings"]);
   });
 
+  it("ignores path: keys in non-route configs (menus, API endpoints)", async () => {
+    const routes = await indexReactRouterRoutes(FIXTURE);
+    const paths = routes.map((r) => r.route);
+    expect(paths).not.toContain("/reports/sales");
+    expect(paths).not.toContain("/admin/users");
+    expect(paths).not.toContain("/api/v1/orders");
+  });
+
   it("links each route to its component file (element/lazy resolution)", async () => {
     const routes = await indexReactRouterRoutes(FIXTURE);
     const byRoute = Object.fromEntries(routes.map((r) => [r.route, r.files]));

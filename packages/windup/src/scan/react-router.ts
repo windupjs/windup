@@ -66,17 +66,22 @@ export async function indexReactRouterRoutes(projectRoot: string): Promise<Stati
       add(routePath, files);
     }
 
-    // 2) object routes: path: "..." (+ element/Component/lazy nearby, best effort)
+    // 2) object routes: path: "..." — only counted when the surrounding window
+    //    carries a route trait (element/Component/lazy/children/index/loader).
+    //    Plain `path:` keys in menu/breadcrumb/API configs are NOT routes.
     for (const m of source.matchAll(/\bpath\s*:\s*(?:"([^"]+)"|'([^']+)')/g)) {
       const routePath = m[1] ?? m[2];
+      const start = Math.max(0, (m.index ?? 0) - 300);
+      const window = source.slice(start, (m.index ?? 0) + 400);
+      if (!/\b(element|Component|lazy|children|index|loader|errorElement|action)\s*:/.test(window)) continue;
       const files = [file];
-      const window = source.slice(m.index ?? 0, (m.index ?? 0) + 400);
+      const forward = source.slice(m.index ?? 0, (m.index ?? 0) + 400);
       const el =
-        window.match(/\belement\s*:\s*<\s*([A-Z][A-Za-z0-9_]*)/) ??
-        window.match(/\bComponent\s*:\s*([A-Z][A-Za-z0-9_]*)/);
+        forward.match(/\belement\s*:\s*<\s*([A-Z][A-Za-z0-9_]*)/) ??
+        forward.match(/\bComponent\s*:\s*([A-Z][A-Za-z0-9_]*)/);
       const comp = el && (await resolveBase(imports.get(el[1])));
       if (comp) files.push(comp);
-      const lazy = window.match(/import\(\s*["']([^"']+)["']\s*\)/);
+      const lazy = forward.match(/import\(\s*["']([^"']+)["']\s*\)/);
       if (lazy) {
         const resolved = await resolveImport(lazy[1], file, projectRoot);
         if (resolved) files.push(resolved);

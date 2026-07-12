@@ -29,6 +29,9 @@ export interface ScanSummary {
   mode: "full" | "incremental";
 }
 
+/** Storage cap per page node; the prompt slice shows at most 30 anyway. */
+const MAX_ELEMENTS_PER_NODE = 150;
+
 export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSummary> {
   const ctx = getContext();
   const root = path.resolve(ctx.paths.root, ctx.config.scan?.root ?? ".");
@@ -60,6 +63,7 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
       console.log("scan --update: no previous scan recorded — running a full scan");
     }
 
+    let droppedByCap = 0;
     for (const route of routes) {
       const files = sources.get(route) ?? route.files;
       const lines: string[] = [];
@@ -67,12 +71,19 @@ export async function runScan(opts: { update?: boolean } = {}): Promise<ScanSumm
         try {
           lines.push(...extractElements(await readFile(file, "utf8")).map(formatElement));
         } catch {
-          // fonte ilegível não derruba o scan
+          // unreadable source never breaks a scan
         }
       }
-      store.upsertStaticPage(route.route, [...new Set(lines)], files);
+      // Honest accounting: store and count deduped lines, capped per node.
+      const unique = [...new Set(lines)];
+      const capped = unique.slice(0, MAX_ELEMENTS_PER_NODE);
+      droppedByCap += unique.length - capped.length;
+      store.upsertStaticPage(route.route, capped, files);
       routesCount += 1;
-      elementsCount += lines.length;
+      elementsCount += capped.length;
+    }
+    if (droppedByCap > 0) {
+      console.log(`scan: ${droppedByCap} element(s) dropped by the ${MAX_ELEMENTS_PER_NODE}/page cap (prompt slices use at most 30/page anyway)`);
     }
 
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;

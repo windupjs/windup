@@ -8,5 +8,8 @@
     "typecheck": "npm -w packages/windup run typecheck",
     "test": "npm -w packages/windup test",
     "build": "npm -w packages/windup run build"
+  },
+  "devDependencies": {
+    "windupjs": "^0.3.0"
   }
 }
