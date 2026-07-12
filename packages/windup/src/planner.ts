@@ -99,9 +99,10 @@ ${interactive.join("\n")}
 a partir da tarefa e das convenções comuns da web (ids/names semânticos, data-test). \
 Prefira seletores estáveis.
 - Toda ação click/fill/wait_for exige target.selector E target.description (descrição humana do elemento).
-- fill usa "value" com o texto literal — exceto credenciais/segredos: se a tarefa ou o \
-Manifesto do projeto definirem a conta, use "value_ref": "ENV:NOME_DA_VARIAVEL" (e NÃO \
-inclua "value"), mesmo que os valores apareçam na página.
+- fill usa "value" com o texto literal. Use "value_ref": "ENV:NOME" (sem "value") APENAS \
+quando a tarefa, as dicas ou o Manifesto do projeto mencionarem explicitamente esse ENV — \
+NUNCA invente nomes de variável de ambiente. Com ENV definido para uma conta citada, o \
+value_ref tem precedência mesmo que a página exiba os valores.
 - Ações que causam navegação devem ter "expect" com "url" (glob, ex.: "**/inventory.html") \
 e/ou "selector" da página de destino. A ÚLTIMA ação do plano OBRIGATORIAMENTE tem o campo "expect" \
 que comprove que a tarefa foi cumprida — a verificação final é o "expect" da última ação, \
@@ -255,6 +256,19 @@ export class GeminiPlanner implements Planner {
 
       if (plan) {
         const validation = validatePlan(plan);
+        // value_ref inventado é o erro mais caro (só estoura em runtime):
+        // valida contra os ENVs realmente mencionados no input.
+        if (validation.ok) {
+          const allowed = allowedEnvRefs(scenario);
+          for (const action of plan.actions) {
+            if (action.value_ref && !allowed.has(action.value_ref)) {
+              validation.ok = false;
+              validation.errors.push(
+                `action ${action.id}: value_ref "${action.value_ref}" não foi definido pela tarefa, dicas ou manifesto — use o valor literal da tarefa ou um ENV existente`,
+              );
+            }
+          }
+        }
         if (validation.ok) {
           plan.task = scenario.task;
           plan.generated_by = { model: MODEL(), at: new Date().toISOString() };
@@ -370,6 +384,20 @@ export function normalizeActions(data: unknown): unknown {
     }
   }
   return data;
+}
+
+/** ENVs legitimamente utilizáveis: os citados na tarefa/hints + os do manifesto. */
+function allowedEnvRefs(scenario: Scenario): Set<string> {
+  const allowed = new Set<string>();
+  const texts = [scenario.task, ...(scenario.hints ?? [])];
+  const credentials = getContext().config.context?.credentials ?? {};
+  for (const fields of Object.values(credentials)) {
+    for (const v of Object.values(fields)) texts.push(v);
+  }
+  for (const text of texts) {
+    for (const m of text.matchAll(/ENV:[A-Z0-9_]+/g)) allowed.add(m[0]);
+  }
+  return allowed;
 }
 
 async function waitForAnyInteractive(browser: Browser, timeoutMs = 10_000): Promise<void> {
