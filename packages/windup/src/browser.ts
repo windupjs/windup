@@ -1,4 +1,5 @@
-import { chromium, type Browser as PWBrowser, type BrowserContext, type Page } from "playwright";
+import { chromium, type Browser as PWBrowser, type BrowserContext, type Page } from "playwright-core";
+import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
 import { computeSignature, type RawElement } from "./signature.js";
 
 /**
@@ -145,11 +146,22 @@ class PlaywrightSession implements Browser {
 
 let engine: Promise<PWBrowser> | null = null;
 
-function getEngine(): Promise<PWBrowser> {
-  engine ??= chromium.launch({
+function launchOptions() {
+  return {
     headless: process.env.HEADLESS !== "false",
     ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
     args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
+  };
+}
+
+function getEngine(): Promise<PWBrowser> {
+  // Lazy fallback for --ignore-scripts installs: if the Chromium binary is
+  // missing, download it once and retry — `npm i -D windupjs` must be enough.
+  engine ??= chromium.launch(launchOptions()).catch(async (err) => {
+    if (isMissingBrowserError(err) && installChromium("first run")) {
+      return chromium.launch(launchOptions());
+    }
+    throw err;
   });
   return engine;
 }

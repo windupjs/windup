@@ -23,7 +23,7 @@ Cenário = JSON com a tarefa em linguagem natural:
 }
 ```
 
-Requisitos: Node ≥ 20, `GOOGLE_GENERATIVE_AI_API_KEY` num `.env` (só para planejar; replays não usam LLM) e um Chromium para o Playwright — rode `npx playwright install chromium` uma vez, ou aponte `CHROME_PATH` para um Chrome/Chromium já instalado.
+Requisitos: Node ≥ 20 e `GOOGLE_GENERATIVE_AI_API_KEY` num `.env` (só para planejar; replays não usam LLM). O Chromium é baixado automaticamente no install (uma vez, cache da máquina); para usar um Chrome existente aponte `CHROME_PATH`, ou pule o download com `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
 
 ## Comandos
 
