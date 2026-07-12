@@ -18,5 +18,13 @@ export async function loadScenario(id: string): Promise<Scenario> {
   if (scenario.hints !== undefined && (!Array.isArray(scenario.hints) || scenario.hints.some((h) => typeof h !== "string"))) {
     throw new Error(`Cenário "${id}" inválido: hints deve ser uma lista de strings`);
   }
+  // start_url relativo ("/login") resolve contra a baseUrl da config.
+  if (scenario.start_url.startsWith("/")) {
+    const base = getContext().config.baseUrl;
+    if (!base) {
+      throw new Error(`Cenário "${id}": start_url relativo ("${scenario.start_url}") exige baseUrl no windup.config`);
+    }
+    scenario.start_url = new URL(scenario.start_url, base).toString();
+  }
   return scenario;
 }

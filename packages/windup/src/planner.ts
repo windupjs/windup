@@ -3,10 +3,15 @@ import type { Browser } from "./browser.js";
 import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
 import type { Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
+import { getContext } from "./context.js";
 
 /** Orçamento de contexto de página: ~8k tokens ≈ 32k chars (doc 03). */
 const PAGE_CONTEXT_MAX_CHARS = 32_000;
-const MODEL = (process.env.LLM_MODEL ?? "google/gemini-2.5-flash").replace(/^google\//, "");
+
+/** Modelo vem da config (windup.config.ts); env LLM_MODEL é override. */
+function MODEL(): string {
+  return (process.env.LLM_MODEL ?? `${getContext().config.llm.provider}/${getContext().config.llm.model}`).replace(/^google\//, "");
+}
 
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], failureContext?: string): string {
   // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
@@ -90,7 +95,7 @@ export class GeminiPlanner implements Planner {
 
   private async callGemini(ai: GoogleGenAI, prompt: string, seed: number) {
     return ai.models.generateContent({
-      model: MODEL,
+      model: MODEL(),
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -174,8 +179,8 @@ export class GeminiPlanner implements Planner {
         const validation = validatePlan(plan);
         if (validation.ok) {
           plan.task = scenario.task;
-          plan.generated_by = { model: MODEL, at: new Date().toISOString() };
-          return { plan, llm_calls: llmCalls, model: MODEL, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig };
+          plan.generated_by = { model: MODEL(), at: new Date().toISOString() };
+          return { plan, llm_calls: llmCalls, model: MODEL(), planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig };
         }
         lastErrors = validation.errors;
         if (process.env.LOG_LEVEL === "debug") {

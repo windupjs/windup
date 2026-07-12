@@ -7,16 +7,24 @@ export { GeminiPlanner } from "./planner.js";
 export { loadScenario } from "./scenario.js";
 export { clearCache } from "./cache.js";
 export { runBench } from "./bench.js";
-export { createContext, getContext, setContext, type WindupContext, type WindupPaths } from "./context.js";
+export { createContext, createContextFromConfig, getContext, setContext, type WindupContext, type WindupPaths } from "./context.js";
+export { defineConfig, loadWindupConfig, type WindupConfig, type LoadedConfig } from "./config.js";
+export { computeSignature, type RawElement } from "./signature.js";
 export type { Scenario, Plan, Action, RunMetrics, CacheEntry, FailureKind } from "./types.js";
 
+import { createContextFromConfig, setContext } from "./context.js";
 import { GeminiPlanner } from "./planner.js";
 import { runScenario, type RunOptions } from "./runner.js";
 import { loadScenario } from "./scenario.js";
 import type { RunMetrics } from "./types.js";
 
-/** Executa um cenário pelo id (arquivo em scenariosDir) — atalho da API. */
-export async function run(scenarioId: string, opts: Partial<RunOptions> = {}): Promise<RunMetrics> {
+/**
+ * Executa um cenário pelo id (arquivo em scenariosDir) — atalho da API para
+ * integração com runners (vitest/jest). Resolve o windup.config.* a partir
+ * de opts.cwd (default: process.cwd()).
+ */
+export async function run(scenarioId: string, opts: Partial<RunOptions> & { cwd?: string } = {}): Promise<RunMetrics> {
+  setContext(await createContextFromConfig(opts.cwd));
   const scenario = await loadScenario(scenarioId);
   return runScenario(scenario, new GeminiPlanner(), { useCache: opts.useCache ?? true });
 }

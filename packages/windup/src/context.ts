@@ -1,12 +1,10 @@
 import path from "node:path";
+import { DEFAULT_CONFIG, loadWindupConfig, type WindupConfig } from "./config.js";
 
 /**
- * Contexto de execução do Windup: raiz do projeto do usuário e caminhos
- * derivados. Substitui os paths por import.meta.dirname da spike, que
- * quebrariam sob build (dist/) e sob npx em projeto externo.
- *
- * No M2 (P1) o contexto passa a ser resolvido a partir do windup.config.ts;
- * por ora deriva do cwd com overrides por env (usados pelos testes).
+ * Contexto de execução do Windup: config resolvida + raiz do projeto do
+ * usuário e caminhos derivados. Substitui os paths por import.meta.dirname
+ * da spike, que quebrariam sob build (dist/) e sob npx em projeto externo.
  */
 export interface WindupPaths {
   root: string;
@@ -22,16 +20,22 @@ export interface WindupPaths {
 
 export interface WindupContext {
   paths: WindupPaths;
+  config: WindupConfig;
 }
 
-export function createContext(root: string = process.cwd(), opts: { scenariosDir?: string } = {}): WindupContext {
+export function createContext(
+  root: string = process.cwd(),
+  opts: { scenariosDir?: string; config?: WindupConfig } = {},
+): WindupContext {
   const dataDir = path.join(root, ".windup");
+  const config = opts.config ?? DEFAULT_CONFIG;
   return {
+    config,
     paths: {
       root,
       scenariosDir: path.resolve(
         root,
-        opts.scenariosDir ?? process.env.WINDUP_SCENARIOS_DIR ?? "scenarios",
+        opts.scenariosDir ?? process.env.WINDUP_SCENARIOS_DIR ?? config.scenarios,
       ),
       cacheDir: process.env.WINDUP_CACHE_DIR
         ? path.resolve(process.env.WINDUP_CACHE_DIR)
@@ -40,6 +44,12 @@ export function createContext(root: string = process.cwd(), opts: { scenariosDir
       mapFile: path.join(dataDir, "map", "site-map.json"),
     },
   };
+}
+
+/** Carrega windup.config.* (subindo a árvore) e monta o contexto a partir dele. */
+export async function createContextFromConfig(cwd: string = process.cwd()): Promise<WindupContext> {
+  const { config, root } = await loadWindupConfig(cwd);
+  return createContext(root, { config });
 }
 
 let current: WindupContext | null = null;

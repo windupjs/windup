@@ -27,11 +27,14 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.6.0",
+    "@clack/prompts": "^1.7.0",
     "@google/genai": "^2.11.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "c12": "^4.0.0-beta.5",
     "commander": "^14.0.3",
     "dotenv": "^17.4.2",
+    "jiti": "^2.7.0",
     "picomatch": "^4.0.5"
   },
   "devDependencies": {

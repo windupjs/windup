@@ -12,6 +12,21 @@ const program = new Command();
 
 program.name("windup").description("Windup — testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho");
 
+// Todos os comandos (menos init) resolvem windup.config.* e montam o contexto.
+program.hook("preAction", async (_this, actionCommand) => {
+  if (actionCommand.name() === "init") return;
+  const { createContextFromConfig, setContext } = await import("./context.js");
+  setContext(await createContextFromConfig());
+});
+
+program
+  .command("init")
+  .description("Cria windup.config.ts, .windup/ e um cenário de exemplo")
+  .action(async () => {
+    const { runInit } = await import("./init.js");
+    await runInit();
+  });
+
 function printRun(metrics: RunMetrics, file: string | null = null): void {
   const status = metrics.result === "passed" ? "PASSOU" : "FALHOU";
   console.log(
