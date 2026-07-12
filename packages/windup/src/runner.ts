@@ -2,6 +2,7 @@ import { launchBrowser, type Browser } from "./browser.js";
 import { getCached, invalidate, recordReplay, saveCached } from "./cache.js";
 import { getContext } from "./context.js";
 import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
+import { expandPlan, loadFragments } from "./fragments.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
@@ -85,8 +86,25 @@ export async function runScenario(
     if (cached) {
       metrics.cache = "hit";
       metrics.plan = cached.plan;
+
+      // E3: o cache guarda o plano COM referências { use } (fragmento
+      // atualizado propaga); a expansão acontece a cada execução.
+      let expandedPlan;
+      try {
+        expandedPlan = expandPlan(cached.plan, await loadFragments());
+      } catch (err) {
+        // Fragmento removido/renomeado: plano cacheado ficou órfão →
+        // invalida e re-planeja, como numa falha de verificação.
+        await invalidate(cached);
+        metrics.cache = "invalidated";
+        const context = `O plano cacheado ficou inválido: ${err instanceof Error ? err.message : err}`;
+        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context);
+        if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
+        return metrics;
+      }
+
       const execStart = Date.now();
-      const result = await executePlan(browser, cached.plan, collector);
+      const result = await executePlan(browser, expandedPlan, collector);
       metrics.duration_ms.execution = Date.now() - execStart;
       metrics.actions = result.actions;
 
@@ -170,8 +188,20 @@ async function generateAndExecute(
   metrics.tokens.output += generation.tokens.output;
   metrics.plan = generation.plan;
 
+  let expandedPlan;
+  try {
+    expandedPlan = expandPlan(generation.plan, await loadFragments());
+  } catch (err) {
+    metrics.failure = {
+      kind: "plan_invalid",
+      action_id: null,
+      message: err instanceof Error ? err.message : String(err),
+    };
+    return { ok: false };
+  }
+
   const execStart = Date.now();
-  const result: ExecutionResult = await executePlan(browser, generation.plan, collector);
+  const result: ExecutionResult = await executePlan(browser, expandedPlan, collector);
   metrics.duration_ms.execution += Date.now() - execStart;
   metrics.actions = result.actions;
 

@@ -18,7 +18,7 @@ function MODEL(): string {
   return (process.env.LLM_MODEL ?? `${getContext().config.llm.provider}/${getContext().config.llm.model}`).replace(/^google\//, "");
 }
 
-function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, failureContext?: string): string {
+function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string): string {
   // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
   // Conhecimento site-específico só entra por hints do autor ou pelo mapa
   // do site (observado em execuções — E2), nunca por código nosso.
@@ -31,6 +31,14 @@ Para as páginas listadas abaixo, use EXATAMENTE os seletores listados; só infi
 seletores quando a página não constar aqui.
 
 ${siteKnowledge}\n`
+    : "";
+  const fragmentsSection = fragmentsCatalog
+    ? `\n# Fragmentos disponíveis (blocos de ações prontos, já testados)
+Quando um fragmento cobrir parte da tarefa, use UMA ação \
+{ "id": "aN", "type": "use", "use": "<fragment_id>" } no lugar dessas ações — \
+NÃO regenere as ações que o fragmento já cobre.
+
+${fragmentsCatalog}\n`
     : "";
   return `Você é um planejador de automação de testes em browser. Gere um plano de ações JSON \
 que cumpra a tarefa abaixo. O plano será executado de forma DETERMINÍSTICA, ação por ação, \
@@ -82,7 +90,7 @@ URL esperada após a ação vai em expect.url (aceita glob).
 }
 
 LEMBRETE FINAL: a última ação do plano DEVE conter o campo "expect" comprovando a tarefa cumprida.
-${knowledgeSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
+${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
 Responda somente com o JSON do plano.`;
 }
 
@@ -152,10 +160,15 @@ export class GeminiPlanner implements Planner {
     const pageTree = (await browser.snapshotTree()).slice(0, treeBudget);
     const interactive = await browser.interactiveElements();
 
+    // Catálogo de fragmentos (E3): id + descrição + pós-condição, nunca as ações.
+    const { loadFragments, formatCatalog } = await import("./fragments.js");
+    const fragments = await loadFragments();
+    const fragmentsCatalog = fragments.length ? formatCatalog(fragments) : undefined;
+
     const tokens = { input: 0, output: 0 };
     let llmCalls = 0;
     let lastErrors: string[] = [];
-    let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, failureContext);
+    let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, fragmentsCatalog, failureContext);
     const promptChars = prompt.length;
 
     // Dois níveis de retry, de natureza diferente:
@@ -292,6 +305,12 @@ export function normalizeActions(data: unknown): unknown {
       case "goto":
         delete action.value;
         delete action.value_ref;
+        break;
+      case "use":
+        delete action.value;
+        delete action.value_ref;
+        delete action.url;
+        delete action.target;
         break;
     }
   }

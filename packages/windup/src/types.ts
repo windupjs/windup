@@ -1,4 +1,4 @@
-export type ActionType = "goto" | "click" | "fill" | "wait_for";
+export type ActionType = "goto" | "click" | "fill" | "wait_for" | "use";
 
 export interface ActionTarget {
   selector: string;
@@ -23,8 +23,25 @@ export interface Action {
   value?: string;
   value_ref?: string;
   url?: string;
+  /** type=use: id do fragmento a expandir inline (E3). */
+  use?: string;
   expect?: Expect;
   timeout_ms?: number;
+}
+
+/**
+ * Fragmento de trajetória (SPEC-001, componente 2): sub-trajetória nomeada e
+ * reutilizável. Vive versionado no repo do usuário (é conhecimento curado),
+ * ao contrário do cache. O plano referencia { type: "use", use: "<id>" } e o
+ * runner expande inline antes de executar.
+ */
+export interface Fragment {
+  fragment_id: string;
+  description: string;
+  /** Documentação dos segredos/parâmetros (as ações usam value_ref ENV:*). */
+  params?: Record<string, string>;
+  actions: Action[];
+  postcondition?: Expect;
 }
 
 export interface Plan {

@@ -109,6 +109,18 @@ program
     }
   });
 
+const fragment = program.command("fragment").description("Gerencia fragmentos de trajetória (blocos reutilizáveis)");
+fragment
+  .command("extract <cenario> <range>")
+  .description("Promove um trecho de plano cacheado a fragmento (ex.: windup fragment extract login a1..a3 --id login-padrao --description 'Login padrão')")
+  .requiredOption("--id <id>", "id do fragmento (kebab-case)")
+  .requiredOption("--description <desc>", "descrição humana (vai ao prompt do planejador)")
+  .action(async (cenario: string, range: string, opts: { id: string; description: string }) => {
+    const { extractFragment } = await import("./fragments.js");
+    const file = await extractFragment(cenario, range, opts);
+    console.log(`[windup] fragmento criado: ${file} (commite-o — é conhecimento curado do projeto)`);
+  });
+
 const cache = program.command("cache").description("Gerencia o cache de trajetórias");
 cache
   .command("clear")

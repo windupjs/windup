@@ -27,7 +27,7 @@ export const PLAN_JSON_SCHEMA = {
         required: ["id", "type"],
         properties: {
           id: { type: "string", pattern: "^a[0-9]+$" },
-          type: { enum: ["goto", "click", "fill", "wait_for"] },
+          type: { enum: ["goto", "click", "fill", "wait_for", "use"] },
           target: {
             type: "object",
             required: ["selector", "description"],
@@ -39,6 +39,7 @@ export const PLAN_JSON_SCHEMA = {
           value: { type: "string" },
           value_ref: { type: "string", pattern: "^ENV:[A-Z0-9_]+$" },
           url: { type: "string", format: "uri" },
+          use: { type: "string" },
           expect: {
             type: "object",
             properties: {
@@ -81,7 +82,7 @@ export const PLAN_GEMINI_SCHEMA = {
         required: ["id", "type"],
         properties: {
           id: { type: "string" },
-          type: { type: "string", enum: ["goto", "click", "fill", "wait_for"] },
+          type: { type: "string", enum: ["goto", "click", "fill", "wait_for", "use"] },
           target: {
             type: "object",
             required: ["selector", "description"],
@@ -93,6 +94,7 @@ export const PLAN_GEMINI_SCHEMA = {
           value: { type: "string" },
           value_ref: { type: "string" },
           url: { type: "string" },
+          use: { type: "string" },
           expect: {
             type: "object",
             properties: {
@@ -151,6 +153,9 @@ export function validatePlan(data: unknown): ValidationResult {
     if (action.type === "goto" && !action.url) {
       errors.push(`${where}: type=goto exige url`);
     }
+    if (action.type === "use" && !action.use) {
+      errors.push(`${where}: type=use exige o campo use com o id do fragmento`);
+    }
     if (action.type === "fill") {
       const hasValue = action.value !== undefined;
       const hasRef = action.value_ref !== undefined;
@@ -162,7 +167,8 @@ export function validatePlan(data: unknown): ValidationResult {
 
   const last = plan.actions[plan.actions.length - 1];
   const lastExpect = last.expect ?? {};
-  if (!lastExpect.selector && !lastExpect.url && !lastExpect.selector_value) {
+  // type=use termina em fragmento cuja última ação carrega a própria pós-condição.
+  if (last.type !== "use" && !lastExpect.selector && !lastExpect.url && !lastExpect.selector_value) {
     errors.push(`ação ${last.id}: a última ação do plano exige expect (selector, url ou selector_value)`);
   }
 
