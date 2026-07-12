@@ -1,0 +1,5 @@
+{
+  "scenario_id": "saucedemo-checkout",
+  "start_url": "https://www.saucedemo.com",
+  "task": "No saucedemo.com, logar com o usuário standard_user e a senha referenciada pela variável de ambiente SAUCE_PASSWORD (no plano, use value_ref \"ENV:SAUCE_PASSWORD\" no campo de senha em vez do valor literal), adicionar o item 'Sauce Labs Backpack' ao carrinho, ir ao carrinho, ir ao checkout, preencher nome João, sobrenome Silva, CEP 01000-000, continuar, finalizar a compra e verificar a mensagem de pedido concluído (texto 'Thank you for your order')."
+}

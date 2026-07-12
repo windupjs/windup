@@ -1,0 +1,22 @@
+/**
+ * API programática do Windup — a CLI é uma casca fina sobre isto.
+ * Completada no P1 (M2) com loadConfig/defineConfig; o núcleo já é público.
+ */
+export { runScenario, type Planner, type RunOptions, type PlanGeneration } from "./runner.js";
+export { GeminiPlanner } from "./planner.js";
+export { loadScenario } from "./scenario.js";
+export { clearCache } from "./cache.js";
+export { runBench } from "./bench.js";
+export { createContext, getContext, setContext, type WindupContext, type WindupPaths } from "./context.js";
+export type { Scenario, Plan, Action, RunMetrics, CacheEntry, FailureKind } from "./types.js";
+
+import { GeminiPlanner } from "./planner.js";
+import { runScenario, type RunOptions } from "./runner.js";
+import { loadScenario } from "./scenario.js";
+import type { RunMetrics } from "./types.js";
+
+/** Executa um cenário pelo id (arquivo em scenariosDir) — atalho da API. */
+export async function run(scenarioId: string, opts: Partial<RunOptions> = {}): Promise<RunMetrics> {
+  const scenario = await loadScenario(scenarioId);
+  return runScenario(scenario, new GeminiPlanner(), { useCache: opts.useCache ?? true });
+}
