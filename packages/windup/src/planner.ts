@@ -18,10 +18,42 @@ function MODEL(): string {
   return (process.env.LLM_MODEL ?? `${getContext().config.llm.provider}/${getContext().config.llm.model}`).replace(/^google\//, "");
 }
 
+/** Cap do manifesto no prompt (E4): ~1k tokens; disciplina de orçamento do mapa. */
+const MANIFEST_MAX_CHARS = 4_000;
+
+/**
+ * E4 — manifesto do projeto (SPEC-001 componente 3): a seção `context` do
+ * windup.config.ts vira contexto do planejador. É a generalização dos hints
+ * para nível de projeto: conhecimento entra por INPUT do time, nunca por
+ * código nosso (doc 07). Exportada para teste.
+ */
+export function buildManifestSection(): string {
+  const manifest = getContext().config.context;
+  if (!manifest) return "";
+  const parts: string[] = [];
+  if (manifest.conventions?.length) {
+    parts.push(`Convenções do site:\n${manifest.conventions.map((c) => `- ${c}`).join("\n")}`);
+  }
+  if (manifest.credentials && Object.keys(manifest.credentials).length) {
+    const lines = Object.entries(manifest.credentials).map(
+      ([account, fields]) => `- conta "${account}": ${Object.entries(fields).map(([k, v]) => `${k} → ${v}`).join(", ")}`,
+    );
+    parts.push(
+      `Credenciais disponíveis — quando a tarefa citar uma dessas contas, os fills correspondentes DEVEM usar "value_ref" com o ENV indicado (nunca "value"), MESMO que a página exiba credenciais em texto — o manifesto tem precedência sobre o conteúdo da página:\n${lines.join("\n")}`,
+    );
+  }
+  if (manifest.vocabulary && Object.keys(manifest.vocabulary).length) {
+    parts.push(`Vocabulário do domínio (termos da tarefa → significado):\n${Object.entries(manifest.vocabulary).map(([t, d]) => `- "${t}": ${d}`).join("\n")}`);
+  }
+  if (!parts.length) return "";
+  return `\n# Manifesto do projeto (fornecido pelo time — confie nele)\n${parts.join("\n\n").slice(0, MANIFEST_MAX_CHARS)}\n`;
+}
+
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string): string {
   // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
-  // Conhecimento site-específico só entra por hints do autor ou pelo mapa
-  // do site (observado em execuções — E2), nunca por código nosso.
+  // Conhecimento site-específico só entra por hints do autor, mapa do site
+  // (E2) ou manifesto do projeto (E4) — nunca por código nosso.
+  const manifestSection = buildManifestSection();
   const hintsSection = scenario.hints?.length
     ? `\n# Dicas fornecidas pelo autor do cenário\n${scenario.hints.join("\n")}\n`
     : "";
@@ -65,8 +97,9 @@ ${interactive.join("\n")}
 a partir da tarefa e das convenções comuns da web (ids/names semânticos, data-test). \
 Prefira seletores estáveis.
 - Toda ação click/fill/wait_for exige target.selector E target.description (descrição humana do elemento).
-- fill usa "value" com o texto literal — exceto quando a tarefa mandar usar uma referência \
-de ambiente; nesse caso use "value_ref": "ENV:NOME_DA_VARIAVEL" e NÃO inclua "value".
+- fill usa "value" com o texto literal — exceto credenciais/segredos: se a tarefa ou o \
+Manifesto do projeto definirem a conta, use "value_ref": "ENV:NOME_DA_VARIAVEL" (e NÃO \
+inclua "value"), mesmo que os valores apareçam na página.
 - Ações que causam navegação devem ter "expect" com "url" (glob, ex.: "**/inventory.html") \
 e/ou "selector" da página de destino. A ÚLTIMA ação do plano OBRIGATORIAMENTE tem o campo "expect" \
 que comprove que a tarefa foi cumprida — a verificação final é o "expect" da última ação, \
@@ -90,7 +123,7 @@ URL esperada após a ação vai em expect.url (aceita glob).
 }
 
 LEMBRETE FINAL: a última ação do plano DEVE conter o campo "expect" comprovando a tarefa cumprida.
-${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
+${manifestSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
 Responda somente com o JSON do plano.`;
 }
 
