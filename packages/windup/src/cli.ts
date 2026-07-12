@@ -111,6 +111,26 @@ program
   });
 
 program
+  .command("costs")
+  .description("AI usage report: cost, tokens and LLM calls aggregated from the run ledger")
+  .option("--last <n>", "how many recent runs to list", "10")
+  .option("--days <n>", "only include runs from the last N days")
+  .option("--json", "machine-readable output")
+  .action(async (opts: { last: string; days?: string; json?: boolean }) => {
+    const { buildCostsReport, printCostsReport } = await import("./costs.js");
+    const { getContext } = await import("./context.js");
+    const report = await buildCostsReport({
+      last: Number.parseInt(opts.last, 10),
+      days: opts.days ? Number.parseInt(opts.days, 10) : undefined,
+    });
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      printCostsReport(report, getContext().paths.runsDir);
+    }
+  });
+
+program
   .command("status")
   .description("Index status: pages by source, staleness, cached scenarios, fragments")
   .action(async () => {
