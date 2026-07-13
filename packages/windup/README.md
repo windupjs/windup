@@ -57,7 +57,7 @@ npx windup new "log in with the qa user, add the backpack to the cart and check 
 #   form data, account referenced as "the qa account", explicit final verification
 ```
 
-It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
+It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. **Literal test credentials in the instruction are preserved in the task verbatim** (they're what the test runs with — enforced mechanically, the model cannot drop them); accounts that exist in the manifest are referenced by name instead. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
 
 ## Environments (dev / staging / CI)
 

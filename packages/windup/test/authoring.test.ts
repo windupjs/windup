@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { generateScenario, buildAuthoringPrompt } from "../src/authoring.js";
+import { generateScenario, buildAuthoringPrompt, literalCredentials } from "../src/authoring.js";
 import { createContext, setContext, getContext } from "../src/context.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 import { SiteMapStore } from "../src/sitemap.js";
@@ -93,7 +93,7 @@ describe("windup new (autoria assistida de cenários)", () => {
     const client = fakeClient([VALID]);
     await generateScenario("login com admin/admin e criar fatura", {}, client);
     expect(client.prompts[0]).toContain("# Manifesto do projeto");
-    expect(client.prompts[0]).toContain("NUNCA copie usuário/senha literais");
+    expect(client.prompts[0]).toContain("refira-se à conta pelo NOME");
   });
 
   it("id repetido ganha sufixo; --id explícito com colisão exige --force", async () => {
@@ -124,6 +124,34 @@ describe("windup new (autoria assistida de cenários)", () => {
     await generateScenario("criar fatura", {}, client);
     expect(client.prompts[0]).toContain("nenhum ainda");
     expect(client.prompts[0]).toContain("windup scan");
+  });
+
+  it("credenciais literais da instrução DEVEM sobreviver na task — omissão vira retry", async () => {
+    expect(literalCredentials("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo"))
+      .toEqual(["kallef@orbitaldev.com.br", "ka211189"]);
+
+    const semSenha = JSON.stringify({
+      scenario_id: "saldo-inter",
+      start_url: "/login",
+      task: "Acesse a página de login, insira as credenciais do usuário kallef@orbitaldev.com.br, autentique e verifique o saldo do banco Inter na listagem.",
+    });
+    const comSenha = JSON.stringify({
+      scenario_id: "saldo-inter",
+      start_url: "/login",
+      task: "Acesse /login, entre com kallef@orbitaldev.com.br e senha ka211189, e verifique o saldo do banco Inter na listagem de contas bancárias.",
+    });
+    const client = fakeClient([semSenha, comSenha]);
+    const result = await generateScenario("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo do banco inter", {}, client);
+    expect(result.llm_calls).toBe(2); // 1ª resposta omitiu a senha → retry semântico
+    expect(client.prompts[1]).toContain('omitiu a credencial literal "ka211189"');
+    expect(result.scenario.task).toContain("ka211189");
+    expect(result.scenario.task).toContain("kallef@orbitaldev.com.br");
+  });
+
+  it("prompt de autoria manda preservar credenciais literais quando não há conta no manifesto", async () => {
+    const client = fakeClient([VALID]);
+    await generateScenario("criar fatura", {}, client);
+    expect(client.prompts[0]).toContain("MANTENHA-AS na task EXATAMENTE como fornecidas");
   });
 
   it("buildAuthoringPrompt lista cenários existentes para evitar colisão de id", () => {

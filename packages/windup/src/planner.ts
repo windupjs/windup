@@ -251,6 +251,11 @@ export class LlmPlanner implements Planner {
           }
         }
         if (validation.ok) {
+          for (const id of inventedPasswordFills(plan, scenario)) {
+            console.warn(
+              `warning: action ${id} fills a password field with a value not present in the task, hints or manifest — if this is a login, the model invented it; provide the real test credential in the task or via context.credentials`,
+            );
+          }
           plan.task = scenario.task;
           plan.generated_by = { model: `${client.provider}/${client.model}`, at: new Date().toISOString() };
           return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
@@ -405,6 +410,27 @@ export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
     return { ...plan, actions: kept };
   }
   return plan;
+}
+
+/**
+ * Fill de campo de senha com valor que não aparece na tarefa, nas dicas nem
+ * no manifesto = senha INVENTADA pelo modelo (visto no dogfood: "senha123").
+ * Não bloqueia — cadastro com senha fictícia é legítimo — mas avisa: num
+ * login, o teste vai falhar longe da causa. Exportada para teste.
+ */
+export function inventedPasswordFills(plan: Plan, scenario: Scenario): string[] {
+  const texts = [scenario.task, ...(scenario.hints ?? [])];
+  for (const fields of Object.values(getContext().config.context?.credentials ?? {})) {
+    texts.push(...Object.values(fields));
+  }
+  const known = texts.join(" ");
+  const suspicious: string[] = [];
+  for (const action of plan.actions) {
+    if (action.type !== "fill" || !action.value || !action.target) continue;
+    const looksPassword = /senha|password|\bpass\b|pwd/i.test(`${action.target.selector} ${action.target.description}`);
+    if (looksPassword && !known.includes(action.value)) suspicious.push(action.id);
+  }
+  return suspicious;
 }
 
 /** ENVs legitimamente utilizáveis: os citados na tarefa/hints + os do manifesto. */

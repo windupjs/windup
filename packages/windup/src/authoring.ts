@@ -73,7 +73,8 @@ ${knowledgeSection}${manifestSection}${existingSection}
 - "task": a instrução reescrita como um fluxo de usuário claro, específico e executável, em prosa passo a passo:
   - cite telas, menus e botões pelos nomes REAIS do conhecimento do site quando existirem;
   - para preenchimento de formulários, especifique valores fictícios CONCRETOS (nomes, e-mails, quantias);
-  - se a instrução citar credenciais/contas e o Manifesto do projeto tiver uma conta correspondente, refira-se à conta pelo NOME (ex.: "a conta admin") — NUNCA copie usuário/senha literais para a task;
+  - se a instrução citar uma conta que exista no Manifesto do projeto, refira-se à conta pelo NOME (ex.: "a conta admin") em vez de credenciais literais;
+  - se a instrução trouxer credenciais LITERAIS (usuário/e-mail/senha escritos nela) sem conta correspondente no Manifesto, MANTENHA-AS na task EXATAMENTE como fornecidas — são credenciais de teste e o teste depende delas para executar; NUNCA as omita ou substitua;
   - a task DEVE terminar dizendo O QUE VERIFICAR: uma condição observável que comprove o sucesso (mensagem exibida, item na lista, URL da tela de destino);
   - escreva a task no MESMO idioma da instrução do autor.
 - "hints": OPCIONAL — no máximo 3 dicas de seletores/telas tiradas do conhecimento do site que ajudem o planejador; omita se não agregar.
@@ -91,7 +92,20 @@ function kebab(text: string): string {
     .slice(0, 60);
 }
 
-function validate(data: unknown): { ok: boolean; errors: string[] } {
+/**
+ * Credenciais literais fornecidas na instrução (e-mails e senhas). São
+ * insumo do teste: a task gerada TEM que preservá-las, senão o planejador
+ * fica sem a senha e inventa uma (visto no dogfood: login silenciosamente
+ * errado e falha confusa 3 ações depois). Exportada para teste.
+ */
+export function literalCredentials(instruction: string): string[] {
+  const found = new Set<string>();
+  for (const m of instruction.matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)) found.add(m[0]);
+  for (const m of instruction.matchAll(/(?:senha|password|pass)\s*[:=]?\s+(\S+)/gi)) found.add(m[1].replace(/[.,;]$/, ""));
+  return [...found];
+}
+
+function validate(data: unknown, instruction = ""): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
   const s = data as Partial<AuthoredScenario> | null;
   if (!s || typeof s !== "object") errors.push("resposta não é um objeto JSON");
@@ -100,6 +114,14 @@ function validate(data: unknown): { ok: boolean; errors: string[] } {
     if (!s.task || typeof s.task !== "string" || s.task.trim().length < 20) errors.push("task ausente ou curta demais (reescreva o fluxo completo, terminando com o que verificar)");
     if (!s.start_url || typeof s.start_url !== "string") errors.push("start_url ausente (use um path como \"/\")");
     if (s.hints !== undefined && (!Array.isArray(s.hints) || s.hints.some((h) => typeof h !== "string"))) errors.push("hints deve ser uma lista de strings");
+    if (s.task) {
+      const haystack = `${s.task} ${(s.hints ?? []).join(" ")}`;
+      for (const cred of literalCredentials(instruction)) {
+        if (!haystack.includes(cred)) {
+          errors.push(`a task omitiu a credencial literal "${cred}" fornecida na instrução — credenciais de teste DEVEM permanecer na task exatamente como fornecidas (o executor depende delas)`);
+        }
+      }
+    }
   }
   return { ok: errors.length === 0, errors };
 }
@@ -145,7 +167,7 @@ export async function generateScenario(
       lastErrors = ["resposta não era JSON válido"];
     }
     if (parsed) {
-      const check = validate(parsed);
+      const check = validate(parsed, instruction);
       if (check.ok) {
         scenario = parsed as AuthoredScenario;
         break;
