@@ -13,7 +13,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![engine: Playwright](https://img.shields.io/badge/engine-Playwright-2EAD33)](https://playwright.dev)
 
-[Quickstart](#quickstart) · [How it works](#how-it-works) · [Why Windup](#why-windup) · [User docs](packages/windup/README.md) · [Specification](docs/specs/SPEC.md)
+[windup.run](https://windup.run) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Why Windup](#why-windup) · [User docs](packages/windup/README.md) · [Specification](docs/specs/SPEC.md)
 
 </div>
 

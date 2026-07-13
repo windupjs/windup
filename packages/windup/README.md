@@ -2,6 +2,8 @@
 
 **Natural-language E2E tests with deterministic replay — the LLM plans once, replays run without it.**
 
+**[windup.run](https://windup.run)** · [npm](https://www.npmjs.com/package/windupjs)
+
 Describe a test in plain language — *"log in as the test account, add product X to the cart, check out and verify the order confirmation"* — and Windup turns it into a deterministic JSON plan of browser actions. From the second run on, the test replays **with zero LLM calls**: ~1 second, $0, stable results.
 
 ```bash
