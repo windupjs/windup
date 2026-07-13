@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -48,9 +49,21 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
 
   if (framework === "next" || framework === "react-router" || framework === "remix") {
     let routes = framework === "next" ? await indexNextRoutes(root) : await indexReactRouterRoutes(root);
+
+    // Anti-herança de barrel/router: um arquivo compartilhado por muitas rotas
+    // (o router file que importa todas as páginas) NÃO tem seus imports
+    // expandidos — senão cada rota herda os elementos do app inteiro.
+    const fileRouteCount = new Map<string, number>();
+    for (const route of routes) {
+      for (const f of route.files) fileRouteCount.set(f, (fileRouteCount.get(f) ?? 0) + 1);
+    }
     const sources = new Map<StaticRoute, string[]>();
     for (const route of routes) {
-      sources.set(route, await collectRouteSources(route, root));
+      const expandable = route.files.filter((f) => (fileRouteCount.get(f) ?? 0) <= 2);
+      const expanded = expandable.length
+        ? await collectRouteSources({ route: route.route, files: expandable }, root)
+        : [];
+      sources.set(route, [...new Set([...route.files, ...expanded])]);
     }
 
     if (opts.update && store.lastScanSha) {
@@ -88,6 +101,32 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
     }
     if (droppedByCap > 0) {
       console.log(`scan: ${droppedByCap} element(s) dropped by the ${MAX_ELEMENTS_PER_NODE}/page cap (prompt slices use at most 30/page anyway)`);
+    }
+
+    // Full scan reconcilia: rotas que sumiram do código saem do mapa (static);
+    // nós llm de fontes alterados/removidos caem para o assist re-avaliar.
+    if (mode === "full") {
+      const current = new Set(routes.map((r) => `**${r.route}`));
+      const pruned = store.pruneStaticExcept(current);
+      let prunedLlm = 0;
+      for (const node of store.llmPages()) {
+        const file = node.files[0];
+        let gone = !file;
+        if (file) {
+          try {
+            const hash = sha16(await readFile(file, "utf8"));
+            if (!store.assistAlreadySeen(file, hash)) gone = true;
+          } catch {
+            gone = true;
+          }
+        }
+        if (gone) {
+          store.removePage(node.sig);
+          if (file) store.forgetAssistSeen(file);
+          prunedLlm += 1;
+        }
+      }
+      if (pruned + prunedLlm > 0) console.log(`scan: pruned ${pruned} static and ${prunedLlm} AI-inferred page(s) no longer backed by the code`);
     }
 
     // Camada 3 (P4): LLM-assist para o que as camadas estáticas não resolveram.
@@ -140,10 +179,23 @@ async function runAssistLayer(
     } catch { /* ignore */ }
   }
 
-  const candidates = selectCandidates(files, coveredFiles, nodesWithoutElements);
+  const allCandidates = selectCandidates(files, coveredFiles, nodesWithoutElements);
+  // Memória do assist: conteúdo já analisado (hash igual) não paga de novo.
+  const hashes = new Map<string, string>();
+  for (const { file, content } of files) hashes.set(file, sha16(content));
+  const candidates = allCandidates.filter((c) => {
+    const hash = hashes.get(c.file);
+    return !hash || !store.assistAlreadySeen(c.file, hash);
+  });
+  const skippedCached = allCandidates.length - candidates.length;
+  if (skippedCached > 0) console.log(`scan assist: ${skippedCached} file(s) unchanged since last analysis — skipped (no cost)`);
   if (candidates.length === 0) return { calls: 0, max_calls: maxCalls, est_cost_usd: 0 };
 
   const outcome = await runAssist(candidates, caller);
+  for (const c of candidates.slice(0, outcome.calls)) {
+    const hash = hashes.get(c.file);
+    if (hash) store.recordAssistSeen(c.file, hash);
+  }
   for (const page of outcome.pages) {
     store.upsertLlmPage(page.path, page.elements.slice(0, 150), page.file);
   }
@@ -166,6 +218,10 @@ async function runAssistLayer(
     await writeFile(path.join(ctx.paths.runsDir, `scan-${stamp}.json`), JSON.stringify(record, null, 2));
   }
   return { calls: outcome.calls, max_calls: maxCalls, est_cost_usd: cost };
+}
+
+function sha16(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
 /** Arquivos alterados desde o SHA (commits + staged + worktree); null se git indisponível. */

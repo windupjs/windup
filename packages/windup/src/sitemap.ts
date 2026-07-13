@@ -43,6 +43,8 @@ export interface SiteMap {
   last_scan_sha: string | null;
   pages: Record<string, MapPage>;
   transitions: MapTransition[];
+  /** Memória do LLM-assist: arquivo analisado → hash do conteúdo (não re-paga). */
+  assist_seen?: Record<string, string>;
 }
 
 const EMPTY_MAP: SiteMap = { map_version: "0.1", last_scan_sha: null, pages: {}, transitions: [] };
@@ -188,6 +190,46 @@ export class SiteMapStore {
       }
     }
     return marked;
+  }
+
+  /** O assist já analisou este conteúdo? (hash igual = pular, custo zero) */
+  assistAlreadySeen(file: string, contentHash: string): boolean {
+    return this.map.assist_seen?.[file] === contentHash;
+  }
+
+  recordAssistSeen(file: string, contentHash: string): void {
+    (this.map.assist_seen ??= {})[file] = contentHash;
+  }
+
+  forgetAssistSeen(file: string): void {
+    if (this.map.assist_seen) delete this.map.assist_seen[file];
+  }
+
+  /**
+   * Poda de full scan: nós static de rotas que deixaram de existir saem do
+   * mapa (as camadas 1–2 sempre re-veem tudo num full scan). Nós de execução
+   * nunca são podados pelo scan. Devolve quantos removeu.
+   */
+  pruneStaticExcept(currentPatterns: Set<string>): number {
+    let removed = 0;
+    for (const [sig, page] of Object.entries(this.map.pages)) {
+      if (page.source === "static" && !currentPatterns.has(page.url_pattern)) {
+        delete this.map.pages[sig];
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  /** Nós inferidos por IA, com seus fontes (para invalidação por hash no scan). */
+  llmPages(): Array<{ sig: string; url_pattern: string; files: string[] }> {
+    return Object.entries(this.map.pages)
+      .filter(([, p]) => p.source === "llm")
+      .map(([sig, p]) => ({ sig, url_pattern: p.url_pattern, files: p.files ?? [] }));
+  }
+
+  removePage(sig: string): void {
+    delete this.map.pages[sig];
   }
 
   get lastScanSha(): string | null {
