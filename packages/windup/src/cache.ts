@@ -31,7 +31,10 @@ export async function getCached(scenario: Scenario): Promise<CacheEntry | null> 
     entry.cache_version === CACHE_VERSION &&
     entry.plan?.plan_version === PLAN_VERSION &&
     entry.key?.scenario_id === scenario.scenario_id &&
-    startPath(entry.key?.start_url ?? "/") === startPath(scenario.start_url ?? "/");
+    startPath(entry.key?.start_url ?? "/") === startPath(scenario.start_url ?? "/") &&
+    // Task editada = teste diferente: o plano antigo não vale mais (miss,
+    // não invalidação — o save do plano novo sobrescreve normalmente).
+    (entry.plan.task === undefined || entry.plan.task === scenario.task);
   return compatible ? entry : null;
 }
 

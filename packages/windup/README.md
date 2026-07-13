@@ -91,6 +91,26 @@ A scenario is a JSON file in your scenarios directory (default `e2e/scenarios/`)
 - End the task with **what to verify** — that becomes the plan's final postcondition.
 - Never put secrets in tasks. Reference accounts from the project manifest (below); the plan will use `value_ref: "ENV:VAR"` and the real value is resolved only at runtime, never cached.
 
+### Scenario dependencies (`depends_on`)
+
+Flows rarely start from zero — creating a bank account requires being logged in. Declare prerequisites and each scenario stays small, focused and individually cacheable:
+
+```json
+{
+  "scenario_id": "create-bank-account",
+  "depends_on": ["login"],
+  "task": "Already on the dashboard, open Settings > Bank accounts, create an account named 'Inter' and verify it appears in the list."
+}
+```
+
+- Dependencies run **in the same browser session**, in order, each with its own cache — a warm suite replays the whole chain with zero LLM calls.
+- Without a `start_url`, the dependent scenario **continues from where the last dependency ended** — and on first planning the LLM sees that real page (the post-login dashboard), instead of planning blind.
+- Chains work (`login` → `select-company` → `create-account`), cycles are rejected, and a failing dependency fails the run with kind `dependency` before the scenario itself starts.
+- Each dependency keeps its own self-healing: if its cached plan breaks, it re-plans and re-caches — dependents benefit automatically.
+- Editing a scenario's `task` now invalidates its cached plan (a rewritten test is a different test).
+
+`windup new "..." --depends-on login` authors a dependent scenario directly — the task is written from the dependency's final state, without repeating its steps.
+
 ### Authoring with `windup new`
 
 You don't have to write detailed tasks by hand. Give `windup new` a rough instruction and the LLM acts as a test author — it rewrites it into a precise, verifiable scenario using the **site map** (real screens, menus and elements from `windup scan` and past runs) and the **project manifest** (accounts referenced by name, never literal credentials):
@@ -182,7 +202,7 @@ Example GitHub Actions step:
 | Command | Description |
 |---|---|
 | `windup init` | Create `windup.config.ts`, `.windup/` (gitignored) and an example scenario |
-| `windup new "<instruction>" [--id x] [--force]` | Generate a scenario from a rough instruction (LLM test author + site map + manifest) |
+| `windup new "<instruction>" [--id x] [--force] [--depends-on ids]` | Generate a scenario from a rough instruction (LLM test author + site map + manifest) |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |
 | `windup run --all` | Run every scenario — CI mode |
 | `windup scan [--update] [--no-assist]` | Statically index routes and interactive elements into the site map; `--update` re-indexes only files changed since the last scan (git diff); `--no-assist` skips the LLM layer (zero cost) |

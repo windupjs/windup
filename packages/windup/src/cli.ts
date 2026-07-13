@@ -119,15 +119,18 @@ program
   .description("Generate a scenario from a rough instruction — the LLM acts as a test author, enriching it with site-map knowledge and the project manifest")
   .option("--id <id>", "scenario id (default: derived from the flow)")
   .option("--force", "overwrite if a scenario with the same id exists")
+  .option("--depends-on <ids>", "comma-separated prerequisite scenarios (e.g. --depends-on login); the new scenario continues from their final state")
   .option("--llm <provider[:model]>", "LLM for authoring (e.g. openai:gpt-5-mini)")
-  .action(async (instructionWords: string[], opts: { id?: string; force?: boolean; llm?: string }) => {
+  .action(async (instructionWords: string[], opts: { id?: string; force?: boolean; dependsOn?: string; llm?: string }) => {
     if (opts.llm) process.env.WINDUP_LLM = opts.llm;
     const { generateScenario } = await import("./authoring.js");
-    const result = await generateScenario(instructionWords.join(" "), { id: opts.id, force: opts.force });
+    const dependsOn = opts.dependsOn?.split(",").map((d) => d.trim()).filter(Boolean);
+    const result = await generateScenario(instructionWords.join(" "), { id: opts.id, force: opts.force, dependsOn });
     console.log(`scenario created: ${result.file}  (${result.provider}/${result.model}, ${result.llm_calls} call(s), $${result.est_cost_usd})`);
     console.log("");
     console.log(`  id:        ${result.scenario.scenario_id}`);
-    console.log(`  start_url: ${result.scenario.start_url}`);
+    if (result.scenario.depends_on?.length) console.log(`  depends:   ${result.scenario.depends_on.join(", ")} (continues from their final state)`);
+    if (result.scenario.start_url) console.log(`  start_url: ${result.scenario.start_url}`);
     console.log(`  task:      ${result.scenario.task}`);
     if (result.scenario.hints?.length) console.log(`  hints:     ${result.scenario.hints.join(" | ")}`);
     console.log("");

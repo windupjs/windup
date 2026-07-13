@@ -93,3 +93,14 @@ describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", 
     expect(files.filter((f) => f.includes("stale"))).toHaveLength(0);
   });
 });
+
+describe("task editada invalida o hit (miss)", () => {
+  it("mesma id/start_url mas task diferente → miss", async () => {
+    const { saveCached, getCached } = await import("../src/cache.js");
+    const scenario = { scenario_id: "edicao-task", start_url: "https://x.test/a", task: "tarefa original" };
+    const plan = { plan_version: "0.1" as const, scenario_id: "edicao-task", task: "tarefa original", start_url: "https://x.test/a", actions: [] };
+    await saveCached(scenario, plan);
+    expect(await getCached(scenario)).not.toBeNull();
+    expect(await getCached({ ...scenario, task: "tarefa REESCRITA" })).toBeNull();
+  });
+});

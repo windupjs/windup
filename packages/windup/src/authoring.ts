@@ -21,9 +21,11 @@ import { startPath } from "./start-url.js";
  */
 export interface AuthoredScenario {
   scenario_id: string;
-  start_url: string;
+  /** Ausente em cenário dependente: continua da página final do depends_on. */
+  start_url?: string;
   task: string;
   hints?: string[];
+  depends_on?: string[];
 }
 
 export interface AuthoringResult {
@@ -133,7 +135,7 @@ function validate(data: unknown, instruction = "", registeredAccount?: string): 
 
 export async function generateScenario(
   instruction: string,
-  opts: { id?: string; force?: boolean } = {},
+  opts: { id?: string; force?: boolean; dependsOn?: string[] } = {},
   client?: LlmClient,
 ): Promise<AuthoringResult> {
   const ctx = getContext();
@@ -176,7 +178,10 @@ export async function generateScenario(
 
   const tokens = { input: 0, output: 0 };
   let llmCalls = 0;
-  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existingIds, registeredAccount);
+  const dependsSection = opts.dependsOn?.length
+    ? `\n# Dependências declaradas\nEste cenário roda APÓS os cenários ${opts.dependsOn.map((d) => `"${d}"`).join(", ")} (na mesma sessão). Descreva o fluxo a partir do ESTADO FINAL deles (ex.: usuário já autenticado) — NÃO repita os passos que as dependências já cobrem.\n`
+    : "";
+  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existingIds, registeredAccount) + dependsSection;
   let scenario: AuthoredScenario | null = null;
   let lastErrors: string[] = [];
 
@@ -224,12 +229,18 @@ export async function generateScenario(
   // Normalizações mecânicas (mesma filosofia do sanitize do planejador):
   // id em kebab-case, start_url como path, unicidade garantida por sufixo.
   scenario.scenario_id = kebab(opts.id ?? scenario.scenario_id) || "novo-cenario";
-  scenario.start_url = startPath(scenario.start_url);
+  scenario.start_url = startPath(scenario.start_url ?? "/");
+  if (opts.dependsOn?.length) {
+    (scenario as AuthoredScenario & { depends_on?: string[] }).depends_on = opts.dependsOn;
+    // dependente sem necessidade de goto: continua da página final da dependência
+    delete (scenario as Partial<AuthoredScenario>).start_url;
+  }
   // start_url inventado (não consta no mapa) desorienta a execução inteira:
+  // (cenário dependente sem start_url pula esta validação — não há goto)
   // com mapa disponível, cai para "/" — o planejador vê a página real de
   // qualquer forma. Visto no dogfood: o modelo inventou "/index.html" por
   // convenção, uma rota que o app real não renderiza.
-  if (knownPaths.length > 0 && !knownPaths.includes(scenario.start_url)) {
+  if (scenario.start_url && knownPaths.length > 0 && !knownPaths.includes(scenario.start_url)) {
     console.warn(`warning: start_url "${scenario.start_url}" is not a known route — falling back to "/"`);
     scenario.start_url = "/";
   }

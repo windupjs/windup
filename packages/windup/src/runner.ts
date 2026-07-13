@@ -1,5 +1,6 @@
 import { launchBrowser, type Browser } from "./browser.js";
 import { getCached, invalidate, recordReplay, saveCached } from "./cache.js";
+import { loadScenario } from "./scenario.js";
 import { getContext } from "./context.js";
 import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
 import { expandPlan, loadFragments } from "./fragments.js";
@@ -25,7 +26,34 @@ export interface PlanGeneration {
 
 /** Única fronteira com o LLM (implementada em planner.ts; fake nos testes). */
 export interface Planner {
-  generate(scenario: Scenario, browser: Browser, failureContext?: string): Promise<PlanGeneration>;
+  generate(scenario: Scenario, browser: Browser, failureContext?: string, opts?: { skipGoto?: boolean }): Promise<PlanGeneration>;
+}
+
+/** Carregador de cenários por id (injetável nos testes; o real é loadScenario). */
+export type ScenarioLoader = (id: string) => Promise<Scenario & { start_url: string }>;
+
+const MAX_DEPENDENCY_DEPTH = 5;
+
+/**
+ * Resolve a cadeia de depends_on em ordem de execução (pós-ordem, dedupe),
+ * com detecção de ciclo e teto de profundidade. Exportada para teste.
+ */
+export async function resolveDependencyChain(scenario: Scenario, load: ScenarioLoader): Promise<Array<Scenario & { start_url: string }>> {
+  const chain: Array<Scenario & { start_url: string }> = [];
+  const seen = new Set<string>([scenario.scenario_id]);
+  async function visit(ids: string[], depth: number, trail: string[]): Promise<void> {
+    if (depth > MAX_DEPENDENCY_DEPTH) throw new Error(`dependency chain deeper than ${MAX_DEPENDENCY_DEPTH} (${trail.join(" -> ")})`);
+    for (const id of ids) {
+      if (trail.includes(id) || id === scenario.scenario_id) throw new Error(`dependency cycle: ${[...trail, id].join(" -> ")}`);
+      if (seen.has(id)) continue;
+      const dep = await load(id);
+      await visit(dep.depends_on ?? [], depth + 1, [...trail, id]);
+      seen.add(id);
+      chain.push(dep);
+    }
+  }
+  await visit(scenario.depends_on ?? [], 1, []);
+  return chain;
 }
 
 export interface RunOptions {
@@ -86,6 +114,34 @@ export async function runScenario(
 
   const browser = await launchBrowser();
   try {
+    // Dependências (depends_on): cada uma roda NA MESMA sessão, com seu
+    // próprio cache/replay e self-healing. O estado final delas é o ponto
+    // de partida deste cenário.
+    if (scenario.depends_on?.length) {
+      metrics.dependencies = [];
+      const chain = await resolveDependencyChain(scenario, loadScenario);
+      for (const dep of chain) {
+        const depStart = Date.now();
+        const outcome = await runDependency(dep, planner, browser, metrics, collector, opts.useCache);
+        metrics.dependencies.push({
+          scenario_id: dep.scenario_id,
+          cache: outcome.cache,
+          llm_calls: outcome.llm_calls,
+          result: outcome.ok ? "passed" : "failed",
+          duration_ms: Date.now() - depStart,
+        });
+        if (!outcome.ok) {
+          metrics.failure = {
+            kind: "dependency",
+            action_id: outcome.failure?.action_id ?? null,
+            message: `dependency "${dep.scenario_id}" failed: ${outcome.failure?.message ?? "unknown"}`,
+          };
+          return metrics;
+        }
+      }
+    }
+
+    const skipGoto = (scenario as { continue_from_dependency?: boolean }).continue_from_dependency === true;
     const cached = opts.useCache ? await getCached(scenario) : null;
 
     if (cached) {
@@ -105,13 +161,13 @@ export async function runScenario(
         await invalidate(cached);
         metrics.cache = "invalidated";
         const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
-        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context);
+        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context, skipGoto);
         if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
         return metrics;
       }
 
       const execStart = Date.now();
-      const result = await executePlan(browser, expandedPlan, collector);
+      const result = await executePlan(browser, expandedPlan, collector, { skipInitialGoto: skipGoto });
       metrics.duration_ms.execution = Date.now() - execStart;
       metrics.actions = result.actions;
 
@@ -142,12 +198,12 @@ export async function runScenario(
       await invalidate(cached);
       metrics.cache = "invalidated";
       const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
-      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext);
+      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;
     }
 
-    const generated = await generateAndExecute(scenario, planner, browser, metrics, collector);
+    const generated = await generateAndExecute(scenario, planner, browser, metrics, collector, undefined, skipGoto);
     if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
@@ -177,11 +233,12 @@ async function generateAndExecute(
   metrics: RunMetrics,
   collector?: StepCollector,
   failureContext?: string,
+  skipGoto = false,
 ): Promise<{ ok: boolean; plan?: Plan; start_sig?: string }> {
   const planningStart = Date.now();
   let generation: PlanGeneration;
   try {
-    generation = await planner.generate(scenario, browser, failureContext);
+    generation = await planner.generate(scenario, browser, failureContext, { skipGoto });
   } catch (err) {
     metrics.duration_ms.planning += Date.now() - planningStart;
     if (err instanceof PlanGenerationError) {
@@ -220,7 +277,7 @@ async function generateAndExecute(
   }
 
   const execStart = Date.now();
-  const result: ExecutionResult = await executePlan(browser, expandedPlan, collector);
+  const result: ExecutionResult = await executePlan(browser, expandedPlan, collector, { skipInitialGoto: skipGoto });
   metrics.duration_ms.execution += Date.now() - execStart;
   metrics.actions = result.actions;
 
@@ -232,4 +289,70 @@ async function generateAndExecute(
 
   metrics.result = "passed";
   return { ok: true, plan: generation.plan, start_sig: generation.start_sig ?? result.start_sig ?? undefined };
+}
+
+/**
+ * Executa UMA dependência na sessão atual: replay do cache quando há, com o
+ * mesmo self-healing do fluxo normal (verificação falhou → invalida →
+ * re-planeja → salva no cache DA DEPENDÊNCIA). Custos/tokens somam nas
+ * métricas do cenário dependente; a dependência não gera registro próprio
+ * no ledger (rodou como setup, não como teste).
+ */
+async function runDependency(
+  dep: Scenario & { start_url: string },
+  planner: Planner,
+  browser: Browser,
+  metrics: RunMetrics,
+  collector: StepCollector,
+  useCache: boolean,
+): Promise<{ ok: boolean; cache: RunMetrics["cache"]; llm_calls: number; failure?: { action_id: string | null; message: string } }> {
+  const { expandPlan, loadFragments } = await import("./fragments.js");
+  const callsBefore = metrics.llm_calls;
+
+  const cached = useCache ? await getCached(dep) : null;
+  if (cached) {
+    let plan: Plan;
+    try {
+      plan = expandPlan({ ...cached.plan, start_url: dep.start_url ?? cached.plan.start_url }, await loadFragments());
+    } catch {
+      await invalidate(cached);
+      return replanDependency(dep, planner, browser, metrics, collector, useCache, "invalidated", callsBefore);
+    }
+    const result = await executePlan(browser, plan, collector);
+    if (result.ok) {
+      await recordReplay(cached);
+      return { ok: true, cache: "hit", llm_calls: 0 };
+    }
+    if (result.failure?.kind === "network") {
+      return { ok: false, cache: "hit", llm_calls: 0, failure: result.failure };
+    }
+    await invalidate(cached);
+    const context = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
+    return replanDependency(dep, planner, browser, metrics, collector, useCache, "invalidated", callsBefore, context);
+  }
+  return replanDependency(dep, planner, browser, metrics, collector, useCache, "miss", callsBefore);
+}
+
+async function replanDependency(
+  dep: Scenario & { start_url: string },
+  planner: Planner,
+  browser: Browser,
+  metrics: RunMetrics,
+  collector: StepCollector,
+  useCache: boolean,
+  cache: RunMetrics["cache"],
+  callsBefore: number,
+  failureContext?: string,
+): Promise<{ ok: boolean; cache: RunMetrics["cache"]; llm_calls: number; failure?: { action_id: string | null; message: string } }> {
+  const generated = await generateAndExecute(dep, planner, browser, metrics, collector, failureContext);
+  const llmCalls = metrics.llm_calls - callsBefore;
+  const failure = metrics.failure ? { action_id: metrics.failure.action_id, message: metrics.failure.message } : undefined;
+  // rastro parcial da dependência não pertence ao cenário principal
+  metrics.failure = null;
+  metrics.actions = [];
+  if (generated.ok) {
+    if (useCache) await saveCached(dep, generated.plan!, generated.start_sig);
+    return { ok: true, cache, llm_calls: llmCalls };
+  }
+  return { ok: false, cache, llm_calls: llmCalls, failure };
 }

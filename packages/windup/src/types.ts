@@ -65,6 +65,13 @@ export interface Scenario {
   task: string;
   /** Conhecimento site-específico fornecido pelo AUTOR do cenário (doc 07: nada de site hardcoded no motor). */
   hints?: string[];
+  /**
+   * Cenários pré-requisito (ex.: ["login"]), executados NA MESMA sessão de
+   * browser antes deste — cada um com seu próprio cache/replay. Sem
+   * start_url explícito, este cenário CONTINUA da página onde a última
+   * dependência terminou (e o planejador enxerga essa página real).
+   */
+  depends_on?: string[];
 }
 
 export type CacheStatus = "active" | "stale";
@@ -89,7 +96,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 
@@ -133,6 +140,8 @@ export interface RunMetrics {
    * estimated_cost_usd.
    */
   summary?: { text: string; model: string; provider: string; tokens: { input: number; output: number }; est_cost_usd: number };
+  /** Dependências executadas antes deste cenário (depends_on), na ordem. */
+  dependencies?: Array<{ scenario_id: string; cache: CacheOutcome; llm_calls: number; result: "passed" | "failed"; duration_ms: number }>;
 }
 
 export const DEFAULT_TIMEOUT_MS = 5000;

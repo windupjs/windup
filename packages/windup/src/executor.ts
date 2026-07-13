@@ -109,18 +109,25 @@ const SLOWMO_MS = () => Number.parseInt(process.env.SLOWMO_MS ?? "0", 10) || 0;
  * Loop determinístico do doc 03: navega para start_url e executa as ações
  * do plano em ordem, verificando pós-condições após cada uma. Zero LLM.
  */
-export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector): Promise<ExecutionResult> {
+export interface ExecuteOptions {
+  /** true = cenário dependente sem start_url: continua da página ATUAL (o estado final das dependências É o início). */
+  skipInitialGoto?: boolean;
+}
+
+export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector, opts: ExecuteOptions = {}): Promise<ExecutionResult> {
   const metrics: ActionMetrics[] = [];
 
-  try {
-    await browser.goto(plan.start_url);
-  } catch (err) {
-    return {
-      ok: false,
-      actions: metrics,
-      failure: { kind: "network", action_id: null, message: `goto ${plan.start_url}: ${err instanceof Error ? err.message : err}` },
-      start_sig: null,
-    };
+  if (!opts.skipInitialGoto) {
+    try {
+      await browser.goto(plan.start_url);
+    } catch (err) {
+      return {
+        ok: false,
+        actions: metrics,
+        failure: { kind: "network", action_id: null, message: `goto ${plan.start_url}: ${err instanceof Error ? err.message : err}` },
+        start_sig: null,
+      };
+    }
   }
 
   const startSig = await initialSignature(browser);

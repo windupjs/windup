@@ -153,14 +153,16 @@ export class LlmPlanner implements Planner {
     });
   }
 
-  async generate(scenario: Scenario, browser: Browser, failureContext?: string): Promise<PlanGeneration> {
+  async generate(scenario: Scenario, browser: Browser, failureContext?: string, opts: { skipGoto?: boolean } = {}): Promise<PlanGeneration> {
     // Client criado por geração, não no construtor: replays de cache nunca
     // planejam (não devem exigir chave), e as flags --llm/--base-url já
     // escreveram nas envs a esta altura.
     const client = createLlmClient();
     // loadScenario resolve o start_url por ambiente; o fallback cobre chamadas diretas da API.
+    // skipGoto (depends_on sem start_url): o snapshot é da página REAL onde a
+    // última dependência terminou — o planejador deixa de planejar às cegas.
     const startUrl = scenario.start_url ?? "/";
-    await browser.goto(startUrl);
+    if (!opts.skipGoto) await browser.goto(startUrl);
     // Espera o app renderizar antes do snapshot (SPA: load não basta).
     await waitForAnyInteractive(browser);
     const startSig = await browser.pageSignature();

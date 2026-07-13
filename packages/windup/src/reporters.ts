@@ -55,6 +55,7 @@ export function jsonReport(results: RunMetrics[]): string {
     duration_ms: r.duration_ms.total,
     est_cost_usd: r.estimated_cost_usd,
     failure: r.failure,
+    ...(r.dependencies?.length ? { dependencies: r.dependencies } : {}),
     ...(r.summary ? { summary: r.summary.text } : {}),
   }));
   return `${JSON.stringify({ summary, cases }, null, 2)}\n`;
@@ -80,6 +81,9 @@ export function htmlReport(results: RunMetrics[]): string {
       const llm = r.llm_model ? `${r.llm_provider ? `${r.llm_provider}/` : ""}${r.llm_model}` : "—";
       // Fechado por padrão: com muitos casos, parágrafos de prosa dominariam a
       // tabela — o rótulo indica que existe; um clique expande (<details>, sem JS).
+      const deps = r.dependencies?.length
+        ? `<div class="deps">deps: ${r.dependencies.map((d) => `${esc(d.scenario_id)} (${d.result === "passed" ? esc(d.cache) : "FAILED"})`).join(" → ")}</div>`
+        : "";
       const summary = r.summary
         ? `<details class="ai-summary"><summary>AI debrief</summary><div class="ai-text">${esc(r.summary.text)}</div></details>`
         : "";
@@ -99,7 +103,7 @@ ${r.actions
         : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
-<td class="scenario">${esc(r.scenario_id)}${failure}${summary}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${summary}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>
@@ -142,6 +146,7 @@ td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:no
 .row-failed td { background:color-mix(in srgb, var(--fail-bg) 35%, transparent); }
 .failure { margin-top:6px; font-size:12.5px; color:var(--fail); font-family:ui-monospace,Menlo,monospace; white-space:pre-wrap; }
 .failure .kind { font-weight:700; }
+.deps { margin-top:5px; font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); }
 details.ai-summary { margin-top:6px; }
 details.ai-summary > summary { font:600 10.5px/1.6 ui-monospace,Menlo,monospace; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); cursor:pointer; }
 .ai-text { margin-top:6px; font:13px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; color:var(--ink); background:color-mix(in srgb, var(--accent) 7%, transparent); border-left:2px solid var(--accent); padding:8px 12px; border-radius:0 3px 3px 0; max-width:72ch; white-space:pre-wrap; }
