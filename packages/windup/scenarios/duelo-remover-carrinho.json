@@ -1,0 +1,5 @@
+{
+  "scenario_id": "duelo-remover-carrinho",
+  "start_url": "https://www.saucedemo.com",
+  "task": "Fazer login no saucedemo.com com o usuário standard_user e senha secret_sauce. Adicionar a Sauce Labs Backpack e a Sauce Labs Bike Light ao carrinho. Em seguida, ainda na página de inventário, remover a Sauce Labs Backpack do carrinho e verificar que o botão de adicionar ao carrinho da Backpack (id add-to-cart-sauce-labs-backpack) voltou a aparecer."
+}

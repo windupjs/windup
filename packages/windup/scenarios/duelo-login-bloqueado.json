@@ -1,0 +1,5 @@
+{
+  "scenario_id": "duelo-login-bloqueado",
+  "start_url": "https://www.saucedemo.com",
+  "task": "Tentar fazer login no saucedemo.com com o usuário locked_out_user e senha secret_sauce e verificar que a mensagem de erro de usuário bloqueado aparece (elemento h3[data-test='error'])."
+}

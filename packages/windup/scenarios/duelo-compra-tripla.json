@@ -1,0 +1,5 @@
+{
+  "scenario_id": "duelo-compra-tripla",
+  "start_url": "https://www.saucedemo.com",
+  "task": "Fazer login no saucedemo.com com o usuário standard_user e senha secret_sauce. Adicionar ao carrinho três produtos: a Sauce Labs Backpack, a Sauce Labs Bike Light e a Sauce Labs Bolt T-Shirt. Abrir o carrinho, iniciar o checkout, preencher nome João, sobrenome Silva e CEP 01310-100, continuar, finalizar a compra e verificar que a mensagem de pedido concluído aparece."
+}

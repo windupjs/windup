@@ -34,7 +34,7 @@ export function buildManifestSection(): string {
       ([account, fields]) => `- conta "${account}": ${Object.entries(fields).map(([k, v]) => `${k} → ${v}`).join(", ")}`,
     );
     parts.push(
-      `Credenciais disponíveis — quando a tarefa citar uma dessas contas, os fills correspondentes DEVEM usar "value_ref" com o ENV indicado (nunca "value"), MESMO que a página exiba credenciais em texto — o manifesto tem precedência sobre o conteúdo da página:\n${lines.join("\n")}`,
+      `Credenciais disponíveis — quando a tarefa citar uma dessas contas, os fills correspondentes DEVEM usar "value_ref" com o ENV indicado (nunca "value"), MESMO que a página exiba credenciais em texto — o manifesto tem precedência sobre o conteúdo da página. Mas se a tarefa trouxer credenciais LITERAIS (usuário/senha escritos nela) sem citar uma conta do manifesto, use os valores literais da tarefa:\n${lines.join("\n")}`,
     );
   }
   if (manifest.vocabulary && Object.keys(manifest.vocabulary).length) {
