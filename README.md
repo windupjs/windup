@@ -1,45 +1,49 @@
 # Windup 🥁🦆
 
-**Testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho.**
+**Natural-language E2E tests with deterministic replay — the LLM plans once, replays run without it.**
 
-Dê corda uma vez — descreva o teste em português ("faça login, adicione o produto ao carrinho, finalize a compra e verifique a mensagem") — e o Windup transforma isso num plano determinístico de ações. Da segunda execução em diante, o teste roda **sem nenhuma chamada de LLM**: ~1 segundo, custo zero, resultado estável.
+Wind it up once — describe the test in plain language ("log in, add the product to the cart, check out and verify the confirmation") — and Windup turns it into a deterministic plan of browser actions. From the second run on, the test runs **without a single LLM call**: ~1 second, $0, stable.
 
-```
-npm i -D windupjs
-npx windup init          # 3 perguntas, cria windup.config.ts
-npx windup scan          # indexa as rotas do seu projeto (Next.js)
-npx windup run checkout  # 1º run: a LLM planeja · 2º em diante: replay ~1s, US$ 0
-```
-
-## Como funciona
-
-```
-tarefa em linguagem natural ──▶ planejador (LLM, 1 chamada) ──▶ plano JSON
-                                                                   │
-        cache de trajetórias ◀── verificação barata ◀── executor determinístico
-              │
-              └──▶ replays seguintes: zero LLM, ~1s
+```bash
+npm i -D windupjs        # Chromium provisioned automatically
+npx windup init          # 3 questions → windup.config.ts
+npx windup scan          # index your app's routes from source (Next.js, react-router)
+npx windup run checkout  # 1st run: the LLM plans · after that: ~1s replay, $0
 ```
 
-- **Plano é dado, não programa** — JSON validado por schema, sem código gerado.
-- **Verificação barata** — pós-condições de DOM/URL após cada ação; falha invalida o plano e re-planeja sozinho.
-- **Mapa do site** — toda execução alimenta um grafo de páginas/transições que dá contexto real ao planejador (e o `windup scan` o popula direto do seu código-fonte, antes do primeiro run).
-- **Fragmentos** — trechos testados (ex.: login) viram blocos reutilizáveis que a LLM compõe em vez de regenerar.
-- **Zero conhecimento de site hardcoded** — o motor conhece frameworks e a web, nunca o SEU site; todo conhecimento entra por input ou é descoberto em runtime.
+Full user documentation: [`packages/windup/README.md`](packages/windup/README.md) (also on [npm](https://www.npmjs.com/package/windupjs)).
 
-## Estrutura do repositório
+## How it works
 
-| Pasta | Conteúdo |
+```
+natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
+                                                        │
+       trajectory cache ◀── cheap verification ◀── deterministic executor
+             │
+             └──▶ subsequent runs: zero LLM, ~1s, $0
+```
+
+- **Plans are data, not code** — schema-validated JSON, no generated scripts.
+- **Cheap verification** — DOM/URL postconditions after every action; a failure invalidates the cached plan and re-plans automatically.
+- **Site map** — every execution feeds a graph of pages/transitions, and `windup scan` seeds it from your source code before the first run.
+- **Fragments** — tested action blocks (e.g. login) the planner composes instead of regenerating.
+- **Environment-portable** — start URLs resolve per environment (`--base-url`/`WINDUP_BASE_URL`); the plan cache is keyed by path, so dev-generated plans replay on staging/CI for free.
+- **Zero hardcoded site knowledge** — the engine knows frameworks and the web, never *your* site.
+
+## Repository layout
+
+| Path | Contents |
 |---|---|
-| [`packages/windup/`](packages/windup/) | O produto: pacote npm `windupjs` (bin `windup` + API programática) |
-| [`docs/specs/`](docs/specs/) | Specs de evolução e resultados medidos de cada tranche |
-| [`docs/spike/`](docs/spike/) | A spike que validou a arquitetura (C1–C5) — evidência congelada na tag `spike-validada` |
-| [`spike/`](spike/) | Código da spike (congelado; não evolui) |
+| [`packages/windup/`](packages/windup/) | The product: npm package `windupjs` (bin `windup` + programmatic API + vitest adapter) |
+| [`docs/specs/SPEC.md`](docs/specs/SPEC.md) | **Living specification** (English): architecture, data formats, principles, limitations |
+| [`docs/specs/`](docs/specs/) | Historical specs and measured results per delivery tranche (Portuguese) |
+| [`docs/spike/`](docs/spike/) | The validation spike that proved the architecture — evidence frozen at tag `spike-validada` |
+| [`spike/`](spike/) | Spike code (frozen; does not evolve) |
 
-## Estado
+## Status
 
-Validado em bench contra cenários reais: geração de plano ≥ 4/5 sem dicas, replay 10/10 com `llm_calls=0`, recuperação automática de seletor quebrado. Planejador default: `gemini-3.1-flash-lite` (~US$ 0,0025/geração). Em desenvolvimento ativo — ainda não publicado no npm.
+All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. Benchmarked: plan generation ≥ 4/5 first-try without hints, replay 10/10 with `llm_calls=0`, automatic recovery from broken selectors. Engine: Playwright (trusted input events). Default planner model: `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
 
-## Licença
+## License
 
 [MIT](LICENSE)

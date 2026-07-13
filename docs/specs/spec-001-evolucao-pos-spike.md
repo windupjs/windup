@@ -1,6 +1,8 @@
 # SPEC-001 — Evolução Pós-Spike: Mapa do Site, Fragmentos e Manifesto
 
-**Status:** proposta · **Depende de:** ajustes da [spike 07](../spike/07-ajustes-pos-review.md) concluídos · **Contexto:** [RESULTADO.md](../spike/RESULTADO.md)
+> **Historical document (Portuguese).** Fully implemented — see the English living specification in [SPEC.md](SPEC.md) and measured results in [RESULTADO-tranche-1.md](RESULTADO-tranche-1.md) / [-2](RESULTADO-tranche-2.md) / [-3](RESULTADO-tranche-3.md).
+
+**Status:** implementada · **Contexto:** [RESULTADO.md](../spike/RESULTADO.md)
 
 ## Problema
 

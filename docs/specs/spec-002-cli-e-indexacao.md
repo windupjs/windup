@@ -1,6 +1,8 @@
 # SPEC-002 — Produto: CLI/Lib e Indexação de Projeto
 
-**Status:** proposta · **Complementa:** [SPEC-001](spec-001-evolucao-pos-spike.md) (o `scan` daqui alimenta o mapa do site de lá)
+> **Historical document (Portuguese).** Fully implemented — see the English living specification in [SPEC.md](SPEC.md).
+
+**Status:** implementada · **Complementa:** [SPEC-001](spec-001-evolucao-pos-spike.md) (o `scan` daqui alimenta o mapa do site de lá)
 
 ## Forma do produto
 
