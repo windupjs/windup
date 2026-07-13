@@ -14,7 +14,7 @@ describe("indexReactRouterRoutes", () => {
   it("detects object routes, JSX <Route> and lazy imports", async () => {
     const routes = await indexReactRouterRoutes(FIXTURE);
     const paths = routes.map((r) => r.route).sort();
-    expect(paths).toEqual(["/about", "/dashboard", "/login", "/orders/:id", "/settings"]);
+    expect(paths).toEqual(["/about", "/billing", "/dashboard", "/login", "/orders/:id", "/settings"]);
   });
 
   it("ignores path: keys in non-route configs (menus, API endpoints)", async () => {
@@ -33,6 +33,13 @@ describe("indexReactRouterRoutes", () => {
     expect(byRoute["/orders/:id"].some((f) => f.endsWith("OrderDetail.tsx"))).toBe(true);
     expect(byRoute["/settings"].some((f) => f.endsWith("Settings.tsx"))).toBe(true);
   });
+
+  it("resolve a página real dentro de wrappers de layout no element", async () => {
+    const routes = await indexReactRouterRoutes(FIXTURE);
+    const billing = routes.find((r) => r.route === "/billing")!;
+    expect(billing.files.some((f) => f.endsWith("Billing.tsx"))).toBe(true);
+    expect(billing.files.some((f) => f.endsWith("Shell.tsx"))).toBe(true);
+  });
 });
 
 describe("runScan with react-router", () => {
@@ -46,7 +53,7 @@ describe("runScan with react-router", () => {
 
     const summary = await runScan({ assist: false });
     expect(summary.framework).toBe("react-router");
-    expect(summary.routes).toBe(5);
+    expect(summary.routes).toBe(6); // + /billing (fixture de wrapper)
     expect(summary.elements).toBeGreaterThan(5);
 
     const store = await SiteMapStore.load(path.join(dataDir, "site-map.json"));

@@ -35,11 +35,12 @@ describe("extractElements (P2 camada 2)", () => {
       <a href="/y"></a>
     `;
     const lines = extractElements(source).map(formatElement);
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4); // href também é traço identificável
     expect(lines[0]).toContain("data-test=login-email");
     expect(lines[0]).toContain("id=email");
     expect(lines[1]).toContain("text=Entrar");
     expect(lines[2]).toContain("text=Link com texto");
+    expect(lines[3]).toContain("href=/y");
   });
 
   it("aceita atributos com chaves JSX de string literal", () => {
@@ -74,5 +75,23 @@ describe("runScan (P2 integração)", () => {
     expect(slice).toContain("detectada no código-fonte");
 
     setContext(createContext());
+  });
+});
+
+describe("extractElements com componentes de design system (shadcn/MUI)", () => {
+  it("lê <Input>, <Button>, <Link to>, <Label htmlFor> como elementos semânticos", () => {
+    const source = `
+      <Label htmlFor="email" className={x}>E-mail</Label>
+      <Input id="email" type="email" placeholder="you@corp.com" />
+      <Button type="submit" data-testid="login-go">Entrar</Button>
+      <Link to="/dashboard" className="nav">Painel</Link>
+      <Switch id="dark-mode" />
+    `;
+    const lines = extractElements(source).map(formatElement);
+    expect(lines.some((l) => l.startsWith("label") && l.includes("for=email") && l.includes("text=E-mail"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("input id=email") && l.includes("type=email"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("button") && l.includes("data-test=login-go"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("a") && l.includes("href=/dashboard") && l.includes("text=Painel"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("input id=dark-mode"))).toBe(true);
   });
 });

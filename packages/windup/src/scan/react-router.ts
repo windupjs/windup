@@ -53,16 +53,25 @@ export async function indexReactRouterRoutes(projectRoot: string): Promise<Stati
 
     const imports = importMap(source, file, projectRoot);
 
-    // 1) JSX <Route path="..." element={<Comp .../>}>
+    // 1) JSX <Route path="..." element={...}> — o element pode aninhar
+    //    wrappers de layout (<Protected><Pagina/></Protected>): resolve TODOS
+    //    os componentes do element, não só o primeiro.
     for (const m of source.matchAll(/<Route\b([^>]*)>/g)) {
       const attrs = m[1];
       const p = attrs.match(/\bpath\s*=\s*(?:"([^"]*)"|'([^']*)'|\{\s*["'`]([^"'`]*)["'`]\s*\})/);
       if (!p) continue;
       const routePath = p[1] ?? p[2] ?? p[3];
       const files = [file];
-      const el = attrs.match(/\belement\s*=\s*\{\s*<\s*([A-Z][A-Za-z0-9_]*)/);
-      const comp = el && (await resolveBase(imports.get(el[1])));
-      if (comp) files.push(comp);
+      const start = m.index ?? 0;
+      let windowText = source.slice(start, start + 400);
+      const nextRoute = windowText.indexOf("<Route", 6);
+      if (nextRoute > 0) windowText = windowText.slice(0, nextRoute);
+      const elementPart = windowText.match(/\belement\s*=\s*\{([\s\S]*)/)?.[1] ?? "";
+      const names = [...new Set([...elementPart.matchAll(/<\s*([A-Z][A-Za-z0-9_]*)/g)].map((x) => x[1]))].slice(0, 4);
+      for (const name of names) {
+        const comp = await resolveBase(imports.get(name));
+        if (comp) files.push(comp);
+      }
       add(routePath, files);
     }
 
