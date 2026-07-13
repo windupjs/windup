@@ -1,24 +1,33 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildManifestSection } from "../src/planner.js";
 import { createContext, setContext } from "../src/context.js";
 import { DEFAULT_CONFIG } from "../src/config.js";
 
+let root: string;
+beforeEach(async () => {
+  // isolated root: a dogfood windup.credentials.json in the cwd must not
+  // leak accounts into these "empty context" assertions
+  root = await mkdtemp(path.join(tmpdir(), "windup-manifest-"));
+});
 afterAll(() => setContext(createContext()));
 
 describe("project manifest in the prompt (E4)", () => {
   it("no context in the config → empty section", () => {
-    setContext(createContext(process.cwd(), { config: { ...DEFAULT_CONFIG, context: undefined } }));
+    setContext(createContext(root, { config: { ...DEFAULT_CONFIG, context: undefined } }));
     expect(buildManifestSection()).toBe("");
   });
 
   it("empty context → empty section", () => {
-    setContext(createContext(process.cwd(), { config: { ...DEFAULT_CONFIG, context: {} } }));
+    setContext(createContext(root, { config: { ...DEFAULT_CONFIG, context: {} } }));
     expect(buildManifestSection()).toBe("");
   });
 
   it("renders conventions, credentials (with the value_ref instruction) and vocabulary", () => {
     setContext(
-      createContext(process.cwd(), {
+      createContext(root, {
         config: {
           ...DEFAULT_CONFIG,
           context: {
@@ -40,7 +49,7 @@ describe("project manifest in the prompt (E4)", () => {
 
   it("respects the 4k chars cap", () => {
     setContext(
-      createContext(process.cwd(), {
+      createContext(root, {
         config: { ...DEFAULT_CONFIG, context: { conventions: Array.from({ length: 500 }, (_, i) => `convention ${i} ${"x".repeat(50)}`) } },
       }),
     );
@@ -59,7 +68,7 @@ describe("invented-password guard (inventedPasswordFills)", () => {
 
   it("a password that does not come from the task/hints/manifest is suspicious; the provided one is not", async () => {
     const { inventedPasswordFills } = await import("../src/planner.js");
-    setContext(createContext(process.cwd(), { config: { ...DEFAULT_CONFIG, context: {} } }));
+    setContext(createContext(root, { config: { ...DEFAULT_CONFIG, context: {} } }));
     const scenario = { scenario_id: "s", task: "sign in with kallef@x.com and password ka211189" };
     expect(inventedPasswordFills(plan("password123"), scenario)).toEqual(["a2"]);
     expect(inventedPasswordFills(plan("ka211189"), scenario)).toEqual([]);
