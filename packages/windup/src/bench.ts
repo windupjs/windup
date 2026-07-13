@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cacheDir, clearCache } from "./cache.js";
 import { runsDir } from "./metrics.js";
-import { GeminiPlanner } from "./planner.js";
+import { LlmPlanner } from "./planner.js";
 import { runScenario } from "./runner.js";
 import { loadScenario } from "./scenario.js";
 import type { CacheEntry, RunMetrics } from "./types.js";
@@ -22,7 +22,7 @@ const avg = (xs: number[]): number => (xs.length ? Math.round(xs.reduce((a, b) =
  */
 export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean } = {}): Promise<boolean> {
   const scenario = await loadScenario(scenarioId);
-  const planner = new GeminiPlanner({ useMap: benchOpts.useMap });
+  const planner = new LlmPlanner({ useMap: benchOpts.useMap });
 
   // ── Fase A — Geração (viabilidade do Gemini) ────────────────────────────
   console.log(`\n[bench] Fase A — 5 gerações com --no-cache (${scenarioId})`);

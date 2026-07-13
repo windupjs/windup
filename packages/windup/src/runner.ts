@@ -11,6 +11,8 @@ export interface PlanGeneration {
   plan: Plan;
   llm_calls: number;
   model: string;
+  /** Empresa/provider do modelo ("google", "openai") — vai para o ledger. */
+  provider?: string;
   planning_mode: "full" | "incremental";
   tokens: { input: number; output: number };
   /** Retries semânticos usados (plano reprovado na validação); exclui re-chamadas transientes. */
@@ -59,6 +61,7 @@ export async function runScenario(
     cache: "miss",
     llm_calls: 0,
     llm_model: null,
+    llm_provider: null,
     planning_mode: null,
     plan_semantic_retries: null,
     sig_mismatch: null,
@@ -183,6 +186,7 @@ async function generateAndExecute(
   metrics.duration_ms.planning += Date.now() - planningStart;
   metrics.llm_calls += generation.llm_calls;
   metrics.llm_model = generation.model;
+  metrics.llm_provider = generation.provider ?? null;
   metrics.planning_mode = generation.planning_mode;
   metrics.plan_semantic_retries = generation.semantic_retries;
   metrics.prompt_chars = generation.prompt_chars ?? null;

@@ -57,6 +57,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 - **Fragments** — proven action blocks (e.g. login) the planner composes instead of regenerating.
 - **Environment-portable** — start URLs resolve per environment (`--base-url` / `WINDUP_BASE_URL`); the plan cache is keyed by path, so plans generated on `localhost` replay on staging and CI for free.
 - **CI-ready** — `windup run --all --reporter junit`, non-zero exit on failure, AI-spend ledger via `windup costs`.
+- **Bring your LLM** — Google Gemini and OpenAI in-box, several configured at once, picked per run (`--llm openai:gpt-5-mini`); spend tracked per provider and model.
 - **Zero hardcoded site knowledge** — the engine knows frameworks and the web platform, never *your* site.
 
 ## Why Windup
@@ -81,7 +82,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 
 ## Status
 
-All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. Benchmarked: plan generation ≥ 4/5 first-try without hints, replay 10/10 with `llm_calls=0`, automatic recovery from broken selectors. Engine: Playwright (trusted input events). Default planner model: `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
+All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. Benchmarked: plan generation ≥ 4/5 first-try without hints, replay 10/10 with `llm_calls=0`, automatic recovery from broken selectors. Engine: Playwright (trusted input events). Planner LLMs: Google Gemini and OpenAI, selectable per run; default `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
 
 ## License
 

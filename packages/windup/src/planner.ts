@@ -1,5 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
 import type { Browser } from "./browser.js";
+import { createLlmClient, type LlmClient } from "./llm.js";
 import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
 import type { Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
@@ -12,11 +12,6 @@ import { getContext } from "./context.js";
  */
 const PAGE_CONTEXT_MAX_CHARS = 32_000;
 const MAP_MAX_CHARS = 8_000;
-
-/** Modelo vem da config (windup.config.ts); env LLM_MODEL é override. */
-function MODEL(): string {
-  return (process.env.LLM_MODEL ?? `${getContext().config.llm.provider}/${getContext().config.llm.model}`).replace(/^google\//, "");
-}
 
 /** Cap do manifesto no prompt (E4): ~1k tokens; disciplina de orçamento do mapa. */
 const MANIFEST_MAX_CHARS = 4_000;
@@ -133,51 +128,32 @@ Responda somente com o JSON do plano.`;
 /**
  * Única fronteira com o LLM (doc 03): 1 chamada por cache miss,
  * +1 retry se a validação falhar, com a mensagem de erro no prompt.
+ * Provider/modelo resolvidos por execução (--llm / WINDUP_LLM / config).
  */
-export class GeminiPlanner implements Planner {
-  // Preguiçoso de propósito: replays de cache nunca planejam, então não
-  // devem exigir a chave do Gemini.
-  private ai: GoogleGenAI | null = null;
-
+export class LlmPlanner implements Planner {
   /** useMap: false = A/B limpo sem o conhecimento do mapa no prompt (--no-map). */
   constructor(private readonly opts: { useMap?: boolean } = {}) {}
 
-  private client(): GoogleGenAI {
-    if (!this.ai) {
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-      if (!apiKey) {
-        throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set (required for planning; cached replays do not use the LLM)");
-      }
-      this.ai = new GoogleGenAI({ apiKey });
-    }
-    return this.ai;
-  }
-
-  private async callGemini(ai: GoogleGenAI, prompt: string, seed: number) {
-    return ai.models.generateContent({
-      model: MODEL(),
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: PLAN_GEMINI_SCHEMA,
-        // Planejar é transcrição de tarefa em ações, não raciocínio longo:
-        // thinking desligado corta ~10x de latência e custo no flash.
-        // Os modelos *pro* não aceitam budget 0 — usam o mínimo (128).
-        thinkingConfig: { thinkingBudget: MODEL().includes("pro") ? 128 : 0 },
-        // Um plano de 30 ações cabe em ~3k tokens; o teto limita o custo
-        // de gerações degeneradas (observado: 65k tokens num run).
-        maxOutputTokens: 8192,
-        // temp > 0 de propósito: com temp 0 a degeneração (loop até
-        // MAX_TOKENS) fica determinística por prompt — jitter + seeds
-        // distintos por tentativa escapam da bacia degenerada.
-        temperature: 0.3,
-        seed,
-      },
+  private call(client: LlmClient, prompt: string, seed: number) {
+    return client.generate({
+      prompt,
+      schema: PLAN_GEMINI_SCHEMA,
+      // Um plano de 30 ações cabe em ~3k tokens; o teto limita o custo
+      // de gerações degeneradas (observado: 65k tokens num run).
+      maxOutputTokens: 8192,
+      // temp > 0 de propósito: com temp 0 a degeneração (loop até
+      // MAX_TOKENS) fica determinística por prompt — jitter + seeds
+      // distintos por tentativa escapam da bacia degenerada.
+      temperature: 0.3,
+      seed,
     });
   }
 
   async generate(scenario: Scenario, browser: Browser, failureContext?: string): Promise<PlanGeneration> {
-    const ai = this.client();
+    // Client criado por geração, não no construtor: replays de cache nunca
+    // planejam (não devem exigir chave), e as flags --llm/--base-url já
+    // escreveram nas envs a esta altura.
+    const client = createLlmClient();
     // loadScenario resolve o start_url por ambiente; o fallback cobre chamadas diretas da API.
     const startUrl = scenario.start_url ?? "/";
     await browser.goto(startUrl);
@@ -223,33 +199,31 @@ export class GeminiPlanner implements Planner {
       for (let apiTry = 1; apiTry <= 3 && !plan; apiTry++) {
         let response;
         try {
-          response = await this.callGemini(ai, prompt, attempt * 10 + apiTry);
+          response = await this.call(client, prompt, attempt * 10 + apiTry);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|429|500|503/i.test(message)) {
-            lastErrors = [`falha de rede/quota na chamada ao Gemini: ${message}`];
+          if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|timeout|429|500|502|503/i.test(message)) {
+            lastErrors = [`falha de rede/quota na chamada ao ${client.provider}: ${message}`];
             await new Promise((r) => setTimeout(r, apiTry * 2000));
             continue;
           }
           throw err;
         }
         llmCalls += 1;
-        tokens.input += response.usageMetadata?.promptTokenCount ?? 0;
-        tokens.output += response.usageMetadata?.candidatesTokenCount ?? 0;
+        tokens.input += response.tokens.input;
+        tokens.output += response.tokens.output;
 
-        const finishReason = response.candidates?.[0]?.finishReason;
         if (process.env.LOG_LEVEL === "debug") {
-          const text = response.text ?? "";
           console.error(
-            `[planner] tentativa ${attempt}.${apiTry}: finishReason=${finishReason} out_tokens=${response.usageMetadata?.candidatesTokenCount} thoughts=${response.usageMetadata?.thoughtsTokenCount} len=${text.length} tail=${JSON.stringify(text.slice(-120))}`,
+            `[planner] tentativa ${attempt}.${apiTry}: truncated=${response.truncated} out_tokens=${response.tokens.output} len=${response.text.length} tail=${JSON.stringify(response.text.slice(-120))}`,
           );
         }
-        if (finishReason === "MAX_TOKENS") {
-          lastErrors = ["resposta degenerada/truncada (MAX_TOKENS) — falha transiente da API"];
+        if (response.truncated) {
+          lastErrors = ["resposta degenerada/truncada no limite de tokens — falha transiente da API"];
           continue;
         }
         try {
-          rawText = response.text ?? "";
+          rawText = response.text;
           plan = normalizeActions(sanitizePlan(JSON.parse(rawText))) as Plan;
         } catch {
           lastErrors = ["resposta não era JSON válido — falha transiente da API"];
@@ -273,8 +247,8 @@ export class GeminiPlanner implements Planner {
         }
         if (validation.ok) {
           plan.task = scenario.task;
-          plan.generated_by = { model: MODEL(), at: new Date().toISOString() };
-          return { plan, llm_calls: llmCalls, model: MODEL(), planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
+          plan.generated_by = { model: `${client.provider}/${client.model}`, at: new Date().toISOString() };
+          return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
         }
         lastErrors = validation.errors;
         if (process.env.LOG_LEVEL === "debug") {
@@ -310,6 +284,9 @@ Devolva o plano completo corrigido. Responda APENAS com o JSON do plano.`;
     );
   }
 }
+
+/** @deprecated Nome antigo, mantido para compatibilidade — use LlmPlanner. */
+export { LlmPlanner as GeminiPlanner };
 
 /**
  * O structured output do Gemini tende a preencher campos opcionais com "" em

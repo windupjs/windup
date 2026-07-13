@@ -21,6 +21,8 @@ export interface CostsReport {
   free_replays: number;
   /** LLM-assist de scans (P4): gasto de IA fora de runs, mesmo ledger. */
   scans: { count: number; llm_calls: number; tokens: { input: number; output: number }; est_cost_usd: number };
+  /** Por empresa (google, openai...) — quem alterna entre LLMs vê o gasto de cada uma. */
+  by_provider: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
   by_model: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
   by_scenario: Record<string, { runs: number; llm_calls: number; est_cost_usd: number }>;
   last_runs: Array<{
@@ -32,7 +34,21 @@ export interface CostsReport {
     tokens: { input: number; output: number };
     est_cost_usd: number;
     model: string | null;
+    provider: string | null;
   }>;
+}
+
+/**
+ * Registros anteriores ao multi-provider não têm llm_provider — infere pelo
+ * nome do modelo (nomes são únicos entre empresas), para o histórico antigo
+ * aparecer na quebra por provider sem reescrever o ledger.
+ */
+export function inferProvider(model: string | null, recorded?: string | null): string | null {
+  if (recorded) return recorded;
+  if (!model) return null;
+  if (/^gemini/.test(model)) return "google";
+  if (/^(gpt-|o\d)/.test(model)) return "openai";
+  return "unknown";
 }
 
 export async function buildCostsReport(opts: { last?: number; days?: number } = {}): Promise<CostsReport> {
@@ -47,14 +63,19 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
 
   const cutoff = opts.days ? Date.now() - opts.days * 86_400_000 : null;
   const runs: RunMetrics[] = [];
-  const scans: Array<{ llm_calls: number; llm_model: string | null; tokens: { input: number; output: number } }> = [];
+  const scans: Array<{ llm_calls: number; llm_model: string | null; llm_provider: string | null; tokens: { input: number; output: number } }> = [];
   for (const file of files) {
     try {
       const m = JSON.parse(await readFile(path.join(runsDir, file), "utf8")) as RunMetrics & { kind?: string };
       if (!m.started_at) continue;
       if (cutoff && Date.parse(m.started_at) < cutoff) continue;
       if (m.kind === "scan") {
-        scans.push({ llm_calls: m.llm_calls ?? 0, llm_model: m.llm_model ?? null, tokens: m.tokens ?? { input: 0, output: 0 } });
+        scans.push({
+          llm_calls: m.llm_calls ?? 0,
+          llm_model: m.llm_model ?? null,
+          llm_provider: inferProvider(m.llm_model ?? null, m.llm_provider),
+          tokens: m.tokens ?? { input: 0, output: 0 },
+        });
         continue;
       }
       if (!m.scenario_id) continue;
@@ -72,9 +93,24 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     est_cost_usd: 0,
     free_replays: 0,
     scans: { count: 0, llm_calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 },
+    by_provider: {},
     by_model: {},
     by_scenario: {},
     last_runs: [],
+  };
+
+  const accumulate = (
+    bucket: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>,
+    key: string,
+    calls: number,
+    tokens: { input: number; output: number },
+    cost: number,
+  ) => {
+    const b = (bucket[key] ??= { calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 });
+    b.calls += calls;
+    b.tokens.input += tokens.input;
+    b.tokens.output += tokens.output;
+    b.est_cost_usd += cost;
   };
 
   for (const m of runs) {
@@ -86,11 +122,9 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     if (m.llm_calls === 0) report.free_replays += 1;
 
     if (m.llm_model) {
-      const bm = (report.by_model[m.llm_model] ??= { calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 });
-      bm.calls += m.llm_calls;
-      bm.tokens.input += m.tokens.input;
-      bm.tokens.output += m.tokens.output;
-      bm.est_cost_usd += cost;
+      const provider = inferProvider(m.llm_model, m.llm_provider);
+      if (provider) accumulate(report.by_provider, provider, m.llm_calls, m.tokens, cost);
+      accumulate(report.by_model, m.llm_model, m.llm_calls, m.tokens, cost);
     }
 
     const bs = (report.by_scenario[m.scenario_id] ??= { runs: 0, llm_calls: 0, est_cost_usd: 0 });
@@ -108,11 +142,8 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     report.scans.est_cost_usd += cost;
     report.est_cost_usd += cost; // total geral inclui scans
     if (s.llm_model) {
-      const bm = (report.by_model[s.llm_model] ??= { calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 });
-      bm.calls += s.llm_calls;
-      bm.tokens.input += s.tokens.input;
-      bm.tokens.output += s.tokens.output;
-      bm.est_cost_usd += cost;
+      if (s.llm_provider) accumulate(report.by_provider, s.llm_provider, s.llm_calls, s.tokens, cost);
+      accumulate(report.by_model, s.llm_model, s.llm_calls, s.tokens, cost);
     }
   }
 
@@ -125,6 +156,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     tokens: m.tokens,
     est_cost_usd: estimateCostUsd(m.tokens, m.llm_model),
     model: m.llm_model,
+    provider: inferProvider(m.llm_model, m.llm_provider),
   }));
 
   round(report);
@@ -134,6 +166,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
 function round(report: CostsReport): void {
   report.est_cost_usd = Number(report.est_cost_usd.toFixed(4));
   report.scans.est_cost_usd = Number(report.scans.est_cost_usd.toFixed(4));
+  for (const bp of Object.values(report.by_provider)) bp.est_cost_usd = Number(bp.est_cost_usd.toFixed(4));
   for (const bm of Object.values(report.by_model)) bm.est_cost_usd = Number(bm.est_cost_usd.toFixed(4));
   for (const bs of Object.values(report.by_scenario)) bs.est_cost_usd = Number(bs.est_cost_usd.toFixed(4));
 }
@@ -160,11 +193,22 @@ export function printCostsReport(report: CostsReport, runsDir: string): void {
     );
   }
 
+  if (Object.keys(report.by_provider).length > 1) {
+    console.log("\nby provider");
+    for (const [provider, s] of Object.entries(report.by_provider).sort((a, b) => b[1].est_cost_usd - a[1].est_cost_usd)) {
+      console.log(
+        `  ${provider.padEnd(26)} calls=${String(s.calls).padEnd(4)} tokens=${fmtTokens(s.tokens.input)}/${fmtTokens(s.tokens.output)}  $${s.est_cost_usd}`,
+      );
+    }
+  }
+
   if (Object.keys(report.by_model).length) {
     console.log("\nby model");
     for (const [model, s] of Object.entries(report.by_model).sort((a, b) => b[1].est_cost_usd - a[1].est_cost_usd)) {
+      const provider = inferProvider(model);
+      const label = provider && provider !== "unknown" ? `${provider}/${model}` : model;
       console.log(
-        `  ${model.padEnd(26)} calls=${String(s.calls).padEnd(4)} tokens=${fmtTokens(s.tokens.input)}/${fmtTokens(s.tokens.output)}  $${s.est_cost_usd}`,
+        `  ${label.padEnd(33)} calls=${String(s.calls).padEnd(4)} tokens=${fmtTokens(s.tokens.input)}/${fmtTokens(s.tokens.output)}  $${s.est_cost_usd}`,
       );
     }
   }
@@ -178,8 +222,9 @@ export function printCostsReport(report: CostsReport, runsDir: string): void {
   for (const r of report.last_runs) {
     const at = r.at.slice(0, 16).replace("T", " ");
     const status = r.result === "passed" ? "PASS" : "FAIL";
+    const llmLabel = r.model ? `  ${r.provider && r.provider !== "unknown" ? `${r.provider}/` : ""}${r.model}` : "";
     console.log(
-      `  ${at}  ${status}  ${r.scenario.padEnd(26)} cache=${r.cache.padEnd(11)} llm=${r.llm_calls}  $${r.est_cost_usd}${r.model ? `  ${r.model}` : ""}`,
+      `  ${at}  ${status}  ${r.scenario.padEnd(26)} cache=${r.cache.padEnd(11)} llm=${r.llm_calls}  $${r.est_cost_usd}${llmLabel}`,
     );
   }
 }

@@ -228,6 +228,7 @@ async function runAssistLayer(
       started_at: new Date().toISOString(),
       llm_calls: outcome.calls,
       llm_model: outcome.model,
+      llm_provider: outcome.provider,
       tokens: outcome.tokens,
       estimated_cost_usd: cost,
       files_analyzed: Math.min(candidates.length, outcome.calls),

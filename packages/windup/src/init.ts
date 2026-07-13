@@ -27,7 +27,13 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 
 export default defineConfig({
   baseUrl: ${JSON.stringify(baseUrl)},
-  llm: { provider: "google", model: ${JSON.stringify(model)} },
+  llm: {
+    provider: "google",
+    model: ${JSON.stringify(model)},
+    // Several providers at once — pick one per run with \`windup run --llm openai[:model]\`.
+    // API keys come from GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY (override with apiKeyEnv).
+    // providers: { openai: { model: "gpt-5-mini" } },
+  },
   scenarios: ${JSON.stringify(scenariosDir)},
   framework: ${JSON.stringify(framework)},
   // Project indexing (windup scan):

@@ -27,6 +27,7 @@ export interface AssistOutcome {
   calls: number;
   tokens: { input: number; output: number };
   model: string;
+  provider: string;
   candidates_skipped: number;
 }
 
@@ -91,51 +92,35 @@ NÃO invente: só relate o que o código evidencia.
 ${source}`;
 }
 
-/** Assinatura injetável para testes (o caller real usa @google/genai). */
+/** Assinatura injetável para testes (o caller real usa a fronteira LLM multi-provider). */
 export type AssistCaller = (prompt: string) => Promise<{ text: string; tokens: { input: number; output: number } }>;
-
-async function geminiCaller(model: string): Promise<AssistCaller> {
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set (required for scan LLM-assist; use --no-assist to skip)");
-  }
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({ apiKey });
-  return async (prompt: string) => {
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: ASSIST_SCHEMA,
-        thinkingConfig: { thinkingBudget: model.includes("pro") ? 128 : 0 },
-        maxOutputTokens: 4096,
-        temperature: 0.3,
-      },
-    });
-    return {
-      text: response.text ?? "",
-      tokens: {
-        input: response.usageMetadata?.promptTokenCount ?? 0,
-        output: response.usageMetadata?.candidatesTokenCount ?? 0,
-      },
-    };
-  };
-}
 
 const MAX_FILE_CHARS = 24_000;
 
 export async function runAssist(candidates: AssistCandidate[], caller?: AssistCaller): Promise<AssistOutcome> {
   const config = getContext().config;
   const maxCalls = config.scan?.llmAssist?.maxCalls ?? 20;
-  const model = config.llm.model;
-  const call = caller ?? (await geminiCaller(model));
+
+  // Mesma fronteira do planejador: o assist respeita --llm/WINDUP_LLM e a
+  // seção llm.providers da config.
+  let call = caller;
+  let model = config.llm.model;
+  let provider: string = config.llm.provider;
+  if (!call) {
+    const { createLlmClient } = await import("../llm.js");
+    const client = createLlmClient();
+    model = client.model;
+    provider = client.provider;
+    call = (prompt: string) =>
+      client.generate({ prompt, schema: ASSIST_SCHEMA, maxOutputTokens: 4096, temperature: 0.3 });
+  }
 
   const outcome: AssistOutcome = {
     pages: [],
     calls: 0,
     tokens: { input: 0, output: 0 },
     model,
+    provider,
     candidates_skipped: Math.max(0, candidates.length - maxCalls),
   };
 

@@ -10,8 +10,26 @@ export interface WindupConfig {
   /** Base para start_url relativo nos cenários (ex.: "/login"). */
   baseUrl?: string;
   llm: {
-    provider: "google";
+    /** Provider ativo por padrão; troque por execução com --llm / WINDUP_LLM. */
+    provider: "google" | "openai";
     model: string;
+    /**
+     * Vários providers configurados AO MESMO TEMPO — modelo default e chave
+     * de cada um. A seleção por execução (`--llm openai[:modelo]`) usa estes
+     * defaults quando o modelo não vem na flag.
+     */
+    providers?: Partial<
+      Record<
+        "google" | "openai",
+        {
+          model?: string;
+          /** Nome da env var com a API key (default: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY). */
+          apiKeyEnv?: string;
+          /** Só openai: endpoint OpenAI-compatível alternativo (Azure, proxy, modelo local). */
+          baseUrl?: string;
+        }
+      >
+    >;
   };
   /** Pasta dos cenários, relativa à config (commitada). */
   scenarios: string;

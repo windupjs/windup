@@ -2,7 +2,7 @@
 import "./env.js";
 import { Command } from "commander";
 import { clearCache } from "./cache.js";
-import { GeminiPlanner } from "./planner.js";
+import { LlmPlanner } from "./planner.js";
 import { runScenario } from "./runner.js";
 import { loadScenario } from "./scenario.js";
 import { runBench } from "./bench.js";
@@ -29,8 +29,9 @@ program
 
 function printRun(metrics: RunMetrics): void {
   const status = metrics.result === "passed" ? "PASS" : "FAIL";
+  const llm = metrics.llm_model ? ` llm=${metrics.llm_provider ? `${metrics.llm_provider}/` : ""}${metrics.llm_model}` : "";
   console.log(
-    `${status}  ${metrics.scenario_id}  cache=${metrics.cache} llm_calls=${metrics.llm_calls} ` +
+    `${status}  ${metrics.scenario_id}  cache=${metrics.cache} llm_calls=${metrics.llm_calls}${llm} ` +
       `total=${metrics.duration_ms.total}ms (plan=${metrics.duration_ms.planning}ms exec=${metrics.duration_ms.execution}ms) ` +
       `cost=$${metrics.estimated_cost_usd}`,
   );
@@ -49,12 +50,14 @@ program
   .option("--headed", "show the browser window (headless off)")
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
+  .option("--llm <provider[:model]>", "LLM for planning, e.g. openai, openai:gpt-5-mini, google:gemini-3.1-flash-lite (also: WINDUP_LLM env)")
   .option("--reporter <format>", "write a report: junit | json")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
+    if (opts.llm) process.env.WINDUP_LLM = opts.llm;
     if (opts.reporter && !["junit", "json"].includes(opts.reporter)) {
       console.error(`unknown reporter "${opts.reporter}" — use junit or json`);
       process.exitCode = 2;
@@ -82,7 +85,7 @@ program
       return;
     }
 
-    const planner = new GeminiPlanner({ useMap: opts.map });
+    const planner = new LlmPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
     const results = [];
     let failures = 0;
@@ -110,7 +113,9 @@ program
   .command("bench <scenario>")
   .description("Run the full validation protocol (generation, replay, failure recovery) and report criteria")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")
-  .action(async (scenarioId: string, opts: { map: boolean }) => {
+  .option("--llm <provider[:model]>", "LLM for planning (e.g. openai:gpt-5-mini) — benchmark different providers")
+  .action(async (scenarioId: string, opts: { map: boolean; llm?: string }) => {
+    if (opts.llm) process.env.WINDUP_LLM = opts.llm;
     const ok = await runBench(scenarioId, { useMap: opts.map });
     process.exitCode = ok ? 0 : 1;
   });
@@ -120,7 +125,9 @@ program
   .description("Statically index the project (routes + interactive elements) into the site map")
   .option("--update", "incremental: re-index only files changed since the last scan (git diff)")
   .option("--no-assist", "skip the LLM-assist layer (static layers only, zero LLM cost)")
-  .action(async (opts: { update?: boolean; assist: boolean }) => {
+  .option("--llm <provider[:model]>", "LLM for the assist layer (e.g. openai:gpt-5-mini)")
+  .action(async (opts: { update?: boolean; assist: boolean; llm?: string }) => {
+    if (opts.llm) process.env.WINDUP_LLM = opts.llm;
     const { runScan } = await import("./scan/scan.js");
     const summary = await runScan({ update: opts.update, assist: opts.assist });
     console.log(

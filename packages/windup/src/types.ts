@@ -106,6 +106,8 @@ export interface RunMetrics {
   cache: CacheOutcome;
   llm_calls: number;
   llm_model: string | null;
+  /** Provider do modelo ("google", "openai"); null em replays, ausente em registros pré-0.10. */
+  llm_provider?: string | null;
   planning_mode: "full" | "incremental" | null;
   /** Retries semânticos do planejador (doc 03 permite ≤1); null se não planejou. */
   plan_semantic_retries: number | null;
