@@ -1,7 +1,7 @@
 import type { Browser } from "./browser.js";
 import { createLlmClient, type LlmClient } from "./llm.js";
 import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
-import type { Plan, Scenario } from "./types.js";
+import type { Action, Fragment, Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
 import { getContext } from "./context.js";
 
@@ -65,7 +65,8 @@ Quando um fragmento cobrir parte da tarefa, use UMA ação \
 { "id": "aN", "type": "use", "use": "<fragment_id>" } no lugar dessas ações — \
 NÃO regenere as ações que o fragmento já cobre. Após um "use", o estado é a \
 PÓS-CONDIÇÃO do fragmento: continue dali (não repita fills/cliques do fragmento; \
-a página já mudou).
+a página já mudou). Se o fragmento sozinho já cumpre a tarefa, o plano é apenas a \
+ação use, sem nada depois.
 
 ${fragmentsCatalog}\n`
     : "";
@@ -107,6 +108,9 @@ NÃO uma ação wait_for extra.
 click não tem value/value_ref/url. O campo "url" da ação existe SÓ em goto (destino de navegação). \
 URL esperada após a ação vai em expect.url (aceita glob).
 - O plano é dados, não programa: sem condicionais, sem loops.
+- Gere o MENOR plano que cumpre a tarefa: NÃO adicione ações além do pedido — nada de \
+visitar páginas extras "para conferir", cliques redundantes ou passos de verificação \
+adicionais (a verificação é o "expect" da última ação, não uma ação).
 
 # Exemplo do formato (login simples — adapte à tarefa real)
 {
@@ -225,6 +229,7 @@ export class LlmPlanner implements Planner {
         try {
           rawText = response.text;
           plan = normalizeActions(sanitizePlan(JSON.parse(rawText))) as Plan;
+          if (plan?.actions && fragments.length) plan = dropFragmentEchoes(plan, fragments);
         } catch {
           lastErrors = ["resposta não era JSON válido — falha transiente da API"];
         }
@@ -363,6 +368,43 @@ export function normalizeActions(data: unknown): unknown {
     }
   }
   return data;
+}
+
+/**
+ * "Eco" de fragmento: modelos (observado em gpt-5-mini e flash-lite) às vezes
+ * repetem a cauda do fragmento logo depois do "use" — re-fill de senha,
+ * re-click no botão que o fragmento já clicou — e o plano quebra na página
+ * seguinte. Instrução no prompt não basta em todos os providers; a remoção é
+ * MECÂNICA: descarta ações imediatamente após um "use" que dupliquem
+ * (type+selector) ações do próprio fragmento, parando na primeira que não
+ * duplica. Repetições legítimas mais adiante no plano não são tocadas.
+ * Exportada para teste.
+ */
+export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
+  const byId = new Map(fragments.map((f) => [f.fragment_id, f]));
+  const kept: Action[] = [];
+  const actions = plan.actions;
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
+    kept.push(action);
+    if (action.type !== "use" || !action.use) continue;
+    const fragment = byId.get(action.use);
+    if (!fragment) continue;
+    const fragmentKeys = new Set(fragment.actions.map((a) => `${a.type}|${a.target?.selector ?? a.url ?? ""}`));
+    while (i + 1 < actions.length) {
+      const next = actions[i + 1];
+      if (!fragmentKeys.has(`${next.type}|${next.target?.selector ?? next.url ?? ""}`)) break;
+      // O eco pode carregar a verificação final do plano — preserva o expect
+      // na última ação mantida antes de descartá-lo.
+      if (next.expect && !kept[kept.length - 1].expect) kept[kept.length - 1].expect = next.expect;
+      i++;
+    }
+  }
+  if (kept.length !== actions.length) {
+    kept.forEach((a, idx) => (a.id = `a${idx + 1}`));
+    return { ...plan, actions: kept };
+  }
+  return plan;
 }
 
 /** ENVs legitimamente utilizáveis: os citados na tarefa/hints + os do manifesto. */
