@@ -11,45 +11,45 @@ afterEach(() => {
   setContext(createContext());
 });
 
-describe("resolução de start URL por ambiente", () => {
-  it("relativo resolve contra a baseUrl da config", () => {
+describe("start URL resolution by environment", () => {
+  it("relative resolves against the config baseUrl", () => {
     withBase("http://localhost:8082");
     expect(resolveStartUrl("/precos")).toBe("http://localhost:8082/precos");
   });
 
-  it("ausente vira '/' na baseUrl", () => {
+  it("absent becomes '/' on the baseUrl", () => {
     withBase("http://localhost:8082");
     expect(resolveStartUrl(undefined)).toBe("http://localhost:8082/");
   });
 
-  it("WINDUP_BASE_URL sobrescreve a config", () => {
+  it("WINDUP_BASE_URL overrides the config", () => {
     withBase("http://localhost:8082");
     process.env.WINDUP_BASE_URL = "https://staging.exemplo.com";
     expect(resolveStartUrl("/precos")).toBe("https://staging.exemplo.com/precos");
   });
 
-  it("override REBASEIA até URL absoluta do cenário (preserva path+query)", () => {
+  it("override REBASES even an absolute scenario URL (preserves path+query)", () => {
     withBase(undefined);
     process.env.WINDUP_BASE_URL = "https://staging.exemplo.com";
     expect(resolveStartUrl("http://localhost:8080/login?cadastro=1")).toBe("https://staging.exemplo.com/login?cadastro=1");
   });
 
-  it("absoluta sem override permanece", () => {
+  it("absolute without an override stays as is", () => {
     withBase("http://localhost:8082");
     expect(resolveStartUrl("http://outra:9999/x")).toBe("http://outra:9999/x");
   });
 
-  it("relativo sem nenhuma base é erro claro", () => {
+  it("relative without any base is a clear error", () => {
     withBase(undefined);
     expect(() => resolveStartUrl("/precos")).toThrow(/base URL/);
   });
 });
 
-describe("startPath (identidade do cache entre ambientes)", () => {
-  it("portas/hosts diferentes, mesma identidade", () => {
+describe("startPath (cache identity across environments)", () => {
+  it("different ports/hosts, same identity", () => {
     expect(startPath("http://localhost:8080/precos")).toBe(startPath("https://staging.exemplo.com/precos"));
   });
-  it("querystring faz parte da identidade", () => {
+  it("the querystring is part of the identity", () => {
     expect(startPath("http://a/x?y=1")).not.toBe(startPath("http://a/x"));
   });
 });

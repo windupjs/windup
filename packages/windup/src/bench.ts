@@ -17,29 +17,29 @@ interface CriterionResult {
 const avg = (xs: number[]): number => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0);
 
 /**
- * Protocolo de medição do doc 06 (Fases A, B e C) + critérios C1–C5.
- * Cada execução individual também grava seu runs/<ts>-<cenario>.json normal.
+ * Measurement protocol from doc 06 (Phases A, B and C) + criteria C1–C5.
+ * Each individual run also writes its normal runs/<ts>-<scenario>.json.
  */
 export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean } = {}): Promise<boolean> {
   const scenario = await loadScenario(scenarioId);
   const planner = new LlmPlanner({ useMap: benchOpts.useMap });
 
-  // ── Fase A — Geração (viabilidade do Gemini) ────────────────────────────
-  console.log(`\n[bench] Fase A — 5 gerações com --no-cache (${scenarioId})`);
+  // ── Phase A — Generation (Gemini viability) ─────────────────────────────
+  console.log(`\n[bench] Phase A — 5 generations with --no-cache (${scenarioId})`);
   await clearCache();
   const phaseA: RunMetrics[] = [];
   for (let i = 1; i <= 5; i++) {
     const m = await runScenario(scenario, planner, { useCache: false });
     console.log(
       `[bench]   A${i}: ${m.result} llm_calls=${m.llm_calls} tokens=${m.tokens.input}/${m.tokens.output} prompt_chars=${m.prompt_chars ?? "-"} ` +
-        `custo=US$${m.estimated_cost_usd} total=${m.duration_ms.total}ms` +
+        `cost=US$${m.estimated_cost_usd} total=${m.duration_ms.total}ms` +
         (m.failure ? ` [${m.failure.kind}] ${m.failure.message.slice(0, 80)}` : ""),
     );
     phaseA.push(m);
   }
 
-  // ── Fase B — Replay (determinismo e economia) ───────────────────────────
-  console.log(`\n[bench] Fase B — popula cache + 10 replays`);
+  // ── Phase B — Replay (determinism and savings) ──────────────────────────
+  console.log(`\n[bench] Phase B — populate cache + 10 replays`);
   const seed = await runScenario(scenario, planner, { useCache: true });
   console.log(`[bench]   seed: ${seed.result} cache=${seed.cache} llm_calls=${seed.llm_calls}`);
   const phaseB: RunMetrics[] = [];
@@ -50,38 +50,38 @@ export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean
       phaseB.push(m);
     }
   } else {
-    console.log("[bench]   seed falhou — Fase B abortada");
+    console.log("[bench]   seed failed — Phase B aborted");
   }
 
-  // ── Fase C — Falha e re-planejamento ────────────────────────────────────
-  console.log(`\n[bench] Fase C — seletor quebrado no cache → re-planejamento`);
+  // ── Phase C — Failure and re-planning ───────────────────────────────────
+  console.log(`\n[bench] Phase C — broken selector in the cache → re-planning`);
   let phaseC: { broken: RunMetrics; replayAfter: RunMetrics } | null = null;
   const cacheFile = path.join(cacheDir(), `${scenarioId}.json`);
   try {
     const entry = JSON.parse(await readFile(cacheFile, "utf8")) as CacheEntry;
-    // Pós-E3 um plano pode ser só { use } + verificações: quebra a primeira
-    // ação com target (click/fill/wait_for), não apenas click.
+    // Post-E3 a plan may be just { use } + verifications: break the first
+    // action with a target (click/fill/wait_for), not only click.
     const clickAction = entry.plan.actions.find((a) => (a.type === "click" || a.type === "fill" || a.type === "wait_for") && a.target);
     if (!clickAction) throw new Error("no breakable action (with target) in the cached plan");
     clickAction.target!.selector = `${clickAction.target!.selector}-x`;
     await writeFile(cacheFile, JSON.stringify(entry, null, 2));
-    console.log(`[bench]   seletor quebrado: ${clickAction.target!.selector} (ação ${clickAction.id})`);
+    console.log(`[bench]   broken selector: ${clickAction.target!.selector} (action ${clickAction.id})`);
 
     const broken = await runScenario(scenario, planner, { useCache: true });
     console.log(
-      `[bench]   run pós-quebra: ${broken.result} cache=${broken.cache} llm_calls=${broken.llm_calls}` +
+      `[bench]   post-break run: ${broken.result} cache=${broken.cache} llm_calls=${broken.llm_calls}` +
         (broken.failure ? ` [${broken.failure.kind}]` : ""),
     );
     const replayAfter = await runScenario(scenario, planner, { useCache: true });
-    console.log(`[bench]   replay seguinte: ${replayAfter.result} cache=${replayAfter.cache} llm_calls=${replayAfter.llm_calls}`);
+    console.log(`[bench]   next replay: ${replayAfter.result} cache=${replayAfter.cache} llm_calls=${replayAfter.llm_calls}`);
     phaseC = { broken, replayAfter };
   } catch (err) {
-    console.log(`[bench]   Fase C abortada: ${err instanceof Error ? err.message : err}`);
+    console.log(`[bench]   Phase C aborted: ${err instanceof Error ? err.message : err}`);
   }
 
-  // ── Critérios C1–C5 (doc 06) ────────────────────────────────────────────
-  // "≤1 retry" do C1 refere-se a retries semânticos (plano reprovado); re-chamadas
-  // por falha transiente da API (degeneração MAX_TOKENS) não contam contra o critério.
+  // ── Criteria C1–C5 (doc 06) ─────────────────────────────────────────────
+  // C1's "≤1 retry" refers to semantic retries (plan rejected); re-calls due to
+  // transient API failures (MAX_TOKENS degeneration) do not count against the criterion.
   const aPassed = phaseA.filter((m) => m.result === "passed" && (m.plan_semantic_retries ?? 0) <= 1);
   const bPassed = phaseB.filter((m) => m.result === "passed" && m.llm_calls === 0 && m.cache === "hit");
   const genAvgMs = avg(phaseA.filter((m) => m.result === "passed").map((m) => m.duration_ms.total));
@@ -93,31 +93,31 @@ export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean
   const criteria: CriterionResult[] = [
     {
       id: "C1",
-      description: "Planos válidos na 1ª geração (≤1 retry + execução completa) ≥ 4/5",
+      description: "Valid plans on the 1st generation (≤1 retry + complete execution) ≥ 4/5",
       passed: aPassed.length >= 4,
       measured: `${aPassed.length}/5`,
     },
     {
       id: "C2",
-      description: "Replay sem LLM: 10/10 sucessos com llm_calls=0",
+      description: "LLM-free replay: 10/10 successes with llm_calls=0",
       passed: bPassed.length === 10,
       measured: `${bPassed.length}/10`,
     },
     {
       id: "C3",
-      description: "Replay ≥ 5x mais rápido que execução com planejamento",
+      description: "Replay ≥ 5x faster than execution with planning",
       passed: speedup >= 5,
-      measured: `${speedup.toFixed(1)}x (geração ${genAvgMs}ms vs replay ${replayAvgMs}ms)`,
+      measured: `${speedup.toFixed(1)}x (generation ${genAvgMs}ms vs replay ${replayAvgMs}ms)`,
     },
     {
       id: "C4",
-      description: "Custo de LLM do replay = US$ 0 (custo por geração documentado)",
+      description: "Replay LLM cost = US$ 0 (per-generation cost documented)",
       passed: phaseB.length > 0 && replayCost === 0,
-      measured: `replay US$${replayCost} | geração média US$${(genCosts.reduce((a, b) => a + b, 0) / (genCosts.length || 1)).toFixed(6)}`,
+      measured: `replay US$${replayCost} | average generation US$${(genCosts.reduce((a, b) => a + b, 0) / (genCosts.length || 1)).toFixed(6)}`,
     },
     {
       id: "C5",
-      description: "Falha detectada por pós-condição + re-plano ok + replay seguinte llm_calls=0",
+      description: "Failure detected by postcondition + re-plan ok + next replay llm_calls=0",
       passed:
         !!phaseC &&
         phaseC.broken.cache === "invalidated" &&
@@ -126,15 +126,15 @@ export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean
         phaseC.replayAfter.result === "passed" &&
         phaseC.replayAfter.llm_calls === 0,
       measured: phaseC
-        ? `pós-quebra: ${phaseC.broken.result}/cache=${phaseC.broken.cache}/llm=${phaseC.broken.llm_calls}; replay: ${phaseC.replayAfter.result}/llm=${phaseC.replayAfter.llm_calls}`
-        : "não executada",
+        ? `post-break: ${phaseC.broken.result}/cache=${phaseC.broken.cache}/llm=${phaseC.broken.llm_calls}; replay: ${phaseC.replayAfter.result}/llm=${phaseC.replayAfter.llm_calls}`
+        : "not executed",
     },
   ];
 
-  console.log(`\n[bench] ══ Resultado ${scenarioId} ══`);
+  console.log(`\n[bench] ══ Result ${scenarioId} ══`);
   for (const c of criteria) {
     console.log(`[bench] ${c.passed ? "✅" : "❌"} ${c.id} — ${c.description}`);
-    console.log(`[bench]      medido: ${c.measured}`);
+    console.log(`[bench]      measured: ${c.measured}`);
   }
 
   const summary = {
@@ -147,7 +147,7 @@ export async function runBench(scenarioId: string, benchOpts: { useMap?: boolean
   };
   const summaryFile = path.join(runsDir(), `bench-${scenarioId}-${Date.now()}.json`);
   await writeFile(summaryFile, JSON.stringify(summary, null, 2));
-  console.log(`[bench] resumo gravado em ${summaryFile}`);
+  console.log(`[bench] summary written to ${summaryFile}`);
 
   return criteria.every((c) => c.passed);
 }

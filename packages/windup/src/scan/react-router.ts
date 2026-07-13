@@ -53,9 +53,9 @@ export async function indexReactRouterRoutes(projectRoot: string): Promise<Stati
 
     const imports = importMap(source, file, projectRoot);
 
-    // 1) JSX <Route path="..." element={...}> — o element pode aninhar
-    //    wrappers de layout (<Protected><Pagina/></Protected>): resolve TODOS
-    //    os componentes do element, não só o primeiro.
+    // 1) JSX <Route path="..." element={...}> — the element may nest layout
+    //    wrappers (<Protected><Page/></Protected>): resolve ALL of the
+    //    element's components, not just the first one.
     for (const m of source.matchAll(/<Route\b([^>]*)>/g)) {
       const attrs = m[1];
       const p = attrs.match(/\bpath\s*=\s*(?:"([^"]*)"|'([^']*)'|\{\s*["'`]([^"'`]*)["'`]\s*\})/);

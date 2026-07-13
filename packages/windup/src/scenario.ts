@@ -6,7 +6,7 @@ import { resolveStartUrl } from "./start-url.js";
 
 export type ResolvedScenario = Scenario & {
   start_url: string;
-  /** true = sem start_url explícito E com depends_on: continua da página final da última dependência (sem goto inicial). */
+  /** true = no explicit start_url AND with depends_on: continues from the last dependency's final page (no initial goto). */
   continue_from_dependency?: boolean;
 };
 
@@ -25,8 +25,8 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.hints !== undefined && (!Array.isArray(scenario.hints) || scenario.hints.some((h) => typeof h !== "string"))) {
     throw new Error(`Scenario "${id}" is invalid: hints must be a list of strings`);
   }
-  // Resolução por ambiente: --base-url/WINDUP_BASE_URL > config.baseUrl >
-  // URL absoluta do cenário. Ambientes mudam de porta/host; o teste não.
+  // Per-environment resolution: --base-url/WINDUP_BASE_URL > config.baseUrl >
+  // the scenario's absolute URL. Environments change port/host; the test does not.
   if (scenario.depends_on !== undefined && (!Array.isArray(scenario.depends_on) || scenario.depends_on.some((d: unknown) => typeof d !== "string"))) {
     throw new Error(`scenario "${id}": depends_on must be a list of scenario ids`);
   }

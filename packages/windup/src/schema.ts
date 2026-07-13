@@ -3,7 +3,7 @@ import addFormats from "ajv-formats";
 import type { Plan } from "./types.js";
 
 /**
- * JSON Schema completo do plano v0.1 (doc 04) — autoridade local, validado com Ajv.
+ * Full JSON Schema of the v0.1 plan (doc 04) — local authority, validated with Ajv.
  */
 export const PLAN_JSON_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -63,9 +63,9 @@ export const PLAN_JSON_SCHEMA = {
 } as const;
 
 /**
- * Versão relaxada para o responseSchema do Gemini, que aceita só um
- * subconjunto de JSON Schema (sem const/pattern/$schema). O Ajv local
- * continua sendo a autoridade — esta versão só guia a geração.
+ * Relaxed version for Gemini's responseSchema, which accepts only a subset
+ * of JSON Schema (no const/pattern/$schema). The local Ajv remains the
+ * authority — this version only guides generation.
  */
 export const PLAN_GEMINI_SCHEMA = {
   type: "object",
@@ -127,7 +127,7 @@ export interface ValidationResult {
 }
 
 /**
- * Validação completa: estrutural (Ajv) + semântica (doc 04).
+ * Full validation: structural (Ajv) + semantic (doc 04).
  */
 export function validatePlan(data: unknown): ValidationResult {
   if (!validateStructure(data)) {
@@ -167,7 +167,7 @@ export function validatePlan(data: unknown): ValidationResult {
 
   const last = plan.actions[plan.actions.length - 1];
   const lastExpect = last.expect ?? {};
-  // type=use termina em fragmento cuja última ação carrega a própria pós-condição.
+  // type=use ends in a fragment whose last action carries its own postcondition.
   if (last.type !== "use" && !lastExpect.selector && !lastExpect.url && !lastExpect.selector_value) {
     errors.push(`action ${last.id}: the final action must declare expect (selector, url or selector_value)`);
   }

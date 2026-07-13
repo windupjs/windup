@@ -13,7 +13,7 @@ const FIXTURE = path.resolve(import.meta.dirname, "fixtures", "react-router-app"
 const DYNAMIC = path.resolve(FIXTURE, "src", "dynamicRoutes.tsx");
 
 describe("selectCandidates (P4)", () => {
-  it("prioriza arquivo com padrão de router que não rendeu rotas", () => {
+  it("prioritizes a file with a router pattern that yielded no routes", () => {
     const files = [
       { file: DYNAMIC, content: 'import { createBrowserRouter } from "react-router-dom"; path: `/x/${y}`' },
       { file: "/proj/src/pages/Loose.tsx", content: "export const x = 1;" },
@@ -25,14 +25,14 @@ describe("selectCandidates (P4)", () => {
     expect(candidates.some((c) => c.file === "/proj/src/util.ts")).toBe(false);
   });
 
-  it("arquivo já coberto não é candidato", () => {
+  it("an already-covered file is not a candidate", () => {
     const files = [{ file: DYNAMIC, content: "createBrowserRouter" }];
     expect(selectCandidates(files, new Set([DYNAMIC]), new Set())).toHaveLength(0);
   });
 });
 
-describe("runScan com LLM-assist (caller fake)", () => {
-  it("detecta rota dinâmica via assist, grava no ledger e a fatia oferece com menor precedência", async () => {
+describe("runScan with LLM assist (fake caller)", () => {
+  it("detects a dynamic route via assist, records it in the ledger and the slice offers it with lower precedence", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "windup-assist-"));
     process.env.WINDUP_CACHE_DIR = path.join(dataDir, "cache");
     const base = createContext(FIXTURE);
@@ -62,11 +62,11 @@ describe("runScan com LLM-assist (caller fake)", () => {
     expect(summary.assist!.calls).toBeLessThanOrEqual(3);
 
     const store = await SiteMapStore.load(path.join(dataDir, "site-map.json"));
-    const slice = store.sliceForPrompt("sig:unknown", "exportar o relatório de billing", 8000);
+    const slice = store.sliceForPrompt("sig:unknown", "export the billing report", 8000);
     expect(slice).toContain("**/reports/billing");
-    expect(slice).toContain("inferida por IA");
+    expect(slice).toContain("AI-inferred");
 
-    // Custo do assist no ledger (windup costs)
+    // Assist cost in the ledger (windup costs)
     const ledger = await readdir(path.join(dataDir, "runs"));
     const scanRecord = ledger.find((f) => f.startsWith("scan-"));
     expect(scanRecord).toBeDefined();
@@ -74,7 +74,7 @@ describe("runScan com LLM-assist (caller fake)", () => {
     expect(record.kind).toBe("scan");
     expect(record.llm_calls).toBe(summary.assist!.calls);
 
-    // --no-assist pula a camada
+    // --no-assist skips the layer
     const noAssist = await runScan({ assist: false, assistCaller: fake });
     expect(noAssist.assist).toBeNull();
 

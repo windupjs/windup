@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { getContext } from "../context.js";
 
 /**
- * LLM-assist do scan (SPEC-002, camada 3): a LLM lê arquivos que as camadas
- * estáticas não resolveram — rotas construídas dinamicamente, componentes
- * muito indiretos — e responde num schema fixo. Sempre com TETO explícito
- * (`scan.llmAssist.maxCalls`): scan nunca surpreende em custo.
+ * Scan LLM-assist (SPEC-002, layer 3): the LLM reads files the static layers
+ * could not resolve — dynamically built routes, very indirect components —
+ * and answers in a fixed schema. Always with an explicit CAP
+ * (`scan.llmAssist.maxCalls`): a scan never surprises on cost.
  *
- * Resultados entram no grafo com `source: "llm"` — a MENOR precedência
- * (execution > static > llm): dica de baixa confiança, nunca sobrescreve
- * conhecimento melhor.
+ * Results enter the graph with `source: "llm"` — the LOWEST precedence
+ * (execution > static > llm): a low-confidence hint that never overwrites
+ * better knowledge.
  */
 export interface AssistCandidate {
   file: string;
@@ -35,8 +35,8 @@ const ROUTER_PATTERN = /react-router|<Route[\s>]|createBrowserRouter|createHashR
 const PAGE_DIR = /\/(pages|views|screens|routes)\//;
 
 /**
- * Seleção heurística (sem LLM) dos arquivos que valem uma chamada, em ordem
- * de probabilidade. Exportada para teste.
+ * Heuristic selection (no LLM) of the files worth a call, in order of
+ * likelihood. Exported for testing.
  */
 export function selectCandidates(
   files: Array<{ file: string; content: string }>,
@@ -76,23 +76,23 @@ const ASSIST_SCHEMA = {
 };
 
 function assistPrompt(file: string, source: string): string {
-  return `Você analisa código-fonte de frontends para mapear páginas de um app web.
+  return `You analyze frontend source code to map the pages of a web app.
 
-Analise o arquivo abaixo e responda:
-1. "routes": as rotas URL que este arquivo define ou constrói (inclusive dinamicamente — \
-arrays mapeados, concatenação). Use o formato de path URL ("/pedidos/:id"). Se o arquivo \
-não define rotas, devolva lista vazia.
-2. Para cada rota, "elements": os elementos interativos que a página renderiza, no formato \
-"tag id=... name=... data-test=... type=... text=..." (só campos existentes; um por linha \
-do array). Prefira ids e data-test estáveis.
+Analyze the file below and answer:
+1. "routes": the URL routes this file defines or builds (including dynamically — \
+mapped arrays, concatenation). Use URL path format ("/orders/:id"). If the file \
+defines no routes, return an empty list.
+2. For each route, "elements": the interactive elements the page renders, in the format \
+"tag id=... name=... data-test=... type=... text=..." (only fields that exist; one per \
+array line). Prefer stable ids and data-test attributes.
 
-NÃO invente: só relate o que o código evidencia.
+Do NOT invent: only report what the code shows.
 
-# Arquivo: ${file}
+# File: ${file}
 ${source}`;
 }
 
-/** Assinatura injetável para testes (o caller real usa a fronteira LLM multi-provider). */
+/** Injectable signature for tests (the real caller uses the multi-provider LLM boundary). */
 export type AssistCaller = (prompt: string) => Promise<{ text: string; tokens: { input: number; output: number } }>;
 
 const MAX_FILE_CHARS = 24_000;
@@ -101,8 +101,8 @@ export async function runAssist(candidates: AssistCandidate[], caller?: AssistCa
   const config = getContext().config;
   const maxCalls = config.scan?.llmAssist?.maxCalls ?? 20;
 
-  // Mesma fronteira do planejador: o assist respeita --llm/WINDUP_LLM e a
-  // seção llm.providers da config.
+  // Same boundary as the planner: the assist honors --llm/WINDUP_LLM and
+  // the llm.providers section of the config.
   let call = caller;
   let model = config.llm.model;
   let provider: string = config.llm.provider;

@@ -1,6 +1,6 @@
 {
   "fragment_id": "login-saucedemo",
-  "description": "Login no saucedemo.com com o usuário standard_user (termina na lista de produtos)",
+  "description": "Log in to saucedemo.com with the standard_user account (ends on the product list)",
   "actions": [
     {
       "id": "a1",

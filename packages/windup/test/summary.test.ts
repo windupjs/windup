@@ -4,7 +4,7 @@ import type { Browser } from "../src/browser.js";
 import type { LlmClient } from "../src/llm.js";
 import type { RunMetrics, Scenario } from "../src/types.js";
 
-const SCENARIO: Scenario = { scenario_id: "precos", task: "Acessar a página de preços e verificar os planos exibidos." };
+const SCENARIO: Scenario = { scenario_id: "precos", task: "Go to the pricing page and verify the plans on display." };
 
 function metrics(over: Partial<RunMetrics> = {}): RunMetrics {
   return {
@@ -16,7 +16,7 @@ function metrics(over: Partial<RunMetrics> = {}): RunMetrics {
     result: "passed", failure: null,
     plan: {
       plan_version: "0.1", scenario_id: "precos", start_url: "/",
-      actions: [{ id: "a1", type: "click", target: { selector: "a[href='/precos']", description: "link Preços" }, expect: { url: "**/precos" } }],
+      actions: [{ id: "a1", type: "click", target: { selector: "a[href='/precos']", description: "Pricing link" }, expect: { url: "**/precos" } }],
     },
     ...over,
   };
@@ -24,36 +24,36 @@ function metrics(over: Partial<RunMetrics> = {}): RunMetrics {
 
 const fakeBrowser = {
   url: async () => "http://localhost:3000/precos",
-  snapshotTree: async () => 'heading "Planos"\ntext "Starter R$ 49/mês"\ntext "Pro R$ 149/mês"',
+  snapshotTree: async () => 'heading "Plans"\ntext "Starter R$ 49/month"\ntext "Pro R$ 149/month"',
 } as unknown as Browser;
 
-describe("run --summary (resumo pós-execução)", () => {
-  it("prompt inclui tarefa, plano, desfecho, anomalias e o snapshot final", () => {
+describe("run --summary (post-run summary)", () => {
+  it("prompt includes task, plan, outcome, anomalies and the final snapshot", () => {
     const prompt = buildSummaryPrompt(SCENARIO, metrics({ sig_mismatch: true, cache: "invalidated" }), "http://x/precos", 'text "Starter R$ 49"');
-    expect(prompt).toContain("página de preços");
-    expect(prompt).toContain("PASSOU");
-    expect(prompt).toContain("link Preços");
-    expect(prompt).toContain("re-planejado do zero");
+    expect(prompt).toContain("pricing page");
+    expect(prompt).toContain("PASSED");
+    expect(prompt).toContain("Pricing link");
+    expect(prompt).toContain("re-planned from scratch");
     expect(prompt).toContain("sig_mismatch");
-    expect(prompt).toContain("ações lentas (>5s): a1");
+    expect(prompt).toContain("slow actions (>5s): a1");
     expect(prompt).toContain('Starter R$ 49');
-    expect(prompt).toContain("LITERALMENTE");
+    expect(prompt).toContain("LITERALLY");
   });
 
-  it("falha entra no prompt como desfecho", () => {
+  it("a failure enters the prompt as the outcome", () => {
     const prompt = buildSummaryPrompt(
       SCENARIO,
       metrics({ result: "failed", failure: { kind: "verification", action_id: "a1", message: "not visible" } }),
       "", "",
     );
-    expect(prompt).toContain("FALHOU");
+    expect(prompt).toContain("FAILED");
     expect(prompt).toContain("[verification]");
   });
 
-  it("gera o resumo com tokens/custo do client e sobrevive a browser morto", async () => {
+  it("generates the summary with the client's tokens/cost and survives a dead browser", async () => {
     const client: LlmClient = {
       provider: "google", model: "gemini-3.1-flash-lite",
-      generate: async () => ({ text: "O teste passou; os planos exibidos são Starter R$ 49/mês e Pro R$ 149/mês.", tokens: { input: 2000, output: 60 }, truncated: false }),
+      generate: async () => ({ text: "The test passed; the plans on display are Starter R$ 49/month and Pro R$ 149/month.", tokens: { input: 2000, output: 60 }, truncated: false }),
     };
     const s = await generateRunSummary(SCENARIO, metrics(), fakeBrowser, client);
     expect(s.text).toContain("R$ 49");

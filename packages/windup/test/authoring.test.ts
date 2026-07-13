@@ -25,10 +25,10 @@ function fakeClient(responses: string[]): LlmClient & { prompts: string[] } {
 const VALID = JSON.stringify({
   scenario_id: "Criar Fatura",
   start_url: "/login",
-  task: "Faça login com a conta admin, abra o menu Faturas, clique em Nova fatura, preencha o cliente 'ACME Ltda' e o valor 150,00, salve e verifique que a fatura da ACME aparece na lista.",
+  task: "Log in with the admin account, open the Faturas menu, click Nova fatura, fill in the customer 'ACME Ltda' and the amount 150,00, save and verify that the ACME invoice appears in the list.",
 });
 
-describe("windup new (autoria assistida de cenários)", () => {
+describe("windup new (assisted scenario authoring)", () => {
   let root: string;
 
   beforeEach(async () => {
@@ -37,14 +37,14 @@ describe("windup new (autoria assistida de cenários)", () => {
   });
   afterAll(() => setContext(createContext()));
 
-  it("gera o arquivo com id kebab-case, start_url como path e registra a autoria no ledger", async () => {
+  it("generates the file with a kebab-case id, start_url as a path and records the authoring in the ledger", async () => {
     const client = fakeClient([VALID]);
-    const result = await generateScenario("login com admin e criar uma fatura", {}, client);
+    const result = await generateScenario("log in with admin and create an invoice", {}, client);
 
     expect(result.scenario.scenario_id).toBe("criar-fatura");
     expect(result.scenario.start_url).toBe("/login");
     const written = JSON.parse(await readFile(result.file, "utf8"));
-    expect(written.task).toContain("verifique");
+    expect(written.task).toContain("verify");
     expect(written.hints).toBeUndefined();
 
     const records = await readdir(getContext().paths.runsDir);
@@ -54,92 +54,92 @@ describe("windup new (autoria assistida de cenários)", () => {
     expect(record.llm_provider).toBe("google");
   });
 
-  it("injeta o conhecimento do site (rotas + páginas que casam com a instrução) no prompt", async () => {
+  it("injects the site knowledge (routes + pages matching the instruction) into the prompt", async () => {
     const store = await SiteMapStore.load(getContext().paths.mapFile);
     store.upsertStaticPage("/faturas", ["a id=nova-fatura text=Nova fatura"], ["src/Faturas.tsx"]);
     store.upsertStaticPage("/clientes", ["a id=novo-cliente"], ["src/Clientes.tsx"]);
     await store.save();
 
     const client = fakeClient([VALID]);
-    await generateScenario("criar uma fatura nova", {}, client);
-    expect(client.prompts[0]).toContain("Rotas conhecidas do app");
+    await generateScenario("create a new invoice in faturas", {}, client);
+    expect(client.prompts[0]).toContain("Known routes of the app");
     expect(client.prompts[0]).toContain("/faturas");
     expect(client.prompts[0]).toContain("nova-fatura");
   });
 
-  it("start_url inventado (fora do mapa) cai para '/'; páginas sem elementos ficam fora do conhecimento", async () => {
+  it("invented start_url (outside the map) falls back to '/'; pages without elements stay out of the knowledge", async () => {
     const store = await SiteMapStore.load(getContext().paths.mapFile);
     store.upsertStaticPage("/faturas", ["a id=nova-fatura"], ["src/Faturas.tsx"]);
     store.upsertStaticPage("/vazia", [], ["src/Vazia.tsx"]);
     await store.save();
 
-    const client = fakeClient([VALID]); // VALID usa start_url "/login", que não está no mapa
-    const result = await generateScenario("criar fatura", {}, client);
+    const client = fakeClient([VALID]); // VALID uses start_url "/login", which is not in the map
+    const result = await generateScenario("create an invoice", {}, client);
     expect(result.scenario.start_url).toBe("/");
     expect(client.prompts[0]).not.toContain("/vazia");
   });
 
-  it("sem mapa, o start_url gerado é mantido (não há lista para validar)", async () => {
+  it("without a map, the generated start_url is kept (there is no list to validate against)", async () => {
     const result = await generateScenario("login", {}, fakeClient([VALID]));
     expect(result.scenario.start_url).toBe("/login");
   });
 
-  it("inclui o manifesto (E4) para a task referenciar contas em vez de credenciais literais", async () => {
+  it("includes the manifest (E4) so the task references accounts instead of literal credentials", async () => {
     setContext(
       createContext(root, {
         config: { ...DEFAULT_CONFIG, context: { credentials: { admin: { user: "ENV:ADMIN_USER", password: "ENV:ADMIN_PASSWORD" } } } },
       }),
     );
     const client = fakeClient([VALID]);
-    await generateScenario("login com admin/admin e criar fatura", {}, client);
-    expect(client.prompts[0]).toContain("# Manifesto do projeto");
-    expect(client.prompts[0]).toContain("refira-se à conta pelo NOME");
+    await generateScenario("log in with admin/admin and create an invoice", {}, client);
+    expect(client.prompts[0]).toContain("# Project manifest");
+    expect(client.prompts[0]).toContain("refer to the account by NAME");
   });
 
-  it("id repetido ganha sufixo; --id explícito com colisão exige --force", async () => {
+  it("repeated id gets a suffix; explicit --id with a collision requires --force", async () => {
     await mkdir(getContext().paths.scenariosDir, { recursive: true });
     await writeFile(path.join(getContext().paths.scenariosDir, "criar-fatura.json"), "{}");
 
-    const result = await generateScenario("criar fatura", {}, fakeClient([VALID]));
+    const result = await generateScenario("create an invoice", {}, fakeClient([VALID]));
     expect(result.scenario.scenario_id).toBe("criar-fatura-2");
 
-    await expect(generateScenario("criar fatura", { id: "criar-fatura" }, fakeClient([VALID]))).rejects.toThrow(/--force/);
-    const forced = await generateScenario("criar fatura", { id: "criar-fatura", force: true }, fakeClient([VALID]));
+    await expect(generateScenario("create an invoice", { id: "criar-fatura" }, fakeClient([VALID]))).rejects.toThrow(/--force/);
+    const forced = await generateScenario("create an invoice", { id: "criar-fatura", force: true }, fakeClient([VALID]));
     expect(forced.scenario.scenario_id).toBe("criar-fatura");
   });
 
-  it("resposta inválida → 1 retry semântico com os erros; segunda falha aborta", async () => {
-    const bad = JSON.stringify({ scenario_id: "x", start_url: "/", task: "curta" });
+  it("invalid response → 1 semantic retry with the errors; a second failure aborts", async () => {
+    const bad = JSON.stringify({ scenario_id: "x", start_url: "/", task: "short" });
     const client = fakeClient([bad, VALID]);
-    const result = await generateScenario("criar fatura", {}, client);
+    const result = await generateScenario("create an invoice", {}, client);
     expect(result.llm_calls).toBe(2);
-    expect(client.prompts[1]).toContain("INVÁLIDO");
-    expect(client.prompts[1]).toContain("curta demais");
+    expect(client.prompts[1]).toContain("INVALID");
+    expect(client.prompts[1]).toContain("too short");
 
-    await expect(generateScenario("criar fatura de novo", {}, fakeClient([bad, bad]))).rejects.toThrow(/after retry/);
+    await expect(generateScenario("create an invoice again", {}, fakeClient([bad, bad]))).rejects.toThrow(/after retry/);
   });
 
-  it("sem mapa: o prompt orienta a não inventar telas e sugere o scan", async () => {
+  it("without a map: the prompt says not to invent screens and suggests the scan", async () => {
     const client = fakeClient([VALID]);
-    await generateScenario("criar fatura", {}, client);
-    expect(client.prompts[0]).toContain("nenhum ainda");
+    await generateScenario("create an invoice", {}, client);
+    expect(client.prompts[0]).toContain("none yet");
     expect(client.prompts[0]).toContain("windup scan");
   });
 
-  it("credenciais literais viram conta registrada: .env.local + mapeamento, e a task NÃO contém os valores", async () => {
-    expect(literalCredentials("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo"))
+  it("literal credentials become a registered account: .env.local + mapping, and the task does NOT contain the values", async () => {
+    expect(literalCredentials("log in with kallef@orbitaldev.com.br and password ka211189 and check the balance"))
       .toEqual(["kallef@orbitaldev.com.br", "ka211189"]);
 
     const seguro = JSON.stringify({
       scenario_id: "saldo-inter",
       start_url: "/login",
-      task: "Acesse /login, entre com a conta kallef e verifique o saldo do banco Inter na listagem de contas bancárias.",
+      task: "Go to /login, sign in with the kallef account and verify the Inter bank balance in the bank account list.",
     });
     const client = fakeClient([seguro]);
-    const result = await generateScenario("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo do banco inter", {}, client);
+    const result = await generateScenario("log in with kallef@orbitaldev.com.br and password ka211189 and check the inter bank balance", {}, client);
 
     expect(result.registered_account).toBe("kallef");
-    expect(client.prompts[0]).toContain('a conta "kallef"');
+    expect(client.prompts[0]).toContain('the account "kallef"');
     expect(result.scenario.task).not.toContain("ka211189");
     const written = await readFile(result.file, "utf8");
     expect(written).not.toContain("ka211189");
@@ -154,46 +154,46 @@ describe("windup new (autoria assistida de cenários)", () => {
     expect(JSON.stringify(mapping)).not.toContain("ka211189");
   });
 
-  it("vazamento de credencial na task vira retry; persistindo, é limpo mecanicamente antes de gravar", async () => {
+  it("credential leaked into the task becomes a retry; if it persists, it is scrubbed mechanically before writing", async () => {
     const vazado = JSON.stringify({
       scenario_id: "saldo",
       start_url: "/login",
-      task: "Entre com kallef@orbitaldev.com.br e senha ka211189 e verifique o saldo do banco Inter na listagem.",
+      task: "Sign in with kallef@orbitaldev.com.br and password ka211189 and verify the Inter bank balance in the listing.",
     });
-    const client = fakeClient([vazado, vazado]); // vaza nas duas tentativas
-    const result = await generateScenario("login com kallef@orbitaldev.com.br e senha ka211189 e ver o saldo do inter", {}, client);
-    expect(client.prompts[1]).toContain("contém a credencial literal");
+    const client = fakeClient([vazado, vazado]); // leaks on both attempts
+    const result = await generateScenario("log in with kallef@orbitaldev.com.br and password ka211189 and see the inter balance", {}, client);
+    expect(client.prompts[1]).toContain("contains the literal credential");
     expect(result.scenario.task).not.toContain("ka211189");
     expect(result.scenario.task).not.toContain("kallef@orbitaldev.com.br");
-    expect(result.scenario.task).toContain("a conta kallef");
+    expect(result.scenario.task).toContain("the account kallef");
   });
 
-  it("buildAuthoringPrompt lista cenários existentes (id + resumo) e a regra de sugerir depends_on", () => {
-    const prompt = buildAuthoringPrompt("criar fatura", "", "", [
-      { id: "login", task: "Fazer login com a conta admin e verificar o dashboard." },
+  it("buildAuthoringPrompt lists existing scenarios (id + summary) and the rule for suggesting depends_on", () => {
+    const prompt = buildAuthoringPrompt("create an invoice", "", "", [
+      { id: "login", task: "Log in with the admin account and verify the dashboard." },
       { id: "checkout" },
     ]);
-    expect(prompt).toContain("- login: Fazer login com a conta admin");
+    expect(prompt).toContain("- login: Log in with the admin account");
     expect(prompt).toContain("- checkout");
     expect(prompt).toContain('"depends_on"');
-    expect(prompt).toContain("APENAS ids desta lista");
+    expect(prompt).toContain("ONLY ids from this list");
   });
 
-  it("sugestão de depends_on do modelo é aceita quando o id existe (start_url sai); id inventado é filtrado", async () => {
+  it("the model's depends_on suggestion is accepted when the id exists (start_url is dropped); invented ids are filtered out", async () => {
     const dir = getContext().paths.scenariosDir;
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, "login.json"), JSON.stringify({ scenario_id: "login", start_url: "/login", task: "Fazer login com a conta admin e verificar o dashboard." }));
+    await writeFile(path.join(dir, "login.json"), JSON.stringify({ scenario_id: "login", start_url: "/login", task: "Log in with the admin account and verify the dashboard." }));
 
     const comDep = JSON.stringify({
       scenario_id: "criar-fatura",
       start_url: "/faturas",
       depends_on: ["login", "cenario-inventado"],
-      task: "Já autenticado, abra o menu Faturas, crie uma fatura para a ACME e verifique que ela aparece na lista.",
+      task: "Already authenticated, open the Faturas menu, create an invoice for ACME and verify that it appears in the list.",
     });
-    const result = await generateScenario("estando logado, criar uma fatura para a ACME", {}, fakeClient([comDep]));
+    const result = await generateScenario("while logged in, create an invoice for ACME", {}, fakeClient([comDep]));
 
-    expect(result.scenario.depends_on).toEqual(["login"]); // inventado filtrado mecanicamente
-    expect(result.scenario.start_url).toBeUndefined(); // continua da página final do login
+    expect(result.scenario.depends_on).toEqual(["login"]); // invented id filtered mechanically
+    expect(result.scenario.start_url).toBeUndefined(); // continues from the login's final page
     const written = JSON.parse(await readFile(result.file, "utf8"));
     expect(written.depends_on).toEqual(["login"]);
     expect(written.start_url).toBeUndefined();

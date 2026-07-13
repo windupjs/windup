@@ -5,11 +5,11 @@ import type { Fragment, Plan } from "../src/types.js";
 
 const loginFragment: Fragment = {
   fragment_id: "login-padrao",
-  description: "Login padrão",
+  description: "Standard login",
   actions: [
-    { id: "a1", type: "fill", target: { selector: "#user", description: "usuário" }, value: "u" },
-    { id: "a2", type: "fill", target: { selector: "#pass", description: "senha" }, value_ref: "ENV:SENHA" },
-    { id: "a3", type: "click", target: { selector: "#entrar", description: "entrar" }, expect: { url: "**/home" } },
+    { id: "a1", type: "fill", target: { selector: "#user", description: "username" }, value: "u" },
+    { id: "a2", type: "fill", target: { selector: "#pass", description: "password" }, value_ref: "ENV:SENHA" },
+    { id: "a3", type: "click", target: { selector: "#entrar", description: "sign in" }, expect: { url: "**/home" } },
   ],
   postcondition: { url: "**/home" },
 };
@@ -20,36 +20,36 @@ const composedPlan: Plan = {
   start_url: "https://x.com",
   actions: [
     { id: "a1", type: "use", use: "login-padrao" },
-    { id: "a2", type: "click", target: { selector: "#perfil", description: "perfil" }, expect: { selector: ".dados" } },
+    { id: "a2", type: "click", target: { selector: "#perfil", description: "profile" }, expect: { selector: ".dados" } },
   ],
 };
 
 describe("expandPlan (E3)", () => {
-  it("expande use inline e renumera os ids", () => {
+  it("expands use inline and renumbers the ids", () => {
     const expanded = expandPlan(composedPlan, [loginFragment]);
     expect(expanded.actions.map((a) => a.id)).toEqual(["a1", "a2", "a3", "a4"]);
     expect(expanded.actions[0].target?.selector).toBe("#user");
     expect(expanded.actions[3].target?.selector).toBe("#perfil");
   });
 
-  it("não muta o plano original (o cache guarda a referência)", () => {
+  it("does not mutate the original plan (the cache keeps the reference)", () => {
     expandPlan(composedPlan, [loginFragment]);
     expect(composedPlan.actions).toHaveLength(2);
     expect(composedPlan.actions[0].type).toBe("use");
   });
 
-  it("fragmento desconhecido é erro", () => {
+  it("unknown fragment is an error", () => {
     expect(() => expandPlan(composedPlan, [])).toThrow(/unknown fragment/);
   });
 
-  it("fragmento aninhando fragmento é erro (profundidade 1)", () => {
+  it("fragment nesting a fragment is an error (depth 1)", () => {
     const nested: Fragment = { ...loginFragment, actions: [{ id: "a1", type: "use", use: "outro" }] };
     expect(() => expandPlan(composedPlan, [nested])).toThrow(/depth/);
   });
 });
 
-describe("validatePlan com use (E3)", () => {
-  it("aceita plano com ação use e sem expect na última quando ela é use", () => {
+describe("validatePlan with use (E3)", () => {
+  it("accepts a plan with a use action and no expect on the last action when it is a use", () => {
     const plan: Plan = {
       ...composedPlan,
       actions: [
@@ -60,7 +60,7 @@ describe("validatePlan com use (E3)", () => {
     expect(validatePlan(plan).ok).toBe(true);
   });
 
-  it("rejeita use sem o campo use", () => {
+  it("rejects use without the use field", () => {
     const plan: Plan = { ...composedPlan, actions: [{ id: "a1", type: "use" }] };
     const result = validatePlan(plan);
     expect(result.ok).toBe(false);
@@ -69,10 +69,10 @@ describe("validatePlan com use (E3)", () => {
 });
 
 describe("formatCatalog", () => {
-  it("expõe id, descrição e pós-condição — nunca as ações", () => {
+  it("exposes id, description and postcondition — never the actions", () => {
     const catalog = formatCatalog([loginFragment]);
     expect(catalog).toContain("login-padrao");
-    expect(catalog).toContain("Login padrão");
+    expect(catalog).toContain("Standard login");
     expect(catalog).toContain("**/home");
     expect(catalog).not.toContain("#user");
   });

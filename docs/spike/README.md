@@ -1,25 +1,25 @@
-# Spike de Validação — RubberDuck
+# Validation Spike — RubberDuck
 
-Specs do escopo inicial de validação: provar que o loop **plano JSON gerado por LLM → execução determinística → verificação barata → replay via cache sem LLM** funciona num cenário real, antes de investir no MVP. Sem interface — só CLI, Docker e métricas.
+Specs for the initial validation scope: prove that the loop **LLM-generated JSON plan → deterministic execution → cheap verification → cached replay without LLM** works in a real scenario, before investing in the MVP. No interface — just CLI, Docker, and metrics.
 
-Decisões desta spike: LLM = **Gemini** (`gemini-2.5-flash`); alvo = **saucedemo.com**; cache = arquivo JSON local (Redis vs SQLite fica em aberto para o MVP).
+Decisions for this spike: LLM = **Gemini** (`gemini-2.5-flash`); target = **saucedemo.com**; cache = local JSON file (Redis vs SQLite remains open for the MVP).
 
-## Índice
+## Index
 
-| Doc | Conteúdo |
+| Doc | Contents |
 |---|---|
-| [01-escopo.md](01-escopo.md) | Objetivo, o que está dentro/fora, critério de sucesso resumido |
-| [02-cenarios.md](02-cenarios.md) | Os 2 cenários no saucedemo (login e checkout) com plano JSON de exemplo |
-| [03-spec-tecnica.md](03-spec-tecnica.md) | Stack, componentes (cache, planejador, executor, verificador, métricas), fluxos e decisões em aberto |
-| [04-schemas.md](04-schemas.md) | Schema do plano de ações v0.1, schema da entrada de cache, tratamento de segredos |
-| [05-ambiente.md](05-ambiente.md) | Docker, estrutura de pastas, variáveis de ambiente, comandos da CLI |
-| [06-criterios-validacao.md](06-criterios-validacao.md) | Protocolo de medição (bench) e critérios de aceite C1–C5 |
-| [07-ajustes-pos-review.md](07-ajustes-pos-review.md) | Correções pós-review: zero hardcode de site (princípio permanente), clique confiável, cache stale |
+| [01-scope.md](01-scope.md) | Objective, what is in/out of scope, summarized success criteria |
+| [02-scenarios.md](02-scenarios.md) | The 2 saucedemo scenarios (login and checkout) with an example JSON plan |
+| [03-technical-spec.md](03-technical-spec.md) | Stack, components (cache, planner, executor, verifier, metrics), flows, and open decisions |
+| [04-schemas.md](04-schemas.md) | Action plan schema v0.1, cache entry schema, secrets handling |
+| [05-environment.md](05-environment.md) | Docker, folder structure, environment variables, CLI commands |
+| [06-validation-criteria.md](06-validation-criteria.md) | Measurement protocol (bench) and acceptance criteria C1–C5 |
+| [07-post-review-fixes.md](07-post-review-fixes.md) | Post-review corrections: zero hardcoded site knowledge (permanent principle), reliable click, stale cache |
 
-## Ordem de leitura
+## Reading order
 
-01 → 02 → 03 para entender o que e por quê; 04 → 05 para implementar; 06 para saber quando parar e como decidir.
+01 → 02 → 03 to understand what and why; 04 → 05 to implement; 06 to know when to stop and how to decide.
 
-## Relação com a documentação completa
+## Relationship with the full documentation
 
-Esta pasta cobre apenas a spike. A documentação completa do projeto (visão geral, arquitetura, modelo de dados, roadmap do MVP, ADRs, glossário) descrita nas instruções do projeto será escrita em `docs/` — os schemas daqui (v0.1) são o embrião do modelo de dados definitivo.
+This folder covers only the spike. The project's full documentation (overview, architecture, data model, MVP roadmap, ADRs, glossary) described in the project instructions will be written in `docs/` — the schemas here (v0.1) are the embryo of the definitive data model.

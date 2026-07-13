@@ -1,5 +1,5 @@
 {
   "scenario_id": "saucedemo-conta-qa",
   "start_url": "https://www.saucedemo.com",
-  "task": "Faça login com a conta qa e verifique que a lista de produtos aparece."
+  "task": "Log in with the qa account and verify that the product list appears."
 }

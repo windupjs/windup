@@ -7,31 +7,31 @@ const POLL_INTERVAL_MS = 100;
 export interface VerifyResult {
   ok: boolean;
   verify_ms: number;
-  /** Qual condição falhou (para diagnóstico), null se passou. */
+  /** Which condition failed (for diagnostics), null if it passed. */
   failed_condition: string | null;
 }
 
 /**
- * Casa a URL atual contra o glob do plano (ex.: "**\/inventory.html").
- * Query string e hash são ignorados no casamento.
+ * Matches the current URL against the plan's glob (e.g. "**\/inventory.html").
+ * Query string and hash are ignored in the match.
  */
 export function urlMatches(current: string, pattern: string): boolean {
   const clean = current.split(/[?#]/)[0];
   const isMatch = picomatch(pattern, { dot: true });
-  // picomatch trata "/" como separador; URLs completas casam com padrões "**/...".
-  // O pathname cobre padrões escritos como caminho puro ("/dashboard/index").
+  // picomatch treats "/" as a separator; full URLs match "**/..." patterns.
+  // The pathname covers patterns written as a bare path ("/dashboard/index").
   let pathname = "";
   try {
     pathname = new URL(clean).pathname;
   } catch {
-    // current não é URL absoluta; segue só com as outras formas
+    // current is not an absolute URL; proceed with the other forms only
   }
   return isMatch(clean) || isMatch(clean.replace(/^https?:\/\//, "")) || (pathname !== "" && isMatch(pathname));
 }
 
 /**
- * Verifica as pós-condições de uma ação com polling até timeout_ms.
- * Todas as condições presentes devem passar (AND). Sem LLM — só DOM/URL.
+ * Verifies an action's postconditions, polling until timeout_ms.
+ * Every condition present must pass (AND). No LLM — DOM/URL only.
  */
 export async function verify(
   browser: Browser,
@@ -61,8 +61,8 @@ export async function verify(
   }
 
   if (expect.selector) {
-    // waitForVisible nativo acompanha navegações/frames (polling de isVisible
-    // sobre frame obsoleto falhava após navegação com pausas longas).
+    // Native waitForVisible tracks navigations/frames (polling isVisible on
+    // a stale frame failed after navigation with long pauses).
     if (!(await browser.waitForVisible(expect.selector, remaining()))) {
       return fail(`selector: ${expect.selector} not visible`);
     }

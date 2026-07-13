@@ -6,173 +6,173 @@ import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner
 import { getContext } from "./context.js";
 
 /**
- * Orçamento COMBINADO de contexto (~8k tokens ≈ 32k chars, doc 03): quando o
- * mapa do site contribui, a árvore da página inicial cede espaço para o mapa —
- * o prompt total fica ≈ constante (crítico pela degeneração do flash).
+ * COMBINED context budget (~8k tokens ≈ 32k chars, doc 03): when the site map
+ * contributes, the initial page tree yields space to the map — the total
+ * prompt stays ≈ constant (critical because of flash degeneration).
  */
 const PAGE_CONTEXT_MAX_CHARS = 32_000;
 const MAP_MAX_CHARS = 8_000;
 
-/** Cap do manifesto no prompt (E4): ~1k tokens; disciplina de orçamento do mapa. */
+/** Manifest cap in the prompt (E4): ~1k tokens; same budget discipline as the map. */
 const MANIFEST_MAX_CHARS = 4_000;
 
 /**
- * E4 — manifesto do projeto (SPEC-001 componente 3): a seção `context` do
- * windup.config.ts vira contexto do planejador. É a generalização dos hints
- * para nível de projeto: conhecimento entra por INPUT do time, nunca por
- * código nosso (doc 07). Exportada para teste.
+ * E4 — project manifest (SPEC-001 component 3): the `context` section of
+ * windup.config.ts becomes planner context. It is the generalization of hints
+ * to the project level: knowledge enters via team INPUT, never via our own
+ * code (doc 07). Exported for testing.
  */
 export function buildManifestSection(): string {
   const manifest = getContext().config.context;
   if (!manifest) return "";
   const parts: string[] = [];
   if (manifest.conventions?.length) {
-    parts.push(`Convenções do site:\n${manifest.conventions.map((c) => `- ${c}`).join("\n")}`);
+    parts.push(`Site conventions:\n${manifest.conventions.map((c) => `- ${c}`).join("\n")}`);
   }
   if (manifest.credentials && Object.keys(manifest.credentials).length) {
     const lines = Object.entries(manifest.credentials).map(
-      ([account, fields]) => `- conta "${account}": ${Object.entries(fields).map(([k, v]) => `${k} → ${v}`).join(", ")}`,
+      ([account, fields]) => `- account "${account}": ${Object.entries(fields).map(([k, v]) => `${k} → ${v}`).join(", ")}`,
     );
     parts.push(
-      `Credenciais disponíveis — quando a tarefa citar uma dessas contas, os fills correspondentes DEVEM usar "value_ref" com o ENV indicado (nunca "value"), MESMO que a página exiba credenciais em texto — o manifesto tem precedência sobre o conteúdo da página. Mas se a tarefa trouxer credenciais LITERAIS (usuário/senha escritos nela) sem citar uma conta do manifesto, use os valores literais da tarefa:\n${lines.join("\n")}`,
+      `Available credentials — when the task mentions one of these accounts, the corresponding fills MUST use "value_ref" with the indicated ENV (never "value"), EVEN if the page displays credentials as text — the manifest takes precedence over page content. But if the task provides LITERAL credentials (username/password written in it) without mentioning a manifest account, use the literal values from the task:\n${lines.join("\n")}`,
     );
   }
   if (manifest.vocabulary && Object.keys(manifest.vocabulary).length) {
-    parts.push(`Vocabulário do domínio (termos da tarefa → significado):\n${Object.entries(manifest.vocabulary).map(([t, d]) => `- "${t}": ${d}`).join("\n")}`);
+    parts.push(`Domain vocabulary (task terms → meaning):\n${Object.entries(manifest.vocabulary).map(([t, d]) => `- "${t}": ${d}`).join("\n")}`);
   }
   if (!parts.length) return "";
-  return `\n# Manifesto do projeto (fornecido pelo time — confie nele)\n${parts.join("\n\n").slice(0, MANIFEST_MAX_CHARS)}\n`;
+  return `\n# Project manifest (provided by the team — trust it)\n${parts.join("\n\n").slice(0, MANIFEST_MAX_CHARS)}\n`;
 }
 
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string, continuesFromDependency = false): string {
-  // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
-  // Conhecimento site-específico só entra por hints do autor, mapa do site
-  // (E2) ou manifesto do projeto (E4) — nunca por código nosso.
+  // Doc 07 principle: ZERO hardcoded site knowledge in the prompt.
+  // Site-specific knowledge only enters via author hints, the site map
+  // (E2) or the project manifest (E4) — never via our own code.
   const manifestSection = buildManifestSection();
   const hintsSection = scenario.hints?.length
-    ? `\n# Dicas fornecidas pelo autor do cenário\n${scenario.hints.join("\n")}\n`
+    ? `\n# Hints provided by the scenario author\n${scenario.hints.join("\n")}\n`
     : "";
   const knowledgeSection = siteKnowledge
-    ? `\n# Conhecimento do site (páginas já observadas em execuções anteriores)
-Para as páginas listadas abaixo, use EXATAMENTE os seletores listados; só infira \
-seletores quando a página não constar aqui.
+    ? `\n# Site knowledge (pages already observed in previous runs)
+For the pages listed below, use EXACTLY the listed selectors; only infer \
+selectors when the page is not listed here.
 
 ${siteKnowledge}\n`
     : "";
   const fragmentsSection = fragmentsCatalog
-    ? `\n# Fragmentos disponíveis (blocos de ações prontos, já testados)
-Quando um fragmento cobrir parte da tarefa, use UMA ação \
-{ "id": "aN", "type": "use", "use": "<fragment_id>" } no lugar dessas ações — \
-NÃO regenere as ações que o fragmento já cobre. Após um "use", o estado é a \
-PÓS-CONDIÇÃO do fragmento: continue dali (não repita fills/cliques do fragmento; \
-a página já mudou). Se o fragmento sozinho já cumpre a tarefa, o plano é apenas a \
-ação use, sem nada depois.
+    ? `\n# Available fragments (ready-made, already-tested action blocks)
+When a fragment covers part of the task, use ONE action \
+{ "id": "aN", "type": "use", "use": "<fragment_id>" } instead of those actions — \
+do NOT regenerate the actions the fragment already covers. After a "use", the state is the \
+fragment's POSTCONDITION: continue from there (do not repeat the fragment's fills/clicks; \
+the page has already changed). If the fragment alone fulfills the task, the plan is just the \
+use action, with nothing after it.
 
 ${fragmentsCatalog}\n`
     : "";
-  return `Você é um planejador de automação de testes em browser. Gere um plano de ações JSON \
-que cumpra a tarefa abaixo. O plano será executado de forma DETERMINÍSTICA, ação por ação, \
-sem nenhuma inteligência em tempo de execução — os seletores precisam estar exatos.
+  return `You are a browser test automation planner. Generate a JSON action plan \
+that fulfills the task below. The plan will be executed DETERMINISTICALLY, action by action, \
+with no intelligence at runtime — the selectors must be exact.
 
-# Tarefa
+# Task
 ${scenario.task}
 
 ${continuesFromDependency
-    ? `# Ponto de partida
-Você JÁ ESTÁ DENTRO do app, na página mostrada abaixo (estado final das dependências do cenário — ex.: já autenticado). NÃO inclua goto inicial. Para chegar a outras telas, NAVEGUE CLICANDO nos links e menus visíveis (ex.: a[href='/rota']) — NUNCA use ações goto: recarregar a página pode perder o estado da sessão.`
-    : `# URL inicial
+    ? `# Starting point
+You are ALREADY INSIDE the app, on the page shown below (final state of the scenario's dependencies — e.g. already authenticated). Do NOT include an initial goto. To reach other screens, NAVIGATE BY CLICKING the visible links and menus (e.g. a[href='/route']) — NEVER use goto actions: reloading the page may lose the session state.`
+    : `# Initial URL
 ${scenario.start_url}
-(o executor já navega para essa URL antes da primeira ação; não inclua um goto para ela)`}
+(the executor already navigates to this URL before the first action; do not include a goto for it)`}
 
-# Contexto da página inicial (árvore de acessibilidade)
+# Initial page context (accessibility tree)
 ${pageTree}
 
-# Elementos interativos da página inicial (tag id=... name=... data-test=... type=...)
+# Interactive elements on the initial page (tag id=... name=... data-test=... type=...)
 ${interactive.join("\n")}
 
-# Regras
-- scenario_id deve ser exatamente "${scenario.scenario_id}"; start_url exatamente "${scenario.start_url}"; plan_version "0.1".
-- ids das ações sequenciais: a1, a2, a3...
-- Para a página inicial, use APENAS seletores CSS de elementos presentes no contexto acima \
-(prefira #id). Para páginas seguintes, que você não está vendo, infira seletores prováveis \
-a partir da tarefa e das convenções comuns da web (ids/names semânticos, data-test). \
-Prefira seletores estáveis.
-- Toda ação click/fill/wait_for exige target.selector E target.description (descrição humana do elemento).
-- fill usa "value" com o texto literal. Use "value_ref": "ENV:NOME" (sem "value") APENAS \
-quando a tarefa, as dicas ou o Manifesto do projeto mencionarem explicitamente esse ENV — \
-NUNCA invente nomes de variável de ambiente. Com ENV definido para uma conta citada, o \
-value_ref tem precedência mesmo que a página exiba os valores.
-- Ações que causam navegação devem ter "expect" com "url" (glob, ex.: "**/inventory.html") \
-e/ou "selector" da página de destino. A ÚLTIMA ação do plano OBRIGATORIAMENTE tem o campo "expect" \
-que comprove que a tarefa foi cumprida — a verificação final é o "expect" da última ação, \
-NÃO uma ação wait_for extra.
-- timeout_ms: 5000 para ações simples, 10000 para navegações.
-- NÃO inclua campos que não se aplicam à ação — jamais use string vazia como valor. \
-click não tem value/value_ref/url. O campo "url" da ação existe SÓ em goto (destino de navegação). \
-URL esperada após a ação vai em expect.url (aceita glob).
-- O plano é dados, não programa: sem condicionais, sem loops.
-- Gere o MENOR plano que cumpre a tarefa: NÃO adicione ações além do pedido — nada de \
-visitar páginas extras "para conferir", cliques redundantes ou passos de verificação \
-adicionais (a verificação é o "expect" da última ação, não uma ação).
+# Rules
+- scenario_id must be exactly "${scenario.scenario_id}"; start_url exactly "${scenario.start_url}"; plan_version "0.1".
+- sequential action ids: a1, a2, a3...
+- For the initial page, use ONLY CSS selectors of elements present in the context above \
+(prefer #id). For subsequent pages, which you are not seeing, infer likely selectors \
+from the task and common web conventions (semantic ids/names, data-test). \
+Prefer stable selectors.
+- Every click/fill/wait_for action requires target.selector AND target.description (human description of the element).
+- fill uses "value" with the literal text. Use "value_ref": "ENV:NAME" (without "value") ONLY \
+when the task, the hints or the Project manifest explicitly mention that ENV — \
+NEVER invent environment variable names. With an ENV defined for a mentioned account, the \
+value_ref takes precedence even if the page displays the values.
+- Actions that cause navigation must have "expect" with "url" (glob, e.g. "**/inventory.html") \
+and/or "selector" of the destination page. The LAST action of the plan MUST have the "expect" field \
+proving the task was fulfilled — the final verification is the LAST action's "expect", \
+NOT an extra wait_for action.
+- timeout_ms: 5000 for simple actions, 10000 for navigations.
+- Do NOT include fields that do not apply to the action — never use an empty string as a value. \
+click has no value/value_ref/url. The action's "url" field exists ONLY on goto (navigation destination). \
+The URL expected after the action goes in expect.url (accepts glob).
+- The plan is data, not a program: no conditionals, no loops.
+- Generate the SMALLEST plan that fulfills the task: do NOT add actions beyond what was asked — no \
+visiting extra pages "to double-check", redundant clicks or additional verification \
+steps (the verification is the last action's "expect", not an action).
 
-# Exemplo do formato (login simples — adapte à tarefa real)
+# Format example (simple login — adapt to the real task)
 {
   "plan_version": "0.1",
   "scenario_id": "exemplo",
   "start_url": "https://exemplo.com",
   "actions": [
-    { "id": "a1", "type": "fill", "target": { "selector": "#user", "description": "campo de usuário" }, "value": "fulano", "timeout_ms": 5000 },
-    { "id": "a2", "type": "fill", "target": { "selector": "#pass", "description": "campo de senha" }, "value_ref": "ENV:MINHA_SENHA", "timeout_ms": 5000 },
-    { "id": "a3", "type": "click", "target": { "selector": "#entrar", "description": "botão de entrar" }, "expect": { "url": "**/home.html", "selector": ".lista" }, "timeout_ms": 10000 }
+    { "id": "a1", "type": "fill", "target": { "selector": "#user", "description": "username field" }, "value": "fulano", "timeout_ms": 5000 },
+    { "id": "a2", "type": "fill", "target": { "selector": "#pass", "description": "password field" }, "value_ref": "ENV:MINHA_SENHA", "timeout_ms": 5000 },
+    { "id": "a3", "type": "click", "target": { "selector": "#entrar", "description": "login button" }, "expect": { "url": "**/home.html", "selector": ".lista" }, "timeout_ms": 10000 }
   ]
 }
 
-LEMBRETE FINAL: a última ação do plano DEVE conter o campo "expect" comprovando a tarefa cumprida.
-${manifestSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Contexto de falha anterior (evite repetir o erro)\n${failureContext}\n` : ""}
-Responda somente com o JSON do plano.`;
+FINAL REMINDER: the last action of the plan MUST contain the "expect" field proving the task was fulfilled.
+${manifestSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Previous failure context (avoid repeating the mistake)\n${failureContext}\n` : ""}
+Respond only with the plan JSON.`;
 }
 
 /**
- * Única fronteira com o LLM (doc 03): 1 chamada por cache miss,
- * +1 retry se a validação falhar, com a mensagem de erro no prompt.
- * Provider/modelo resolvidos por execução (--llm / WINDUP_LLM / config).
+ * The only boundary with the LLM (doc 03): 1 call per cache miss,
+ * +1 retry if validation fails, with the error message in the prompt.
+ * Provider/model resolved per run (--llm / WINDUP_LLM / config).
  */
 export class LlmPlanner implements Planner {
-  /** useMap: false = A/B limpo sem o conhecimento do mapa no prompt (--no-map). */
+  /** useMap: false = clean A/B without the map knowledge in the prompt (--no-map). */
   constructor(private readonly opts: { useMap?: boolean } = {}) {}
 
   private call(client: LlmClient, prompt: string, seed: number) {
     return client.generate({
       prompt,
       schema: PLAN_GEMINI_SCHEMA,
-      // Um plano de 30 ações cabe em ~3k tokens; o teto limita o custo
-      // de gerações degeneradas (observado: 65k tokens num run).
+      // A 30-action plan fits in ~3k tokens; the cap limits the cost
+      // of degenerate generations (observed: 65k tokens in one run).
       maxOutputTokens: 8192,
-      // temp > 0 de propósito: com temp 0 a degeneração (loop até
-      // MAX_TOKENS) fica determinística por prompt — jitter + seeds
-      // distintos por tentativa escapam da bacia degenerada.
+      // temp > 0 on purpose: with temp 0 the degeneration (loop until
+      // MAX_TOKENS) becomes deterministic per prompt — jitter + distinct
+      // seeds per attempt escape the degenerate basin.
       temperature: 0.3,
       seed,
     });
   }
 
   async generate(scenario: Scenario, browser: Browser, failureContext?: string, opts: { skipGoto?: boolean } = {}): Promise<PlanGeneration> {
-    // Client criado por geração, não no construtor: replays de cache nunca
-    // planejam (não devem exigir chave), e as flags --llm/--base-url já
-    // escreveram nas envs a esta altura.
+    // Client created per generation, not in the constructor: cache replays never
+    // plan (they must not require a key), and the --llm/--base-url flags have
+    // already written to the envs by this point.
     const client = createLlmClient();
-    // loadScenario resolve o start_url por ambiente; o fallback cobre chamadas diretas da API.
-    // skipGoto (depends_on sem start_url): o snapshot é da página REAL onde a
-    // última dependência terminou — o planejador deixa de planejar às cegas.
+    // loadScenario resolves the start_url per environment; the fallback covers direct API calls.
+    // skipGoto (depends_on without start_url): the snapshot is of the REAL page where the
+    // last dependency ended — the planner no longer plans blind.
     const startUrl = scenario.start_url ?? "/";
     if (!opts.skipGoto) await browser.goto(startUrl);
-    // Espera o app renderizar antes do snapshot (SPA: load não basta).
+    // Wait for the app to render before the snapshot (SPA: load is not enough).
     await waitForAnyInteractive(browser);
     const startSig = await browser.pageSignature();
 
-    // Fatia do mapa do site (E2): páginas alcançáveis a partir da inicial,
-    // priorizadas por casamento com a tarefa. A árvore cede espaço ao mapa
-    // para o prompt total ficar ≈ constante.
+    // Site map slice (E2): pages reachable from the initial one,
+    // prioritized by match with the task. The tree yields space to the map
+    // so the total prompt stays ≈ constant.
     let siteKnowledge = "";
     if (this.opts.useMap !== false) {
       const { SiteMapStore } = await import("./sitemap.js");
@@ -184,7 +184,7 @@ export class LlmPlanner implements Planner {
     const pageTree = (await browser.snapshotTree()).slice(0, treeBudget);
     const interactive = await browser.interactiveElements();
 
-    // Catálogo de fragmentos (E3): id + descrição + pós-condição, nunca as ações.
+    // Fragment catalog (E3): id + description + postcondition, never the actions.
     const { loadFragments, formatCatalog } = await import("./fragments.js");
     const fragments = await loadFragments();
     const fragmentsCatalog = fragments.length ? formatCatalog(fragments) : undefined;
@@ -195,12 +195,12 @@ export class LlmPlanner implements Planner {
     let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, fragmentsCatalog, failureContext, opts.skipGoto === true);
     const promptChars = prompt.length;
 
-    // Dois níveis de retry, de natureza diferente:
-    // - semântico (doc 03): plano reprovado na validação → 1 retry com o erro no prompt;
-    // - transiente: o flash com structured output às vezes degenera (loop de
-    //   tokens até truncar em MAX_TOKENS) de forma não-determinística, com a
-    //   MESMA entrada que noutras vezes funciona. Isso é patologia de API, não
-    //   erro do plano — re-chama com outro seed, até 3x por tentativa semântica.
+    // Two retry levels, of different natures:
+    // - semantic (doc 03): plan rejected by validation → 1 retry with the error in the prompt;
+    // - transient: flash with structured output sometimes degenerates (token
+    //   loop until truncating at MAX_TOKENS) non-deterministically, with the
+    //   SAME input that works other times. That is API pathology, not a plan
+    //   error — re-call with another seed, up to 3x per semantic attempt.
     for (let attempt = 1; attempt <= 2; attempt++) {
       let plan: Plan | null = null;
       let rawText = "";
@@ -212,7 +212,7 @@ export class LlmPlanner implements Planner {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|timeout|429|500|502|503/i.test(message)) {
-            lastErrors = [`falha de rede/quota na chamada ao ${client.provider}: ${message}`];
+            lastErrors = [`network/quota failure calling ${client.provider}: ${message}`];
             await new Promise((r) => setTimeout(r, apiTry * 2000));
             continue;
           }
@@ -224,11 +224,11 @@ export class LlmPlanner implements Planner {
 
         if (process.env.LOG_LEVEL === "debug") {
           console.error(
-            `[planner] tentativa ${attempt}.${apiTry}: truncated=${response.truncated} out_tokens=${response.tokens.output} len=${response.text.length} tail=${JSON.stringify(response.text.slice(-120))}`,
+            `[planner] attempt ${attempt}.${apiTry}: truncated=${response.truncated} out_tokens=${response.tokens.output} len=${response.text.length} tail=${JSON.stringify(response.text.slice(-120))}`,
           );
         }
         if (response.truncated) {
-          lastErrors = ["resposta degenerada/truncada no limite de tokens — falha transiente da API"];
+          lastErrors = ["degenerate/truncated response at the token limit — transient API failure"];
           continue;
         }
         try {
@@ -236,21 +236,21 @@ export class LlmPlanner implements Planner {
           plan = normalizeActions(sanitizePlan(JSON.parse(rawText))) as Plan;
           if (plan?.actions && fragments.length) plan = dropFragmentEchoes(plan, fragments);
         } catch {
-          lastErrors = ["resposta não era JSON válido — falha transiente da API"];
+          lastErrors = ["response was not valid JSON — transient API failure"];
         }
       }
 
       if (plan) {
         const validation = validatePlan(plan);
-        // value_ref inventado é o erro mais caro (só estoura em runtime):
-        // valida contra os ENVs realmente mencionados no input.
+        // An invented value_ref is the most expensive error (only blows up at
+        // runtime): validate against the ENVs actually mentioned in the input.
         if (validation.ok) {
           const allowed = allowedEnvRefs(scenario);
           for (const action of plan.actions) {
             if (action.value_ref && !allowed.has(action.value_ref)) {
               validation.ok = false;
               validation.errors.push(
-                `action ${action.id}: value_ref "${action.value_ref}" não foi definido pela tarefa, dicas ou manifesto — use o valor literal da tarefa ou um ENV existente`,
+                `action ${action.id}: value_ref "${action.value_ref}" was not defined by the task, hints or manifest — use the task's literal value or an existing ENV`,
               );
             }
           }
@@ -267,29 +267,29 @@ export class LlmPlanner implements Planner {
         }
         lastErrors = validation.errors;
         if (process.env.LOG_LEVEL === "debug") {
-          console.error(`[planner] tentativa ${attempt} inválida: ${lastErrors.join("; ")}\n${JSON.stringify(plan, null, 2)}`);
+          console.error(`[planner] attempt ${attempt} invalid: ${lastErrors.join("; ")}\n${JSON.stringify(plan, null, 2)}`);
         }
       }
 
-      // 1 retry semântico com a mensagem de erro no prompt (doc 03); 2ª falha aborta.
-      // Retry CURTO de propósito: plano anterior + erros. Reenviar o prompt
-      // inteiro com o aviso de erro em cima fazia o flash degenerar (divagação
-      // em maiúsculas dentro do JSON até estourar MAX_TOKENS).
-      prompt = `Você gerou o plano de ações JSON abaixo para a tarefa "${scenario.task}", mas ele é INVÁLIDO.
+      // 1 semantic retry with the error message in the prompt (doc 03); 2nd failure aborts.
+      // SHORT retry on purpose: previous plan + errors. Resending the whole
+      // prompt with the error notice on top made flash degenerate (uppercase
+      // rambling inside the JSON until blowing past MAX_TOKENS).
+      prompt = `You generated the JSON action plan below for the task "${scenario.task}", but it is INVALID.
 
-# Plano anterior
+# Previous plan
 ${plan ? JSON.stringify(plan, null, 2) : rawText.slice(0, 4000)}
 
-# Erros de validação a corrigir
+# Validation errors to fix
 ${lastErrors.join("\n")}
 
-# Regras
-- click/fill/wait_for exigem target.selector e target.description; goto exige url.
-- fill exige value OU value_ref (exatamente um); não use campos vazios nem campos que não se aplicam.
-- A ÚLTIMA ação deve ter o campo "expect" (selector e/ou url) comprovando a tarefa cumprida.
+# Rules
+- click/fill/wait_for require target.selector and target.description; goto requires url.
+- fill requires value OR value_ref (exactly one); do not use empty fields or fields that do not apply.
+- The LAST action must have the "expect" field (selector and/or url) proving the task was fulfilled.
 - scenario_id "${scenario.scenario_id}", start_url "${scenario.start_url}", plan_version "0.1".
 
-Devolva o plano completo corrigido. Responda APENAS com o JSON do plano.`;
+Return the complete corrected plan. Respond ONLY with the plan JSON.`;
     }
 
     throw new PlanGenerationError(
@@ -300,20 +300,20 @@ Devolva o plano completo corrigido. Responda APENAS com o JSON do plano.`;
   }
 }
 
-/** @deprecated Nome antigo, mantido para compatibilidade — use LlmPlanner. */
+/** @deprecated Old name, kept for compatibility — use LlmPlanner. */
 export { LlmPlanner as GeminiPlanner };
 
 /**
- * O structured output do Gemini tende a preencher campos opcionais com "" em
- * vez de omiti-los. Remove recursivamente strings vazias, nulls e objetos que
- * ficarem vazios, antes da validação (o Ajv continua sendo a autoridade).
+ * Gemini's structured output tends to fill optional fields with "" instead
+ * of omitting them. Recursively removes empty strings, nulls and objects
+ * that become empty, before validation (Ajv remains the authority).
  */
 export function sanitizePlan(data: unknown): unknown {
   if (Array.isArray(data)) return data.map(sanitizePlan);
   if (data !== null && typeof data === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
-      // "undefined"/"null" literais são artefatos do modelo para "não se aplica".
+      // Literal "undefined"/"null" are model artifacts for "not applicable".
       if (value === "" || value === null || value === undefined || value === "undefined" || value === "null") continue;
       const cleaned = sanitizePlan(value);
       if (cleaned !== null && typeof cleaned === "object" && !Array.isArray(cleaned) && Object.keys(cleaned).length === 0) continue;
@@ -325,9 +325,9 @@ export function sanitizePlan(data: unknown): unknown {
 }
 
 /**
- * Remove campos que não se aplicam ao tipo da ação (o flash tende a vazá-los:
- * ex. "url" ou "value" numa ação click). Não altera a lógica do plano — só
- * descarta ruído que o executor ignoraria e o schema reprovaria.
+ * Removes fields that do not apply to the action type (flash tends to leak
+ * them: e.g. "url" or "value" on a click action). Does not change the plan's
+ * logic — only discards noise the executor would ignore and the schema would reject.
  */
 export function normalizeActions(data: unknown): unknown {
   if (data === null || typeof data !== "object" || !("actions" in data)) return data;
@@ -360,15 +360,15 @@ export function normalizeActions(data: unknown): unknown {
         break;
     }
   }
-  // Ids são contabilidade interna (nada os referencia): renumerar é sempre
-  // seguro e elimina toda uma classe de reprovação ("1", "step-2", "action3"...).
+  // Ids are internal bookkeeping (nothing references them): renumbering is always
+  // safe and eliminates a whole class of rejection ("1", "step-2", "action3"...).
   (plan.actions as Record<string, unknown>[]).forEach((action, i) => {
     if (action !== null && typeof action === "object") action.id = `a${i + 1}`;
   });
 
-  // O modelo às vezes expressa a verificação final como wait_for em vez de
-  // expect (ou vice-versa). wait_for(X) ≡ expect.selector X — normaliza nos
-  // dois sentidos sem mudar o significado.
+  // The model sometimes expresses the final verification as wait_for instead
+  // of expect (or vice versa). wait_for(X) ≡ expect.selector X — normalizes in
+  // both directions without changing the meaning.
   const last = plan.actions[plan.actions.length - 1] as Record<string, unknown> | undefined;
   if (last && last.type === "wait_for") {
     const target = (last.target ?? null) as { selector?: string } | null;
@@ -376,21 +376,21 @@ export function normalizeActions(data: unknown): unknown {
     if (!expect?.selector && target?.selector) {
       last.expect = { ...(expect ?? {}), selector: target.selector };
     } else if (expect?.selector && !target?.selector) {
-      last.target = { selector: expect.selector, description: "elemento aguardado na verificação final" };
+      last.target = { selector: expect.selector, description: "element awaited in the final verification" };
     }
   }
   return data;
 }
 
 /**
- * "Eco" de fragmento: modelos (observado em gpt-5-mini e flash-lite) às vezes
- * repetem a cauda do fragmento logo depois do "use" — re-fill de senha,
- * re-click no botão que o fragmento já clicou — e o plano quebra na página
- * seguinte. Instrução no prompt não basta em todos os providers; a remoção é
- * MECÂNICA: descarta ações imediatamente após um "use" que dupliquem
- * (type+selector) ações do próprio fragmento, parando na primeira que não
- * duplica. Repetições legítimas mais adiante no plano não são tocadas.
- * Exportada para teste.
+ * Fragment "echo": models (observed in gpt-5-mini and flash-lite) sometimes
+ * repeat the fragment's tail right after the "use" — re-filling the password,
+ * re-clicking the button the fragment already clicked — and the plan breaks on
+ * the next page. A prompt instruction is not enough across all providers; the
+ * removal is MECHANICAL: discards actions immediately after a "use" that
+ * duplicate (type+selector) actions of the fragment itself, stopping at the
+ * first one that does not duplicate. Legitimate repetitions later in the plan
+ * are not touched. Exported for testing.
  */
 export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
   const byId = new Map(fragments.map((f) => [f.fragment_id, f]));
@@ -406,8 +406,8 @@ export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
     while (i + 1 < actions.length) {
       const next = actions[i + 1];
       if (!fragmentKeys.has(`${next.type}|${next.target?.selector ?? next.url ?? ""}`)) break;
-      // O eco pode carregar a verificação final do plano — preserva o expect
-      // na última ação mantida antes de descartá-lo.
+      // The echo may carry the plan's final verification — preserve the expect
+      // on the last kept action before discarding it.
       if (next.expect && !kept[kept.length - 1].expect) kept[kept.length - 1].expect = next.expect;
       i++;
     }
@@ -420,10 +420,11 @@ export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
 }
 
 /**
- * Fill de campo de senha com valor que não aparece na tarefa, nas dicas nem
- * no manifesto = senha INVENTADA pelo modelo (visto no dogfood: "senha123").
- * Não bloqueia — cadastro com senha fictícia é legítimo — mas avisa: num
- * login, o teste vai falhar longe da causa. Exportada para teste.
+ * A password-field fill with a value that appears neither in the task, the
+ * hints nor the manifest = password INVENTED by the model (seen in dogfooding:
+ * "senha123"). Does not block — signing up with a fictional password is
+ * legitimate — but warns: in a login, the test will fail far from the cause.
+ * Exported for testing.
  */
 export function inventedPasswordFills(plan: Plan, scenario: Scenario): string[] {
   const texts = [scenario.task, ...(scenario.hints ?? [])];
@@ -440,7 +441,7 @@ export function inventedPasswordFills(plan: Plan, scenario: Scenario): string[] 
   return suspicious;
 }
 
-/** ENVs legitimamente utilizáveis: os citados na tarefa/hints + os do manifesto. */
+/** Legitimately usable ENVs: those mentioned in the task/hints + those in the manifest. */
 function allowedEnvRefs(scenario: Scenario): Set<string> {
   const allowed = new Set<string>();
   const texts = [scenario.task, ...(scenario.hints ?? [])];

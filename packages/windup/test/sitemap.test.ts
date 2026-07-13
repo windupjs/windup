@@ -19,60 +19,60 @@ function seedLoginFlow(store: SiteMapStore): void {
 }
 
 describe("SiteMapStore (E2)", () => {
-  it("upsert acumula seen_count e urls; transição repetida acumula seen_count", async () => {
+  it("upsert accumulates seen_count and urls; a repeated transition accumulates seen_count", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
     store.upsertPage({ sig: "sig:bbb", url: "https://x.com/inventory.html?x=1", title: "Products", interactive: [] });
     store.recordTransition("sig:aaa", { type: "click", selector: "#entrar" }, "sig:bbb");
-    const slice = store.sliceForPrompt("sig:aaa", "qualquer", 10_000);
+    const slice = store.sliceForPrompt("sig:aaa", "anything", 10_000);
     expect(store.pageCount).toBe(3);
     expect(slice).toContain("**/inventory.html");
   });
 
-  it("deriva url_pattern do pathname mais comum", async () => {
+  it("derives url_pattern from the most common pathname", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
-    const slice = store.sliceForPrompt("sig:aaa", "carrinho", 10_000);
+    const slice = store.sliceForPrompt("sig:aaa", "cart", 10_000);
     expect(slice).toContain("**/cart.html");
   });
 
-  it("BFS parte da página inicial e não inclui a própria (que entra viva no prompt)", async () => {
+  it("BFS starts from the initial page and does not include it (it enters the prompt live)", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
     const slice = store.sliceForPrompt("sig:aaa", "checkout", 10_000);
-    expect(slice).not.toContain("Página conhecida: **/ ");
+    expect(slice).not.toContain("Known page: **/ ");
     expect(slice).toContain("checkout");
   });
 
-  it("página inicial desconhecida → fatia vazia", async () => {
+  it("unknown initial page → empty slice", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
-    expect(store.sliceForPrompt("sig:zzz", "qualquer", 10_000)).toBe("");
+    expect(store.sliceForPrompt("sig:zzz", "anything", 10_000)).toBe("");
   });
 
-  it("respeita o orçamento de chars", async () => {
+  it("respects the chars budget", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
-    const slice = store.sliceForPrompt("sig:aaa", "carrinho checkout produtos", 200);
+    const slice = store.sliceForPrompt("sig:aaa", "cart checkout products", 200);
     expect(slice.length).toBeLessThanOrEqual(200);
   });
 
-  it("prioriza páginas que casam com os termos da tarefa", async () => {
+  it("prioritizes pages that match the task terms", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
-    // orçamento para 1 bloco só: o de checkout deve vencer o de produtos
-    const slice = store.sliceForPrompt("sig:aaa", "finalizar checkout do carrinho", 400);
+    // budget for a single block: the checkout one must beat the products one
+    const slice = store.sliceForPrompt("sig:aaa", "finish the cart checkout", 400);
     expect(slice).toContain("checkout");
   });
 
-  it("inclui o caminho de chegada (transição) no bloco da página", async () => {
+  it("includes the arrival path (transition) in the page block", async () => {
     const { store } = await freshStore();
     seedLoginFlow(store);
-    const slice = store.sliceForPrompt("sig:aaa", "produtos inventário", 10_000);
-    expect(slice).toContain("chega-se aqui com click '#entrar'");
+    const slice = store.sliceForPrompt("sig:aaa", "products inventory", 10_000);
+    expect(slice).toContain("you get here with click '#entrar'");
   });
 
-  it("save + load fazem roundtrip", async () => {
+  it("save + load round-trip", async () => {
     const { store, file } = await freshStore();
     seedLoginFlow(store);
     await store.save();
@@ -81,6 +81,6 @@ describe("SiteMapStore (E2)", () => {
     expect(Object.keys(raw.pages)).toHaveLength(3);
     const reloaded = await SiteMapStore.load(file);
     expect(reloaded.pageCount).toBe(3);
-    expect(reloaded.sliceForPrompt("sig:aaa", "carrinho", 10_000)).toContain("**/cart.html");
+    expect(reloaded.sliceForPrompt("sig:aaa", "cart", 10_000)).toContain("**/cart.html");
   });
 });

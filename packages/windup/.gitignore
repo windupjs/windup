@@ -3,3 +3,4 @@ dist/
 .windup/
 .env
 *.tgz
+.env.local

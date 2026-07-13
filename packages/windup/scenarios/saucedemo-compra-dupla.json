@@ -1,5 +1,5 @@
 {
   "scenario_id": "saucedemo-compra-dupla",
   "start_url": "https://www.saucedemo.com",
-  "task": "Acesse o saucedemo.com e faça login com o usuário standard_user e senha secret_sauce. Adicione os produtos 'Sauce Labs Backpack' e 'Sauce Labs Bike Light' ao carrinho. Abra o carrinho e remova o 'Sauce Labs Bike Light'. Vá para o checkout, preencha nome João, sobrenome Silva e CEP 01000-000, continue e finalize a compra. Verifique que a mensagem 'Thank you for your order' aparece."
+  "task": "Go to saucedemo.com and log in with the user standard_user and password secret_sauce. Add the products 'Sauce Labs Backpack' and 'Sauce Labs Bike Light' to the cart. Open the cart and remove the 'Sauce Labs Bike Light'. Go to checkout, fill in first name João, last name Silva and ZIP code 01000-000, continue and finish the purchase. Verify that the message 'Thank you for your order' appears."
 }

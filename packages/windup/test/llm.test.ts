@@ -15,53 +15,53 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("seleção de provider/modelo (multi-provider)", () => {
-  it("parseLlmSpec: provider puro usa o modelo default do provider", () => {
+describe("provider/model selection (multi-provider)", () => {
+  it("parseLlmSpec: bare provider uses the provider's default model", () => {
     withConfig({ provider: "google", model: "gemini-3.1-flash-lite" });
     expect(parseLlmSpec("openai")).toEqual({ provider: "openai", model: PROVIDER_DEFAULTS.openai.model });
   });
 
-  it("parseLlmSpec: provider:model e provider/model", () => {
+  it("parseLlmSpec: provider:model and provider/model", () => {
     withConfig(DEFAULT_CONFIG.llm);
     expect(parseLlmSpec("openai:gpt-5-nano")).toEqual({ provider: "openai", model: "gpt-5-nano" });
     expect(parseLlmSpec("google/gemini-3.5-flash")).toEqual({ provider: "google", model: "gemini-3.5-flash" });
   });
 
-  it("parseLlmSpec: provider sem modelo respeita o default da config (llm.providers)", () => {
+  it("parseLlmSpec: provider without a model respects the config default (llm.providers)", () => {
     withConfig({ provider: "google", model: "gemini-3.1-flash-lite", providers: { openai: { model: "gpt-4.1-mini" } } });
     expect(parseLlmSpec("openai")).toEqual({ provider: "openai", model: "gpt-4.1-mini" });
   });
 
-  it("parseLlmSpec: provider desconhecido é erro claro", () => {
+  it("parseLlmSpec: unknown provider is a clear error", () => {
     withConfig(DEFAULT_CONFIG.llm);
     expect(() => parseLlmSpec("anthropic:claude")).toThrow(/unknown LLM provider/);
   });
 
-  it("resolveLlm: WINDUP_LLM (flag --llm) tem precedência sobre a config", () => {
+  it("resolveLlm: WINDUP_LLM (--llm flag) takes precedence over the config", () => {
     withConfig({ provider: "google", model: "gemini-3.1-flash-lite" });
     process.env.WINDUP_LLM = "openai:gpt-5-mini";
     expect(resolveLlm()).toEqual({ provider: "openai", model: "gpt-5-mini" });
   });
 
-  it("resolveLlm: LLM_MODEL legado troca só o modelo no provider da config", () => {
+  it("resolveLlm: legacy LLM_MODEL swaps only the model within the config's provider", () => {
     withConfig({ provider: "google", model: "gemini-3.1-flash-lite" });
     process.env.LLM_MODEL = "gemini-3.5-flash";
     expect(resolveLlm()).toEqual({ provider: "google", model: "gemini-3.5-flash" });
   });
 
-  it("resolveLlm: sem overrides usa a config", () => {
+  it("resolveLlm: without overrides uses the config", () => {
     withConfig({ provider: "openai", model: "gpt-5-mini" });
     expect(resolveLlm()).toEqual({ provider: "openai", model: "gpt-5-mini" });
   });
 
-  it("createLlmClient: falta de API key do provider selecionado é erro com o nome da env", () => {
+  it("createLlmClient: missing API key for the selected provider is an error naming the env var", () => {
     withConfig(DEFAULT_CONFIG.llm);
     process.env.WINDUP_LLM = "openai";
     expect(() => createLlmClient()).toThrow(/OPENAI_API_KEY/);
   });
 });
 
-describe("client OpenAI (REST)", () => {
+describe("OpenAI client (REST)", () => {
   function stubFetch(payload: unknown): ReturnType<typeof vi.fn> {
     const mock = vi.fn(async () => ({
       ok: true,
@@ -78,14 +78,14 @@ describe("client OpenAI (REST)", () => {
     usage: { prompt_tokens: 100, completion_tokens: 20 },
   };
 
-  it("modelo com raciocínio (gpt-5*): reasoning_effort minimal, sem temperature/seed; schema vira json mode + instrução", async () => {
+  it("reasoning model (gpt-5*): reasoning_effort minimal, no temperature/seed; schema becomes json mode + instruction", async () => {
     withConfig(DEFAULT_CONFIG.llm);
     process.env.WINDUP_LLM = "openai:gpt-5-mini";
     process.env.OPENAI_API_KEY = "test-key";
     const mock = stubFetch(RESPONSE);
 
     const client = createLlmClient();
-    const result = await client.generate({ prompt: "plano", schema: { type: "object" }, maxOutputTokens: 8192, temperature: 0.3, seed: 11 });
+    const result = await client.generate({ prompt: "plan", schema: { type: "object" }, maxOutputTokens: 8192, temperature: 0.3, seed: 11 });
 
     expect(result).toEqual({ text: '{"ok":true}', tokens: { input: 100, output: 20 }, truncated: false });
     const [url, init] = mock.mock.calls[0] as unknown as [string, { body: string; headers: Record<string, string> }];
@@ -101,13 +101,13 @@ describe("client OpenAI (REST)", () => {
     expect(body.max_completion_tokens).toBe(8192);
   });
 
-  it("modelo clássico (gpt-4o-mini): temperature e seed vão na chamada", async () => {
+  it("classic model (gpt-4o-mini): temperature and seed go in the call", async () => {
     withConfig(DEFAULT_CONFIG.llm);
     process.env.WINDUP_LLM = "openai:gpt-4o-mini";
     process.env.OPENAI_API_KEY = "test-key";
     const mock = stubFetch(RESPONSE);
 
-    await createLlmClient().generate({ prompt: "plano", maxOutputTokens: 4096, temperature: 0.3, seed: 7 });
+    await createLlmClient().generate({ prompt: "plan", maxOutputTokens: 4096, temperature: 0.3, seed: 7 });
     const body = JSON.parse((mock.mock.calls[0] as unknown as [string, { body: string }])[1].body);
     expect(body.temperature).toBe(0.3);
     expect(body.seed).toBe(7);
@@ -115,7 +115,7 @@ describe("client OpenAI (REST)", () => {
     expect(body.response_format).toBeUndefined();
   });
 
-  it("finish_reason length → truncated (retry transiente do planner)", async () => {
+  it("finish_reason length → truncated (planner's transient retry)", async () => {
     withConfig(DEFAULT_CONFIG.llm);
     process.env.WINDUP_LLM = "openai:gpt-5-mini";
     process.env.OPENAI_API_KEY = "test-key";
@@ -125,7 +125,7 @@ describe("client OpenAI (REST)", () => {
     expect(result.truncated).toBe(true);
   });
 
-  it("baseUrl da config (endpoint OpenAI-compatível) é respeitada", async () => {
+  it("baseUrl from the config (OpenAI-compatible endpoint) is respected", async () => {
     withConfig({ provider: "google", model: "gemini-3.1-flash-lite", providers: { openai: { model: "gpt-5-mini", baseUrl: "http://localhost:11434/v1/" } } });
     process.env.WINDUP_LLM = "openai";
     process.env.OPENAI_API_KEY = "test-key";

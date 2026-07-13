@@ -12,8 +12,8 @@ function metric(over: Partial<RunMetrics>): RunMetrics {
   };
 }
 
-describe("reporters CI/CD", () => {
-  it("junit: sucesso e falha com escaping XML", () => {
+describe("CI/CD reporters", () => {
+  it("junit: success and failure with XML escaping", () => {
     const xml = junitReport([
       metric({ scenario_id: "login" }),
       metric({
@@ -30,7 +30,7 @@ describe("reporters CI/CD", () => {
     expect(xml).not.toContain('name="checkout <');
   });
 
-  it("json: summary agregado + casos", () => {
+  it("json: aggregated summary + cases", () => {
     const out = JSON.parse(jsonReport([
       metric({ llm_calls: 1, estimated_cost_usd: 0.002 }),
       metric({ scenario_id: "b", result: "failed", failure: { kind: "network", action_id: null, message: "x" } }),
@@ -39,7 +39,7 @@ describe("reporters CI/CD", () => {
     expect(out.cases[1].failure.kind).toBe("network");
   });
 
-  it("html: documento self-contained com summary, badges, falha escapada e detalhe de ações", () => {
+  it("html: self-contained document with summary, badges, escaped failure and action detail", () => {
     const html = htmlReport([
       metric({
         scenario_id: "login",
@@ -47,7 +47,7 @@ describe("reporters CI/CD", () => {
         llm_model: "gemini-3.1-flash-lite",
         llm_provider: "google",
         estimated_cost_usd: 0.0019,
-        summary: { text: "Os preços observados foram $29.99 e $9.99.", model: "m", provider: "google", tokens: { input: 1, output: 1 }, est_cost_usd: 0.0005 },
+        summary: { text: "The observed prices were $29.99 and $9.99.", model: "m", provider: "google", tokens: { input: 1, output: 1 }, est_cost_usd: 0.0005 },
         actions: [
           { id: "a1", duration_ms: 120, verify_ms: 30, status: "passed" },
           { id: "a2", duration_ms: 90, verify_ms: 25, status: "passed" },
@@ -65,11 +65,11 @@ describe("reporters CI/CD", () => {
     expect(html).toContain(">FAIL<");
     expect(html).toContain("google/gemini-3.1-flash-lite");
     expect(html).toContain("2 action(s)");
-    // debrief fechado por padrão: <details> SEM atributo open
+    // debrief closed by default: <details> WITHOUT the open attribute
     expect(html).toContain('<details class="ai-summary"><summary>AI debrief</summary>');
     expect(html).not.toContain('<details class="ai-summary" open');
-    expect(html).toContain("&lt;b&gt;#pay&lt;/b&gt;"); // mensagem de falha escapada
+    expect(html).toContain("&lt;b&gt;#pay&lt;/b&gt;"); // failure message escaped
     expect(html).not.toContain("<b>#pay</b>");
-    expect(html).not.toContain("<script"); // zero JS: abre em qualquer artifact viewer de CI
+    expect(html).not.toContain("<script"); // zero JS: opens in any CI artifact viewer
   });
 });

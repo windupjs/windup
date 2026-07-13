@@ -23,22 +23,22 @@ export interface Action {
   value?: string;
   value_ref?: string;
   url?: string;
-  /** type=use: id do fragmento a expandir inline (E3). */
+  /** type=use: id of the fragment to expand inline (E3). */
   use?: string;
   expect?: Expect;
   timeout_ms?: number;
 }
 
 /**
- * Fragmento de trajetória (SPEC-001, componente 2): sub-trajetória nomeada e
- * reutilizável. Vive versionado no repo do usuário (é conhecimento curado),
- * ao contrário do cache. O plano referencia { type: "use", use: "<id>" } e o
- * runner expande inline antes de executar.
+ * Trajectory fragment (SPEC-001, component 2): a named, reusable
+ * sub-trajectory. Lives versioned in the user's repo (it is curated
+ * knowledge), unlike the cache. The plan references { type: "use", use: "<id>" }
+ * and the runner expands it inline before executing.
  */
 export interface Fragment {
   fragment_id: string;
   description: string;
-  /** Documentação dos segredos/parâmetros (as ações usam value_ref ENV:*). */
+  /** Documentation of the secrets/parameters (the actions use value_ref ENV:*). */
   params?: Record<string, string>;
   actions: Action[];
   postcondition?: Expect;
@@ -56,20 +56,20 @@ export interface Plan {
 export interface Scenario {
   scenario_id: string;
   /**
-   * URL inicial. Opcional (default "/") e NUNCA precisa ser absoluta: caminhos
-   * resolvem contra a baseUrl efetiva — e --base-url/WINDUP_BASE_URL
-   * sobrescrevem a ORIGEM mesmo de URLs absolutas (porta/host mudam por
-   * ambiente; o teste é o mesmo).
+   * Initial URL. Optional (default "/") and it NEVER needs to be absolute: paths
+   * resolve against the effective baseUrl — and --base-url/WINDUP_BASE_URL
+   * override the ORIGIN even of absolute URLs (port/host change per
+   * environment; the test is the same).
    */
   start_url?: string;
   task: string;
-  /** Conhecimento site-específico fornecido pelo AUTOR do cenário (doc 07: nada de site hardcoded no motor). */
+  /** Site-specific knowledge provided by the scenario AUTHOR (doc 07: no hardcoded site knowledge in the engine). */
   hints?: string[];
   /**
-   * Cenários pré-requisito (ex.: ["login"]), executados NA MESMA sessão de
-   * browser antes deste — cada um com seu próprio cache/replay. Sem
-   * start_url explícito, este cenário CONTINUA da página onde a última
-   * dependência terminou (e o planejador enxerga essa página real).
+   * Prerequisite scenarios (e.g. ["login"]), executed IN THE SAME browser
+   * session before this one — each with its own cache/replay. Without an
+   * explicit start_url, this scenario CONTINUES from the page where the last
+   * dependency ended (and the planner sees that real page).
    */
   depends_on?: string[];
 }
@@ -81,7 +81,7 @@ export interface CacheEntry {
   key: {
     scenario_id: string;
     start_url: string;
-    /** Assinatura estrutural da página inicial no momento do plano (E1). */
+    /** Structural signature of the initial page at plan time (E1). */
     start_sig?: string;
   };
   plan: Plan;
@@ -91,7 +91,7 @@ export interface CacheEntry {
     last_replayed_at: string | null;
     replay_count: number;
     replay_failures: number;
-    /** Quantas vezes o plano deste cenário já foi (re)gerado — detector de cenário instável. */
+    /** How many times this scenario's plan has been (re)generated — unstable-scenario detector. */
     plan_generation: number;
   };
 }
@@ -113,17 +113,17 @@ export interface RunMetrics {
   cache: CacheOutcome;
   llm_calls: number;
   llm_model: string | null;
-  /** Provider do modelo ("google", "openai"); null em replays, ausente em registros pré-0.10. */
+  /** Model provider ("google", "openai"); null in replays, absent in pre-0.10 records. */
   llm_provider?: string | null;
   planning_mode: "full" | "incremental" | null;
-  /** Retries semânticos do planejador (doc 03 permite ≤1); null se não planejou. */
+  /** The planner's semantic retries (doc 03 allows ≤1); null if it did not plan. */
   plan_semantic_retries: number | null;
   /**
-   * E1, política leniente: true se a sig da página inicial divergiu da gravada
-   * no cache (o replay segue mesmo assim); null quando não havia sig comparável.
+   * E1, lenient policy: true if the initial page's sig diverged from the one
+   * recorded in the cache (the replay proceeds anyway); null when there was no comparable sig.
    */
   sig_mismatch: boolean | null;
-  /** Tamanho do prompt de planejamento em chars (E2); null se não planejou. */
+  /** Planning prompt size in chars (E2); null if it did not plan. */
   prompt_chars: number | null;
   tokens: { input: number; output: number };
   estimated_cost_usd: number;
@@ -131,18 +131,18 @@ export interface RunMetrics {
   actions: ActionMetrics[];
   result: "passed" | "failed";
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
-  /** Plano executado (diagnóstico; ausente se a geração falhou antes de haver plano). */
+  /** Executed plan (diagnostic; absent if generation failed before a plan existed). */
   plan?: Plan;
   /**
-   * Resumo pós-execução gerado por LLM (`run --summary`, opt-in): o que o
-   * teste fez, resultados concretos observados e dificuldades. Custo desta
-   * chamada NÃO entra em llm_calls (que mede planejamento), mas soma em
+   * Post-run summary generated by LLM (`run --summary`, opt-in): what the
+   * test did, concrete observed results and difficulties. This call's cost
+   * does NOT count toward llm_calls (which measures planning), but adds to
    * estimated_cost_usd.
    */
   summary?: { text: string; model: string; provider: string; tokens: { input: number; output: number }; est_cost_usd: number };
-  /** Snapshot (árvore a11y) da página no momento da falha — diagnóstico no ledger; ausente em runs verdes. */
+  /** Snapshot (a11y tree) of the page at failure time — diagnostic in the ledger; absent in green runs. */
   failure_snapshot?: string;
-  /** Dependências executadas antes deste cenário (depends_on), na ordem. */
+  /** Dependencies executed before this scenario (depends_on), in order. */
   dependencies?: Array<{ scenario_id: string; cache: CacheOutcome; llm_calls: number; result: "passed" | "failed"; duration_ms: number }>;
 }
 

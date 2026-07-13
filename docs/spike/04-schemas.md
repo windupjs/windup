@@ -1,21 +1,21 @@
-# Spike de Validação — Schemas de Dados
+# Validation Spike — Data Schemas
 
-Dois artefatos: o **plano de ações** (o que o Gemini gera e o executor roda) e a **entrada de cache** (o que persiste entre execuções). Versão de schema `0.1` — instável por definição durante a spike; toda mudança incompatível incrementa a minor e invalida caches antigos (campo `plan_version` é parte da validação de hit).
+Two artifacts: the **action plan** (what Gemini generates and the executor runs) and the **cache entry** (what persists between executions). Schema version `0.1` — unstable by definition during the spike; every incompatible change increments the minor and invalidates old caches (the `plan_version` field is part of hit validation).
 
-## 1. Plano de ações (`plan_version: "0.1"`)
+## 1. Action plan (`plan_version: "0.1"`)
 
 ```json
 {
   "plan_version": "0.1",
   "scenario_id": "saucedemo-checkout",
-  "task": "Texto original da tarefa, para auditoria",
+  "task": "Original task text, for auditing",
   "start_url": "https://www.saucedemo.com",
   "generated_by": { "model": "gemini-2.5-flash", "at": "2026-07-11T14:00:00Z" },
-  "actions": [ { "...": "ver schema de ação abaixo" } ]
+  "actions": [ { "...": "see action schema below" } ]
 }
 ```
 
-### Schema de ação
+### Action schema
 
 ```json
 {
@@ -23,11 +23,11 @@ Dois artefatos: o **plano de ações** (o que o Gemini gera e o executor roda) e
   "type": "goto | click | fill | wait_for",
   "target": {
     "selector": "#login-button",
-    "description": "botão de login"
+    "description": "login button"
   },
-  "value": "texto a digitar (só para fill)",
-  "value_ref": "ENV:SAUCE_PASSWORD (alternativa a value; resolvida em runtime, nunca persistida resolvida)",
-  "url": "https://... (só para goto)",
+  "value": "text to type (fill only)",
+  "value_ref": "ENV:SAUCE_PASSWORD (alternative to value; resolved at runtime, never persisted resolved)",
+  "url": "https://... (goto only)",
   "expect": {
     "selector": ".inventory_list",
     "url": "**/inventory.html",
@@ -37,17 +37,17 @@ Dois artefatos: o **plano de ações** (o que o Gemini gera e o executor roda) e
 }
 ```
 
-Regras (validação semântica pós-schema):
+Rules (semantic validation after the schema):
 
-- `id` único no plano, sequencial (`a1`, `a2`, ...).
-- `click`/`fill` exigem `target.selector`. `goto` exige `url`. `fill` exige `value` **ou** `value_ref` (nunca ambos).
-- `target.description` é obrigatória — é o insumo do self-healing futuro (re-localizar o elemento por descrição quando o seletor quebrar) e serve de documentação do plano.
-- `expect` é opcional por ação, mas **obrigatório na última ação** e recomendado em toda ação que causa navegação. Campos de `expect` são AND: todos os presentes devem passar.
-- `timeout_ms`: default 5000; máx. 30000.
-- **Sem campo de código livre.** O plano é dados, não programa. Sem condicionais, loops ou expressões — se um fluxo precisar disso, é sinal de que o cenário deve ser dividido, não de que o schema deve crescer.
-- Campo `fallbacks` (variantes de seletor para self-healing) está **reservado** no schema mas não é usado na spike.
+- `id` unique within the plan, sequential (`a1`, `a2`, ...).
+- `click`/`fill` require `target.selector`. `goto` requires `url`. `fill` requires `value` **or** `value_ref` (never both).
+- `target.description` is mandatory — it is the input for future self-healing (re-locating the element by description when the selector breaks) and serves as plan documentation.
+- `expect` is optional per action, but **mandatory on the last action** and recommended on every action that causes navigation. `expect` fields are AND: all present fields must pass.
+- `timeout_ms`: default 5000; max. 30000.
+- **No free-code field.** The plan is data, not a program. No conditionals, loops, or expressions — if a flow needs those, it is a sign that the scenario should be split, not that the schema should grow.
+- The `fallbacks` field (selector variants for self-healing) is **reserved** in the schema but not used in the spike.
 
-### JSON Schema (para `responseSchema` do Gemini e validação local)
+### JSON Schema (for Gemini's `responseSchema` and local validation)
 
 ```json
 {
@@ -101,9 +101,9 @@ Regras (validação semântica pós-schema):
 }
 ```
 
-`maxItems: 30` é deliberado: limita o dano de um plano alucinado e força cenários curtos na spike.
+`maxItems: 30` is deliberate: it limits the damage of a hallucinated plan and forces short scenarios in the spike.
 
-## 2. Entrada de cache (`.cache/trajetorias/<scenario_id>.json`)
+## 2. Cache entry (`.cache/trajetorias/<scenario_id>.json`)
 
 ```json
 {
@@ -112,7 +112,7 @@ Regras (validação semântica pós-schema):
     "scenario_id": "saucedemo-login",
     "start_url": "https://www.saucedemo.com"
   },
-  "plan": { "...": "plano completo, como acima" },
+  "plan": { "...": "full plan, as above" },
   "status": "active | stale",
   "stats": {
     "created_at": "2026-07-11T14:00:00Z",
@@ -123,11 +123,11 @@ Regras (validação semântica pós-schema):
 }
 ```
 
-- **Hit** = arquivo existe + `status: active` + `cache_version` e `plan.plan_version` compatíveis.
-- **Invalidação** = falha de verificação em replay seta `status: stale` (o arquivo é mantido para diagnóstico; o novo plano sobrescreve).
-- `stats` alimenta as métricas de validação (replay_count/failures são a evidência do critério 10/10).
-- **Página como parte da chave:** no MVP a chave ganha `page_signature` (hash estrutural do DOM inicial) para detectar mudança de página sem executar. Na spike, a mudança só é detectada em runtime pela falha de verificação — mais barato de implementar e suficiente para validar o mecanismo.
+- **Hit** = file exists + `status: active` + compatible `cache_version` and `plan.plan_version`.
+- **Invalidation** = a verification failure during replay sets `status: stale` (the file is kept for diagnostics; the new plan overwrites it).
+- `stats` feeds the validation metrics (replay_count/failures are the evidence for the 10/10 criterion).
+- **Page as part of the key:** in the MVP the key gains a `page_signature` (structural hash of the initial DOM) to detect page changes without executing. In the spike, changes are only detected at runtime via verification failure — cheaper to implement and sufficient to validate the mechanism.
 
-## 3. Segredos
+## 3. Secrets
 
-`value_ref: "ENV:NOME_DA_VAR"` existe no schema desde a v0.1 para que o formato de cache nunca precise mudar por causa de segredos: o executor resolve a referência em runtime e o valor real jamais é escrito em disco. Na spike, as credenciais públicas do saucedemo podem ir em `value` direto — mas o cenário 2 deve usar `value_ref` em pelo menos um campo para exercitar o mecanismo.
+`value_ref: "ENV:VAR_NAME"` exists in the schema since v0.1 so that the cache format never has to change because of secrets: the executor resolves the reference at runtime and the real value is never written to disk. In the spike, saucedemo's public credentials may go directly in `value` — but scenario 2 must use `value_ref` in at least one field to exercise the mechanism.

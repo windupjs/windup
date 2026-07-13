@@ -1,6 +1,6 @@
 # Windup — Living Specification
 
-**Status:** implemented (describes the system as shipped in `windupjs@0.9.x`) · **Supersedes:** [SPEC-001](spec-001-evolucao-pos-spike.md) and [SPEC-002](spec-002-cli-e-indexacao.md) (Portuguese, historical — fully implemented; measured results in `RESULTADO-tranche-{1,2,3}.md` and `../spike/RESULTADO.md`).
+**Status:** implemented (describes the system as shipped in `windupjs@0.9.x`) · **Supersedes:** [SPEC-001](spec-001-post-spike-evolution.md) and [SPEC-002](spec-002-cli-and-indexing.md) (historical — fully implemented; measured results in `RESULTS-tranche-{1,2,3}.md` and `../spike/RESULTS.md`).
 
 ## 1. Thesis
 

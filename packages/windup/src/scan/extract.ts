@@ -1,10 +1,10 @@
 /**
- * Extração estática de elementos interativos de componentes JSX/TSX
- * (SPEC-002, camada 2). Parse leve por regex — sem executar o app, sem AST
- * pesado (ts-morph fica para quando um benchmark do P2 justificar).
+ * Static extraction of interactive elements from JSX/TSX components
+ * (SPEC-002, layer 2). Lightweight regex parsing — no running the app, no
+ * heavy AST (ts-morph waits until a P2 benchmark justifies it).
  *
- * Conformidade zero-hardcode: este módulo conhece SINTAXE (JSX, atributos
- * comuns da web), nunca sites específicos.
+ * Zero-hardcode compliance: this module knows SYNTAX (JSX, common web
+ * attributes), never specific sites.
  */
 
 export interface StaticElement {
@@ -15,20 +15,21 @@ export interface StaticElement {
   type?: string;
   ariaLabel?: string;
   label?: string;
-  /** Destino de navegação (to/href de links). */
+  /** Navigation destination (to/href of links). */
   to?: string;
-  /** htmlFor de labels — liga o texto ao id do campo. */
+  /** htmlFor of labels — ties the text to the field's id. */
   htmlFor?: string;
 }
 
-// Tags cruas + componentes interativos de design systems (shadcn/MUI/Chakra/
-// Ant usam estes NOMES — convenção do ecossistema, não de nenhum site).
+// Raw tags + interactive design-system components (shadcn/MUI/Chakra/Ant
+// use these NAMES — an ecosystem convention, not any specific site's).
 const TAG_START =
   /<(button|input|a|select|textarea|label|Button|IconButton|Input|TextField|Textarea|Select|Combobox|Checkbox|Switch|Radio|Link|NavLink|Label)\b/g;
 
 /**
- * Fim real da tag JSX: um ">" só encerra quando fora de chaves e aspas —
- * handlers inline (onChange={(e) => ...}) contêm ">" que não terminam a tag.
+ * Real end of the JSX tag: a ">" only closes it when outside braces and
+ * quotes — inline handlers (onChange={(e) => ...}) contain ">" characters
+ * that do not end the tag.
  */
 function tagEnd(source: string, from: number): { end: number; selfClosing: boolean } | null {
   let depth = 0;
@@ -50,8 +51,9 @@ function tagEnd(source: string, from: number): { end: number; selfClosing: boole
 }
 
 /**
- * Remove blocos {expressão} balanceados — atributos dinâmicos não interessam
- * ao parser. Literais de string ({"x"}) viram string normal antes do strip.
+ * Removes balanced {expression} blocks — dynamic attributes are of no
+ * interest to the parser. String literals ({"x"}) become plain strings
+ * before the strip.
  */
 function stripJsxExpressions(text: string): string {
   const literalized = text.replace(/\{\s*(["'`])([^"'`]*)\1\s*\}/g, '"$2"');
@@ -65,14 +67,14 @@ function stripJsxExpressions(text: string): string {
   return out;
 }
 
-/** Texto-filho só vale se for texto humano, não expressão/código. */
+/** Child text only counts if it is human text, not an expression/code. */
 function cleanText(raw: string | undefined): string | undefined {
   const text = raw?.trim().replace(/\s+/g, " ").slice(0, 40);
   if (!text || /[{}<>=]/.test(text)) return undefined;
   return text;
 }
 
-/** Componente de design system → tag semântica equivalente. */
+/** Design-system component → equivalent semantic tag. */
 const SEMANTIC_TAG: Record<string, string> = {
   button: "button", iconbutton: "button",
   input: "input", textfield: "input", checkbox: "input", switch: "input", radio: "input",
@@ -87,7 +89,7 @@ function attr(attrs: string, name: string): string | undefined {
   return (m?.[1] ?? m?.[2] ?? m?.[3])?.trim() || undefined;
 }
 
-/** Extrai elementos interativos declarados no fonte de um componente. */
+/** Extracts interactive elements declared in a component's source. */
 export function extractElements(source: string): StaticElement[] {
   const elements: StaticElement[] = [];
   for (const match of source.matchAll(TAG_START)) {
@@ -109,8 +111,8 @@ export function extractElements(source: string): StaticElement[] {
       to: attr(attrs, "to") ?? (tag === "a" ? attr(attrs, "href") : undefined),
       htmlFor: attr(attrs, "htmlFor") ?? attr(attrs, "for"),
     };
-    // Sem nenhum traço identificável, a linha não ajuda o planejador.
-    // Labels valem pelo par texto↔htmlFor (revelam o id do campo).
+    // Without any identifiable trait, the line does not help the planner.
+    // Labels earn their place via the text↔htmlFor pair (they reveal the field's id).
     if (el.id || el.name || el.dataTest || el.ariaLabel || el.to || (el.htmlFor && el.label) || (el.label && tag !== "label")) {
       elements.push(el);
     }
@@ -128,7 +130,7 @@ function dedupe(elements: StaticElement[]): StaticElement[] {
   });
 }
 
-/** Formata no mesmo vocabulário das linhas do mapa/prompt (browser.interactiveElements). */
+/** Formats in the same vocabulary as the map/prompt lines (browser.interactiveElements). */
 export function formatElement(el: StaticElement): string {
   const parts = [el.tag];
   if (el.id) parts.push(`id=${el.id}`);

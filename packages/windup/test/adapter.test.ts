@@ -1,10 +1,10 @@
 /**
- * P5: cenários windup como testes nativos do vitest — este arquivo É o
- * critério: o report do runner lista cada cenário como um teste.
+ * P5: windup scenarios as native vitest tests — this file IS the
+ * acceptance criterion: the runner's report lists each scenario as a test.
  *
- * Hermético: semeia um plano conhecido no cache antes da suite, então o
- * cenário roda como REPLAY (zero LLM, sem chave, imune a estado deixado
- * por benches).
+ * Hermetic: seeds a known-good plan into the cache before the suite, so the
+ * scenario runs as a REPLAY (zero LLM, no API key, immune to state left
+ * behind by benches).
  */
 import { createContextFromConfig, setContext } from "../src/context.js";
 import { saveCached } from "../src/cache.js";

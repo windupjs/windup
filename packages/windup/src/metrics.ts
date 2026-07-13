@@ -3,17 +3,17 @@ import path from "node:path";
 import type { RunMetrics } from "./types.js";
 import { getContext } from "./context.js";
 
-/** Diretório das métricas por execução, resolvido pelo contexto ativo. */
+/** Per-run metrics directory, resolved from the active context. */
 export function runsDir(): string {
   return getContext().paths.runsDir;
 }
 
 /**
- * Preço por 1M de tokens (USD), por modelo. Nomes de modelo são únicos entre
- * providers, então a tabela é plana. Preços mudam — manter a data.
- * Última conferência: 2026-07-13 (ai.google.dev/gemini-api/docs/pricing e
+ * Price per 1M tokens (USD), per model. Model names are unique across
+ * providers, so the table is flat. Prices change — keep the date.
+ * Last checked: 2026-07-13 (ai.google.dev/gemini-api/docs/pricing and
  * platform.openai.com/docs/pricing).
- * Modelo fora da tabela usa o fallback e loga aviso (estimativa, não fatura).
+ * A model outside the table uses the fallback and logs a warning (an estimate, not an invoice).
  */
 export const PRICING = {
   asOf: "2026-07-13",
@@ -22,9 +22,9 @@ export const PRICING = {
     "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
     "gemini-3.5-flash": { input: 1.5, output: 9.0 },
     "gemini-2.5-flash": { input: 0.3, output: 2.5 },
-    // Aliases flutuantes da Google — preço do alvo ATUAL (verificado por
-    // fingerprint de tokens em 2026-07-13: lite-latest ≡ 3.1-flash-lite).
-    // Reconferir quando a Google reapontar.
+    // Google's floating aliases — price of the CURRENT target (verified by
+    // token fingerprint on 2026-07-13: lite-latest ≡ 3.1-flash-lite).
+    // Re-check when Google re-points them.
     "gemini-flash-lite-latest": { input: 0.25, output: 1.5 },
     "gemini-flash-latest": { input: 1.5, output: 9.0 },
     // openai

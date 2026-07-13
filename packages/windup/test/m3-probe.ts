@@ -1,9 +1,9 @@
 /**
- * M3 — executor + verificador de verdade contra o saucedemo, ainda sem LLM.
- * 1) Plano de exemplo do doc 02 roda fim-a-fim com pós-condições passando.
- * 2) Um expect deliberadamente quebrado falha como "verification", não crash.
+ * M3 — executor + real verifier against saucedemo, still without an LLM.
+ * 1) The example plan from doc 02 runs end-to-end with postconditions passing.
+ * 2) A deliberately broken expect fails as "verification", not a crash.
  *
- * Rodar: npx tsx test/m3-probe.ts
+ * Run: npx tsx test/m3-probe.ts
  */
 import { launchBrowser } from "../src/browser.js";
 import { executePlan } from "../src/executor.js";
@@ -17,7 +17,7 @@ const goodPlan: Plan = {
     {
       id: "a1",
       type: "fill",
-      target: { selector: "#user-name", description: "campo de usuário" },
+      target: { selector: "#user-name", description: "username field" },
       value: "standard_user",
       expect: { selector_value: { selector: "#user-name", value: "standard_user" } },
       timeout_ms: 5000,
@@ -25,14 +25,14 @@ const goodPlan: Plan = {
     {
       id: "a2",
       type: "fill",
-      target: { selector: "#password", description: "campo de senha" },
+      target: { selector: "#password", description: "password field" },
       value: "secret_sauce",
       timeout_ms: 5000,
     },
     {
       id: "a3",
       type: "click",
-      target: { selector: "#login-button", description: "botão de login" },
+      target: { selector: "#login-button", description: "login button" },
       expect: { url: "**/inventory.html", selector: ".inventory_list" },
       timeout_ms: 10000,
     },
@@ -48,18 +48,18 @@ const brokenPlan: Plan = {
 
 const browser = await launchBrowser();
 try {
-  console.log("[m3] 1/2 plano bom...");
+  console.log("[m3] 1/2 good plan...");
   const good = await executePlan(browser, goodPlan);
   console.log(JSON.stringify(good, null, 2));
-  if (!good.ok) throw new Error("plano bom deveria passar");
+  if (!good.ok) throw new Error("the good plan should pass");
 
-  console.log("[m3] 2/2 plano com expect quebrado...");
+  console.log("[m3] 2/2 plan with a broken expect...");
   const broken = await executePlan(browser, brokenPlan);
   console.log(JSON.stringify(broken.failure, null, 2));
-  if (broken.ok) throw new Error("plano quebrado deveria falhar");
-  if (broken.failure?.kind !== "verification") throw new Error(`kind esperado verification, veio ${broken.failure?.kind}`);
+  if (broken.ok) throw new Error("the broken plan should fail");
+  if (broken.failure?.kind !== "verification") throw new Error(`expected kind verification, got ${broken.failure?.kind}`);
 
-  console.log("\n[m3] PASSOU — execução fim-a-fim ok e falha classificada como verification");
+  console.log("\n[m3] PASSED — end-to-end execution ok and failure classified as verification");
 } finally {
   await browser.close();
 }

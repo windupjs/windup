@@ -14,15 +14,15 @@ import { indexReactRouterRoutes, sourceFiles } from "./react-router.js";
 const exec = promisify(execFile);
 
 /**
- * `windup scan` (SPEC-002): indexação estática do projeto — rotas por
- * convenção de framework + elementos por parse leve — alimentando o MESMO
- * grafo do mapa do site com `source: "static"`.
+ * `windup scan` (SPEC-002): static indexing of the project — routes by
+ * framework convention + elements by lightweight parsing — feeding the SAME
+ * site-map graph with `source: "static"`.
  *
- * `--update` (P3): incremental via git, não watcher — re-indexa só rotas
- * cujos fontes mudaram desde o último scan (SHA gravado no mapa) e marca
- * stale o conhecimento de execução afetado.
+ * `--update` (P3): incremental via git, not a watcher — re-indexes only
+ * routes whose sources changed since the last scan (SHA recorded in the map)
+ * and marks the affected execution knowledge stale.
  *
- * Tetos explícitos e zero LLM nesta camada; a camada LLM-assist é P4.
+ * Explicit caps and zero LLM in this layer; the LLM-assist layer is P4.
  */
 export interface ScanSummary {
   framework: string | null;
@@ -50,9 +50,9 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
   if (framework === "next" || framework === "react-router" || framework === "remix") {
     let routes = framework === "next" ? await indexNextRoutes(root) : await indexReactRouterRoutes(root);
 
-    // Anti-herança de barrel/router: um arquivo compartilhado por muitas rotas
-    // (o router file que importa todas as páginas) NÃO tem seus imports
-    // expandidos — senão cada rota herda os elementos do app inteiro.
+    // Barrel/router anti-inheritance: a file shared by many routes (the
+    // router file that imports every page) does NOT get its imports
+    // expanded — otherwise each route inherits the whole app's elements.
     const fileRouteCount = new Map<string, number>();
     for (const route of routes) {
       for (const f of route.files) fileRouteCount.set(f, (fileRouteCount.get(f) ?? 0) + 1);
@@ -103,15 +103,15 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
       console.log(`scan: ${droppedByCap} element(s) dropped by the ${MAX_ELEMENTS_PER_NODE}/page cap (prompt slices use at most 30/page anyway)`);
     }
 
-    // Full scan reconcilia: rotas que sumiram do código saem do mapa (static);
-    // nós llm de fontes alterados/removidos caem para o assist re-avaliar.
+    // A full scan reconciles: routes gone from the code leave the map (static);
+    // llm nodes whose sources changed/vanished drop so the assist re-evaluates.
     if (mode === "full") {
       const current = new Set(routes.map((r) => `**${r.route}`));
       const pruned = store.pruneStaticExcept(current);
       let prunedLlm = 0;
       for (const node of store.llmPages()) {
         const file = node.files[0];
-        // Duplicado de fonte melhor ou vazio: não agrega — sai (migra mapas antigos).
+        // Duplicate of a better source, or empty: adds nothing — remove (migrates old maps).
         let gone = node.elements === 0 || store.coveredByBetterSource(node.url_pattern) || !file;
         if (!gone && file) {
           try {
@@ -130,7 +130,7 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
       if (pruned + prunedLlm > 0) console.log(`scan: pruned ${pruned} static and ${prunedLlm} AI-inferred page(s) no longer backed by the code`);
     }
 
-    // Camada 3 (P4): LLM-assist para o que as camadas estáticas não resolveram.
+    // Layer 3 (P4): LLM-assist for whatever the static layers could not resolve.
     const assistEnabled = opts.assist !== false && (ctx.config.scan?.llmAssist?.enabled ?? true);
     if (assistEnabled && mode === "full") {
       assistSummary = await runAssistLayer(root, routes, sources, store, opts.assistCaller);
@@ -147,7 +147,7 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
   return { framework, routes: routesCount, elements: elementsCount, mapFile: ctx.paths.mapFile, mode, assist: assistSummary };
 }
 
-/** Seleciona candidatos, chama a LLM dentro do teto e grava o custo no ledger. */
+/** Selects candidates, calls the LLM within the cap and records the cost in the ledger. */
 async function runAssistLayer(
   root: string,
   routes: StaticRoute[],
@@ -160,15 +160,15 @@ async function runAssistLayer(
 
   const coveredFiles = new Set<string>();
   for (const route of routes) for (const f of sources.get(route) ?? route.files) coveredFiles.add(path.resolve(f));
-  // Arquivo declarador compartilhado (router) nunca é candidato: a IA leria
-  // o router e devolveria as rotas que o static já tem (duplicação inútil).
+  // A shared declaring file (router) is never a candidate: the AI would read
+  // the router and return routes the static layer already has (useless duplication).
   const sharedDeclaring = new Set<string>();
   const declCount = new Map<string, number>();
   for (const route of routes) for (const f of route.files) declCount.set(path.resolve(f), (declCount.get(path.resolve(f)) ?? 0) + 1);
   for (const [f, n] of declCount) if (n > 2) sharedDeclaring.add(f);
 
   const nodesWithoutElements = new Set<string>();
-  // (rotas cujo nó ficou sem elementos: os fontes valem uma segunda leitura via LLM)
+  // (routes whose node ended up with no elements: the sources deserve a second read via LLM)
   for (const route of routes) {
     const files = sources.get(route) ?? route.files;
     let any = false;
@@ -193,7 +193,7 @@ async function runAssistLayer(
   }
 
   const allCandidates = selectCandidates(files, coveredFiles, nodesWithoutElements);
-  // Memória do assist: conteúdo já analisado (hash igual) não paga de novo.
+  // Assist memory: content already analyzed (same hash) is never paid for again.
   const hashes = new Map<string, string>();
   for (const { file, content } of files) hashes.set(file, sha16(content));
   const candidates = allCandidates.filter((c) => {
@@ -210,8 +210,8 @@ async function runAssistLayer(
     const hash = hashes.get(c.file);
     if (hash) store.recordAssistSeen(c.file, hash);
   }
-  // Nó de IA só entra quando AGREGA: tem elementos e nenhuma fonte melhor
-  // (execution/static) cobre a mesma url.
+  // An AI node only enters when it ADDS something: it has elements and no
+  // better source (execution/static) covers the same url.
   outcome.pages = outcome.pages.filter(
     (page) => page.elements.length > 0 && !store.coveredByBetterSource(`**${page.path}`),
   );
@@ -221,7 +221,7 @@ async function runAssistLayer(
 
   const cost = estimateCostUsd(outcome.tokens, outcome.model);
   if (outcome.calls > 0) {
-    // Custo de IA do scan entra no MESMO ledger dos runs (windup costs).
+    // The scan's AI cost goes into the SAME ledger as the runs (windup costs).
     await mkdir(ctx.paths.runsDir, { recursive: true });
     const record = {
       kind: "scan",
@@ -244,7 +244,7 @@ function sha16(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
-/** Arquivos alterados desde o SHA (commits + staged + worktree); null se git indisponível. */
+/** Files changed since the SHA (commits + staged + worktree); null if git is unavailable. */
 async function gitChangedFiles(root: string, sinceSha: string): Promise<string[] | null> {
   try {
     const { stdout } = await exec("git", ["diff", "--name-only", sinceSha], { cwd: root });

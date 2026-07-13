@@ -1,5 +1,5 @@
 {
   "scenario_id": "the-internet-login",
   "start_url": "https://the-internet.herokuapp.com/login",
-  "task": "Fazer login em the-internet.herokuapp.com com o usuário tomsmith e a senha SuperSecretPassword! e verificar que a área segura aparece (mensagem de sucesso e URL /secure)."
+  "task": "Log in to the-internet.herokuapp.com with the user tomsmith and the password SuperSecretPassword! and verify that the secure area appears (success message and URL /secure)."
 }

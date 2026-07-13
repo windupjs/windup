@@ -1,16 +1,17 @@
 import { createHash } from "node:crypto";
 
 /**
- * Assinatura estrutural de página (SPEC-001, componente 1).
+ * Structural page signature (SPEC-001, component 1).
  *
- * Duas visitas à MESMA tela devem produzir a mesma sig mesmo com dados
- * diferentes; uma tela alterada (elemento novo, id trocado) produz sig
- * diferente. Por isso entram só os traços estruturais dos elementos
- * interativos — nunca texto, placeholder, value ou classes (mudam com
- * dado/idioma), e nunca a árvore a11y (varia entre ambientes — RESULTADO #5).
+ * Two visits to the SAME screen must produce the same sig even with
+ * different data; a changed screen (new element, swapped id) produces a
+ * different sig. Hence only the structural traits of interactive elements
+ * go in — never text, placeholder, value or classes (they change with
+ * data/language), and never the a11y tree (it varies across environments —
+ * RESULT #5).
  *
- * Limitação conhecida a MEDIR no E1 (não resolver): ids que codificam dado
- * (ex.: #add-to-cart-<produto>) mudam a sig quando o catálogo muda.
+ * Known limitation to MEASURE in E1 (not solve): ids that encode data
+ * (e.g. #add-to-cart-<product>) change the sig when the catalog changes.
  */
 export interface RawElement {
   tag: string;
@@ -30,8 +31,8 @@ function canonical(el: RawElement): string {
 }
 
 export function computeSignature(elements: RawElement[]): string {
-  // dedupe + sort: insensível a reordenação e a repetição de elementos
-  // idênticos (ex.: N cards com o mesmo botão sem id).
+  // dedupe + sort: insensitive to reordering and to repeated identical
+  // elements (e.g. N cards with the same id-less button).
   const lines = [...new Set(elements.map(canonical))].sort();
   const hash = createHash("sha256").update(lines.join("\n")).digest("hex");
   return `sig:${hash.slice(0, 16)}`;

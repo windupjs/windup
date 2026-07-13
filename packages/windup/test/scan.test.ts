@@ -11,14 +11,14 @@ import { DEFAULT_CONFIG } from "../src/config.js";
 
 const FIXTURE = path.resolve(import.meta.dirname, "fixtures", "next-app");
 
-describe("indexNextRoutes (P2 camada 1)", () => {
-  it("detecta todas as rotas por convenção (app + pages), ignorando api e grupos", async () => {
+describe("indexNextRoutes (P2 layer 1)", () => {
+  it("detects all convention-based routes (app + pages), ignoring api and groups", async () => {
     const routes = (await indexNextRoutes(FIXTURE)).map((r) => r.route).sort();
-    // Critério P2: ≥ 90% das rotas por convenção — na fixture, 7/7 (100%).
+    // P2 criterion: ≥ 90% of the convention-based routes — in the fixture, 7/7 (100%).
     expect(routes).toEqual(["/", "/checkout", "/dashboard/settings", "/legacy", "/login", "/products", "/products/:id"]);
   });
 
-  it("coleta fontes compostas da rota (imports locais e @/)", async () => {
+  it("collects the route's composite sources (local and @/ imports)", async () => {
     const routes = await indexNextRoutes(FIXTURE);
     const home = routes.find((r) => r.route === "/")!;
     const files = await collectRouteSources(home, FIXTURE);
@@ -26,32 +26,32 @@ describe("indexNextRoutes (P2 camada 1)", () => {
   });
 });
 
-describe("extractElements (P2 camada 2)", () => {
-  it("extrai id/name/data-test(id)/type/aria/placeholder de JSX", () => {
+describe("extractElements (P2 layer 2)", () => {
+  it("extracts id/name/data-test(id)/type/aria/placeholder from JSX", () => {
     const source = `
-      <input id="email" name="email" type="email" data-testid="login-email" placeholder="Seu e-mail" />
-      <button type="submit" data-testid="login-submit">Entrar</button>
-      <a href="/x">Link com texto entra (label é traço identificável)</a>
+      <input id="email" name="email" type="email" data-testid="login-email" placeholder="Your e-mail" />
+      <button type="submit" data-testid="login-submit">Sign in</button>
+      <a href="/x">A link with text counts (the label is an identifiable trait)</a>
       <a href="/y"></a>
     `;
     const lines = extractElements(source).map(formatElement);
-    expect(lines).toHaveLength(4); // href também é traço identificável
+    expect(lines).toHaveLength(4); // href is an identifiable trait too
     expect(lines[0]).toContain("data-test=login-email");
     expect(lines[0]).toContain("id=email");
-    expect(lines[1]).toContain("text=Entrar");
-    expect(lines[2]).toContain("text=Link com texto");
+    expect(lines[1]).toContain("text=Sign in");
+    expect(lines[2]).toContain("text=A link with text");
     expect(lines[3]).toContain("href=/y");
   });
 
-  it("aceita atributos com chaves JSX de string literal", () => {
-    const lines = extractElements(`<button data-testid={"buy"} aria-label={'Comprar'}>Ir</button>`).map(formatElement);
+  it("accepts attributes with JSX braces around string literals", () => {
+    const lines = extractElements(`<button data-testid={"buy"} aria-label={'Buy'}>Go</button>`).map(formatElement);
     expect(lines[0]).toContain("data-test=buy");
-    expect(lines[0]).toContain("aria-label=Comprar");
+    expect(lines[0]).toContain("aria-label=Buy");
   });
 });
 
-describe("runScan (P2 integração)", () => {
-  it("popula o mapa com nós static e a fatia os oferece por casamento de termos", async () => {
+describe("runScan (P2 integration)", () => {
+  it("populates the map with static nodes and the slice offers them by term matching", async () => {
     const dataDir = await mkdtemp(path.join(tmpdir(), "windup-scan-"));
     process.env.WINDUP_CACHE_DIR = path.join(dataDir, "cache");
     setContext({
@@ -69,29 +69,29 @@ describe("runScan (P2 integração)", () => {
 
     const store = await SiteMapStore.load(path.join(dataDir, "site-map.json"));
     expect(store.pageCount).toBe(7);
-    const slice = store.sliceForPrompt("sig:desconhecida", "fazer login com e-mail e senha", 8000);
+    const slice = store.sliceForPrompt("sig:desconhecida", "log in with e-mail and password", 8000);
     expect(slice).toContain("**/login");
     expect(slice).toContain("data-test=login-submit");
-    expect(slice).toContain("detectada no código-fonte");
+    expect(slice).toContain("detected in the source code");
 
     setContext(createContext());
   });
 });
 
-describe("extractElements com componentes de design system (shadcn/MUI)", () => {
-  it("lê <Input>, <Button>, <Link to>, <Label htmlFor> como elementos semânticos", () => {
+describe("extractElements with design-system components (shadcn/MUI)", () => {
+  it("reads <Input>, <Button>, <Link to>, <Label htmlFor> as semantic elements", () => {
     const source = `
       <Label htmlFor="email" className={x}>E-mail</Label>
       <Input id="email" type="email" placeholder="you@corp.com" />
-      <Button type="submit" data-testid="login-go">Entrar</Button>
-      <Link to="/dashboard" className="nav">Painel</Link>
+      <Button type="submit" data-testid="login-go">Sign in</Button>
+      <Link to="/dashboard" className="nav">Dashboard</Link>
       <Switch id="dark-mode" />
     `;
     const lines = extractElements(source).map(formatElement);
     expect(lines.some((l) => l.startsWith("label") && l.includes("for=email") && l.includes("text=E-mail"))).toBe(true);
     expect(lines.some((l) => l.startsWith("input id=email") && l.includes("type=email"))).toBe(true);
     expect(lines.some((l) => l.startsWith("button") && l.includes("data-test=login-go"))).toBe(true);
-    expect(lines.some((l) => l.startsWith("a") && l.includes("href=/dashboard") && l.includes("text=Painel"))).toBe(true);
+    expect(lines.some((l) => l.startsWith("a") && l.includes("href=/dashboard") && l.includes("text=Dashboard"))).toBe(true);
     expect(lines.some((l) => l.startsWith("input id=dark-mode"))).toBe(true);
   });
 });

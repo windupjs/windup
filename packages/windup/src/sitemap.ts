@@ -3,30 +3,29 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Mapa do site (SPEC-001, componente 1): grafo de páginas (nós, por
- * assinatura) e transições (arestas). Alimentação principal é PASSIVA —
- * toda execução também coleta (princípio 3). Conhecimento é cache, não
- * verdade: tudo aqui pode estar desatualizado e degrada para descoberta
- * em runtime.
+ * Site map (SPEC-001, component 1): a graph of pages (nodes, by signature)
+ * and transitions (edges). The main feed is PASSIVE — every execution also
+ * collects (principle 3). Knowledge is cache, not truth: everything here
+ * may be outdated and degrades to runtime discovery.
  *
- * Persistência: JSON local atrás desta interface. SQLite foi adiado de
- * propósito — reavaliar no P2 com dados reais de escala (decisão em aberto
- * da SPEC-001 registrada aqui).
+ * Persistence: local JSON behind this interface. SQLite was deferred on
+ * purpose — revisit in P2 with real scale data (open SPEC-001 decision
+ * recorded here).
  */
 export interface MapPage {
   urls_seen: string[];
   url_pattern: string;
   title: string;
-  /** Linhas no mesmo formato do prompt (tag id=... data-test=...). */
+  /** Lines in the same format as the prompt (tag id=... data-test=...). */
   interactive: string[];
-  /** Precedência de confiança: execution > crawl > static > llm (SPEC-002). */
+  /** Confidence precedence: execution > crawl > static > llm (SPEC-002). */
   source: "static" | "crawl" | "execution" | "llm";
   first_seen: string;
   last_seen: string;
   seen_count: number;
-  /** Fontes que definem a página (só source: static; insumo do P3 diff→stale). */
+  /** Sources defining the page (only source: static; input for P3 diff→stale). */
   files?: string[];
-  /** P3: fonte alterada desde o último scan — dica desatualizada, sai da fatia. */
+  /** P3: source changed since the last scan — outdated hint, leaves the slice. */
   stale?: boolean;
 }
 
@@ -39,11 +38,11 @@ export interface MapTransition {
 
 export interface SiteMap {
   map_version: "0.1";
-  /** P3: SHA do último scan estático (preparado, não usado). */
+  /** P3: SHA of the last static scan (prepared, not used). */
   last_scan_sha: string | null;
   pages: Record<string, MapPage>;
   transitions: MapTransition[];
-  /** Memória do LLM-assist: arquivo analisado → hash do conteúdo (não re-paga). */
+  /** LLM-assist memory: analyzed file → content hash (never pays again). */
   assist_seen?: Record<string, string>;
 }
 
@@ -86,8 +85,8 @@ export class SiteMapStore {
       existing.interactive = obs.interactive;
       existing.last_seen = now;
       existing.seen_count += 1;
-      // O que foi visto rodando vale mais do que o inferido do código —
-      // e observação fresca limpa o stale.
+      // What was seen at runtime outranks what was inferred from code —
+      // and a fresh observation clears the stale flag.
       existing.source = "execution";
       existing.stale = false;
     } else {
@@ -105,9 +104,9 @@ export class SiteMapStore {
   }
 
   /**
-   * Nó vindo da indexação estática (P2). Vive em chave própria (`static:`);
-   * nunca sobrescreve conhecimento de execução — a precedência
-   * execution > static é aplicada na fatia do prompt, por url.
+   * Node from static indexing (P2). Lives under its own key (`static:`);
+   * never overwrites execution knowledge — the execution > static
+   * precedence is applied in the prompt slice, per url.
    */
   upsertStaticPage(route: string, elements: string[], files: string[]): void {
     const sig = `static:${createHash("sha256").update(route).digest("hex").slice(0, 16)}`;
@@ -136,9 +135,9 @@ export class SiteMapStore {
   }
 
   /**
-   * Nó vindo do LLM-assist (P4): menor confiança de todas — chave própria,
-   * nunca sobrescreve nada; entra na fatia só quando nenhuma fonte melhor
-   * cobre a mesma url.
+   * Node from the LLM-assist (P4): the lowest confidence of all — its own
+   * key, never overwrites anything; enters the slice only when no better
+   * source covers the same url.
    */
   upsertLlmPage(route: string, elements: string[], file: string): void {
     const sig = `llm:${createHash("sha256").update(route).digest("hex").slice(0, 16)}`;
@@ -167,10 +166,11 @@ export class SiteMapStore {
   }
 
   /**
-   * P3: fontes alterados desde o último scan. Marca stale (a) os nós estáticos
-   * afetados — que o scan --update re-indexa em seguida — e (b) os nós de
-   * EXECUÇÃO da mesma url: o runtime observado pode ter mudado com o código,
-   * e conhecimento stale sai da fatia do prompt até nova observação.
+   * P3: sources changed since the last scan. Marks stale (a) the affected
+   * static nodes — which scan --update re-indexes right after — and (b) the
+   * EXECUTION nodes for the same url: the observed runtime may have changed
+   * with the code, and stale knowledge leaves the prompt slice until a new
+   * observation.
    */
   markStaleByFiles(changedFiles: string[]): string[] {
     const changed = new Set(changedFiles.map((f) => path.resolve(f)));
@@ -192,7 +192,7 @@ export class SiteMapStore {
     return marked;
   }
 
-  /** O assist já analisou este conteúdo? (hash igual = pular, custo zero) */
+  /** Has the assist already analyzed this content? (same hash = skip, zero cost) */
   assistAlreadySeen(file: string, contentHash: string): boolean {
     return this.map.assist_seen?.[file] === contentHash;
   }
@@ -206,9 +206,9 @@ export class SiteMapStore {
   }
 
   /**
-   * Poda de full scan: nós static de rotas que deixaram de existir saem do
-   * mapa (as camadas 1–2 sempre re-veem tudo num full scan). Nós de execução
-   * nunca são podados pelo scan. Devolve quantos removeu.
+   * Full-scan pruning: static nodes for routes that no longer exist leave
+   * the map (layers 1–2 always re-see everything in a full scan). Execution
+   * nodes are never pruned by the scan. Returns how many were removed.
    */
   pruneStaticExcept(currentPatterns: Set<string>): number {
     let removed = 0;
@@ -221,14 +221,14 @@ export class SiteMapStore {
     return removed;
   }
 
-  /** Já existe conhecimento melhor (execution/static) para esta url? */
+  /** Does better knowledge (execution/static) already exist for this url? */
   coveredByBetterSource(urlPattern: string): boolean {
     return Object.values(this.map.pages).some(
       (p) => p.url_pattern === urlPattern && (p.source === "execution" || p.source === "static"),
     );
   }
 
-  /** Nós inferidos por IA, com seus fontes (para invalidação por hash no scan). */
+  /** AI-inferred nodes, with their sources (for hash-based invalidation in the scan). */
   llmPages(): Array<{ sig: string; url_pattern: string; files: string[]; elements: number }> {
     return Object.entries(this.map.pages)
       .filter(([, p]) => p.source === "llm")
@@ -247,7 +247,7 @@ export class SiteMapStore {
     this.map.last_scan_sha = sha;
   }
 
-  /** Contagem por origem, para o windup status. */
+  /** Count by source, for windup status. */
   countBySource(): Record<string, number> {
     const counts: Record<string, number> = {};
     for (const page of Object.values(this.map.pages)) {
@@ -269,12 +269,12 @@ export class SiteMapStore {
   }
 
   /**
-   * Fatia do mapa para o prompt do planejador: BFS a partir da página inicial
-   * (profundidade ≤ 3), priorizada por casamento de termos da tarefa, cortada
-   * pelo orçamento de chars. Devolve string vazia se nada alcançável.
+   * Map slice for the planner prompt: BFS from the start page (depth ≤ 3),
+   * prioritized by task-term matching, cut by the character budget.
+   * Returns an empty string if nothing is reachable.
    */
   sliceForPrompt(startSig: string, task: string, budgetChars: number): string {
-    // BFS pelas transições observadas em execução.
+    // BFS over the transitions observed during execution.
     const depths = new Map<string, number>();
     if (this.map.pages[startSig]) {
       depths.set(startSig, 0);
@@ -290,7 +290,7 @@ export class SiteMapStore {
           }
         }
       }
-      depths.delete(startSig); // a página inicial já entra viva no prompt
+      depths.delete(startSig); // the start page already enters the prompt live
     }
 
     const terms = tokenize(task);
@@ -312,8 +312,8 @@ export class SiteMapStore {
       used += block.length;
     }
 
-    // Camadas de menor confiança entram no orçamento restante quando nenhuma
-    // fonte melhor cobre a mesma url: execution > static > llm (SPEC-002).
+    // Lower-confidence tiers enter the remaining budget when no better
+    // source covers the same url: execution > static > llm (SPEC-002).
     for (const tier of ["static", "llm"] as const) {
       const tierScored = Object.entries(this.map.pages)
         .filter(([, p]) => p.source === tier && !p.stale && !coveredPaths.has(p.url_pattern))
@@ -333,8 +333,8 @@ export class SiteMapStore {
   }
 
   /**
-   * Paths conhecidos e utilizáveis como início de fluxo (não-stale, com
-   * elementos interativos), no formato de path ("/cart.html").
+   * Known paths usable as flow starting points (non-stale, with interactive
+   * elements), in path format ("/cart.html").
    */
   knownPaths(): string[] {
     const paths = Object.values(this.map.pages)
@@ -344,15 +344,15 @@ export class SiteMapStore {
   }
 
   /**
-   * Fatia para AUTORIA de cenários (windup new): diferente do planejador,
-   * aqui não há página inicial — o autor precisa da visão geral do app.
-   * Índice compacto de todas as rotas conhecidas + blocos detalhados das
-   * páginas que casam com a instrução (todas as fontes), até o orçamento.
+   * Slice for scenario AUTHORING (windup new): unlike the planner, there is
+   * no start page here — the author needs the app's overall picture.
+   * A compact index of all known routes + detailed blocks for the pages
+   * matching the instruction (all sources), up to the budget.
    */
   sliceForAuthoring(instruction: string, budgetChars: number): string {
-    // Páginas sem elementos interativos ficam de fora: como rota de partida
-    // ou referência elas só induzem o autor ao erro (visto no dogfood: um
-    // /index.html que não renderiza no headless tinha nó com 0 elementos).
+    // Pages without interactive elements stay out: as a starting route or
+    // reference they only mislead the author (seen in dogfooding: an
+    // /index.html that does not render headless had a node with 0 elements).
     const alive = Object.entries(this.map.pages).filter(([, p]) => !p.stale && p.interactive.length > 0);
     if (alive.length === 0) return "";
 
@@ -360,7 +360,7 @@ export class SiteMapStore {
       .sort()
       .map((pattern) => `- ${pattern}`)
       .join("\n");
-    const blocks: string[] = [`Rotas conhecidas do app:\n${index}`];
+    const blocks: string[] = [`Known routes of the app:\n${index}`];
     let used = blocks[0].length;
 
     const terms = tokenize(instruction);
@@ -384,23 +384,23 @@ export class SiteMapStore {
     const routes = this.map.transitions
       .filter((t) => t.to === sig && this.map.pages[t.from])
       .slice(0, 3)
-      .map((t) => `- chega-se aqui com ${t.action.type} '${t.action.selector}' a partir de ${this.map.pages[t.from].url_pattern}`);
+      .map((t) => `- you get here with ${t.action.type} '${t.action.selector}' from ${this.map.pages[t.from].url_pattern}`);
     const elements = page.interactive.slice(0, 30);
     const provenance =
       page.source === "static"
-        ? " (detectada no código-fonte; pode divergir do runtime)"
+        ? " (detected in the source code; may diverge from the runtime)"
         : page.source === "llm"
-          ? " (inferida por IA do código-fonte; confiança baixa)"
+          ? " (AI-inferred from the source code; low confidence)"
           : "";
     return [
-      `## Página conhecida: ${page.url_pattern}${page.title ? ` — ${page.title}` : ""}${provenance}`,
+      `## Known page: ${page.url_pattern}${page.title ? ` — ${page.title}` : ""}${provenance}`,
       ...routes,
-      `Elementos interativos ${page.source === "execution" ? "observados" : "declarados"}:`,
+      `Interactive elements ${page.source === "execution" ? "observed" : "declared"}:`,
       ...elements,
     ].join("\n");
   }
 
-  /** Escrita atômica (tmp + rename). Falha de save nunca deve derrubar um run. */
+  /** Atomic write (tmp + rename). A save failure must never take down a run. */
   async save(): Promise<void> {
     try {
       await mkdir(path.dirname(this.file), { recursive: true });
@@ -413,7 +413,7 @@ export class SiteMapStore {
   }
 }
 
-/** Pattern glob a partir do pathname mais comum entre as URLs vistas. */
+/** Glob pattern from the most common pathname among the URLs seen. */
 function derivePattern(urls: string[]): string {
   const counts = new Map<string, number>();
   for (const u of urls) {
@@ -421,7 +421,7 @@ function derivePattern(urls: string[]): string {
       const pathname = new URL(u).pathname;
       counts.set(pathname, (counts.get(pathname) ?? 0) + 1);
     } catch {
-      // URL inválida não contribui para o pattern
+      // an invalid URL does not contribute to the pattern
     }
   }
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];

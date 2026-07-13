@@ -3,19 +3,19 @@ import path from "node:path";
 import { getContext } from "./context.js";
 
 /**
- * Credenciais de teste sem segredo em arquivo commitado:
+ * Test credentials with no secret in a committed file:
  *
- * - VALORES vivem no `.env.local` (gitignored; em CI, viram secrets com os
- *   mesmos nomes de variável);
- * - o MAPEAMENTO conta → nomes de ENV vive em `windup.credentials.json`
- *   (commitável — não contém nenhum valor) e é mesclado ao manifesto
- *   (`context.credentials`) na criação do contexto;
- * - cenários e planos referenciam a conta pelo nome / `value_ref: "ENV:X"`;
- *   o valor real só é resolvido pelo executor, em runtime — nunca entra no
- *   cache, no prompt de planejamento nem no git.
+ * - VALUES live in `.env.local` (gitignored; in CI, they become secrets with
+ *   the same variable names);
+ * - the account → ENV-name MAPPING lives in `windup.credentials.json`
+ *   (committable — contains no values) and is merged into the manifest
+ *   (`context.credentials`) at context creation;
+ * - scenarios and plans reference the account by name / `value_ref: "ENV:X"`;
+ *   the real value is only resolved by the executor, at runtime — it never
+ *   enters the cache, the planning prompt or git.
  *
- * Alimentado pelo `windup secret set` e pela autoria (`windup new`, que
- * registra automaticamente credenciais literais detectadas na instrução).
+ * Fed by `windup secret set` and by authoring (`windup new`, which
+ * automatically registers literal credentials detected in the instruction).
  */
 
 export const CREDENTIALS_FILE = "windup.credentials.json";
@@ -29,7 +29,7 @@ export function credentialsFilePath(root = getContext().paths.root): string {
   return path.join(root, CREDENTIALS_FILE);
 }
 
-/** Mapeamento commitado (sem valores). Tolerante a arquivo ausente/corrompido. */
+/** Committed mapping (no values). Tolerant of a missing/corrupted file. */
 export function loadCredentialsFile(root: string): Record<string, Record<string, string>> {
   try {
     const parsed = JSON.parse(readFileSync(path.join(root, CREDENTIALS_FILE), "utf8")) as CredentialsFile;
@@ -44,7 +44,7 @@ export function envName(account: string, field: string): string {
   return `WINDUP_${clean(account)}_${clean(field)}`;
 }
 
-/** Nome de conta a partir de um e-mail (parte local) ou "default". */
+/** Account name from an email (local part) or "default". */
 export function deriveAccountName(email?: string): string {
   const local = email?.split("@")[0] ?? "";
   return local.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "default";
@@ -74,14 +74,14 @@ function ensureGitignored(root: string, entry: string): void {
 
 export interface RegisteredCredentials {
   account: string;
-  /** campo → nome da ENV (ex.: password → WINDUP_ADMIN_PASSWORD). */
+  /** field → ENV name (e.g. password → WINDUP_ADMIN_PASSWORD). */
   envs: Record<string, string>;
 }
 
 /**
- * Registra uma conta: valores no .env.local (garantindo o gitignore),
- * mapeamento no windup.credentials.json e no manifesto do contexto ATUAL
- * (para o registro valer imediatamente no mesmo processo).
+ * Registers an account: values in .env.local (ensuring the gitignore),
+ * mapping in windup.credentials.json and in the CURRENT context's manifest
+ * (so the registration takes effect immediately in the same process).
  */
 export function registerCredentials(account: string, fields: Record<string, string>): RegisteredCredentials {
   const ctx = getContext();
@@ -93,7 +93,7 @@ export function registerCredentials(account: string, fields: Record<string, stri
     const name = envName(account, field);
     envs[field] = name;
     upsertEnvLine(envFile, name, value);
-    // vale já neste processo (autoria registra e planeja/valida em seguida)
+    // takes effect already in this process (authoring registers then plans/validates right after)
     process.env[name] = value;
   }
   ensureGitignored(root, ".env.local");

@@ -5,7 +5,7 @@ import { getCached } from "./cache.js";
 import { loadScenario } from "./scenario.js";
 import type { Action, Fragment, Plan } from "./types.js";
 
-/** Diretório dos fragmentos (irmão dos cenários; commitado — conhecimento curado). */
+/** Fragments directory (sibling of the scenarios; committed — curated knowledge). */
 export function fragmentsDir(): string {
   return path.resolve(getContext().paths.scenariosDir, "..", "fragments");
 }
@@ -32,8 +32,8 @@ export async function loadFragments(): Promise<Fragment[]> {
 }
 
 /**
- * Expande ações { type: "use" } inline (profundidade 1 — fragmento não usa
- * fragmento) e renumera os ids. Fragmento desconhecido é erro de plano.
+ * Expands { type: "use" } actions inline (depth 1 — a fragment does not use
+ * a fragment) and renumbers the ids. An unknown fragment is a plan error.
  */
 export function expandPlan(plan: Plan, fragments: Fragment[]): Plan {
   const byId = new Map(fragments.map((f) => [f.fragment_id, f]));
@@ -59,8 +59,8 @@ export function expandPlan(plan: Plan, fragments: Fragment[]): Plan {
 }
 
 /**
- * `windup fragment extract <cenario> <a-inicio>..<a-fim>`: promove um trecho
- * de plano CACHEADO (executado e verificado) a fragmento.
+ * `windup fragment extract <scenario> <a-start>..<a-end>`: promotes a slice
+ * of a CACHED plan (executed and verified) to a fragment.
  */
 export async function extractFragment(
   scenarioId: string,
@@ -99,11 +99,11 @@ export async function extractFragment(
   return file;
 }
 
-/** Catálogo para o prompt: id + descrição + pós-condição — NUNCA as ações (SPEC-001). */
+/** Catalog for the prompt: id + description + postcondition — NEVER the actions (SPEC-001). */
 export function formatCatalog(fragments: Fragment[]): string {
   return fragments
     .map((f) => {
-      const post = f.postcondition ? ` (pós-condição: ${JSON.stringify(f.postcondition)})` : "";
+      const post = f.postcondition ? ` (postcondition: ${JSON.stringify(f.postcondition)})` : "";
       return `- ${f.fragment_id}: "${f.description}"${post}`;
     })
     .join("\n");

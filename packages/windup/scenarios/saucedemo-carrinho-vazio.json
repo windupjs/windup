@@ -1,5 +1,5 @@
 {
   "scenario_id": "saucedemo-carrinho-vazio",
   "start_url": "https://www.saucedemo.com",
-  "task": "No saucedemo.com, faça login com o usuário standard_user e senha secret_sauce, abra o carrinho e verifique que a página do carrinho aparece (URL cart.html)."
+  "task": "On saucedemo.com, log in with the user standard_user and password secret_sauce, open the cart and verify that the cart page appears (URL cart.html)."
 }

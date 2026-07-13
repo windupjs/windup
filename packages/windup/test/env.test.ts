@@ -4,26 +4,26 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "../src/env.js";
 
-describe("carregamento de env (.env.local > .env)", () => {
-  it(".env.local tem precedência sobre .env; ambos carregam", async () => {
+describe("env loading (.env.local > .env)", () => {
+  it(".env.local takes precedence over .env; both load", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "windup-env-"));
-    await writeFile(path.join(dir, ".env"), "WINDUP_T_A=do-env\nWINDUP_T_B=so-no-env\n");
-    await writeFile(path.join(dir, ".env.local"), "WINDUP_T_A=do-local\nWINDUP_T_C=so-no-local\n");
+    await writeFile(path.join(dir, ".env"), "WINDUP_T_A=from-env\nWINDUP_T_B=only-in-env\n");
+    await writeFile(path.join(dir, ".env.local"), "WINDUP_T_A=from-local\nWINDUP_T_C=only-in-local\n");
     loadEnv(dir);
-    expect(process.env.WINDUP_T_A).toBe("do-local");
-    expect(process.env.WINDUP_T_B).toBe("so-no-env");
-    expect(process.env.WINDUP_T_C).toBe("so-no-local");
+    expect(process.env.WINDUP_T_A).toBe("from-local");
+    expect(process.env.WINDUP_T_B).toBe("only-in-env");
+    expect(process.env.WINDUP_T_C).toBe("only-in-local");
   });
 
-  it("variável já presente no processo nunca é sobrescrita", async () => {
+  it("a variable already present in the process is never overwritten", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "windup-env-"));
-    process.env.WINDUP_T_D = "do-processo";
-    await writeFile(path.join(dir, ".env.local"), "WINDUP_T_D=do-arquivo\n");
+    process.env.WINDUP_T_D = "from-process";
+    await writeFile(path.join(dir, ".env.local"), "WINDUP_T_D=from-file\n");
     loadEnv(dir);
-    expect(process.env.WINDUP_T_D).toBe("do-processo");
+    expect(process.env.WINDUP_T_D).toBe("from-process");
   });
 
-  it("diretório sem arquivos env não explode", () => {
-    expect(() => loadEnv("/caminho/que/nao/existe")).not.toThrow();
+  it("a directory without env files does not blow up", () => {
+    expect(() => loadEnv("/path/that/does/not/exist")).not.toThrow();
   });
 });

@@ -5,9 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchBrowser, shutdownBrowserEngine, type Browser } from "../src/browser.js";
 
 /**
- * Doc 07-A2, agora com actionability NATIVA do Playwright: clique em elemento
- * coberto/desabilitado deve FALHAR (timeout de actionability), nunca "passar".
- * Timeout curto via env para os casos negativos não custarem 10s cada.
+ * Doc 07-A2, now with Playwright's NATIVE actionability: clicking a covered
+ * or disabled element must FAIL (actionability timeout), never "pass".
+ * Short timeout via env so the negative cases don't cost 10s each.
  */
 process.env.WINDUP_ACTION_TIMEOUT_MS = "1200";
 
@@ -36,23 +36,23 @@ afterAll(async () => {
   await shutdownBrowserEngine();
 });
 
-describe("actionability do clique (Playwright nativo)", () => {
-  it("clica em elemento livre (evento trusted)", async () => {
+describe("click actionability (native Playwright)", () => {
+  it("clicks a free element (trusted event)", async () => {
     await expect(browser.click("#livre")).resolves.toBeUndefined();
   });
 
-  it("FALHA ao clicar em elemento coberto por overlay — e o clique NÃO acontece", async () => {
+  it("FAILS to click an element covered by an overlay — and the click does NOT happen", async () => {
     await expect(browser.click("#coberto")).rejects.toThrow(/Timeout|intercepts pointer events/i);
-    // prova de que o clique não vazou:
+    // proof that the click did not leak through:
     const clicked = await browser.isVisible("#coberto >> text=clicado");
     expect(clicked).toBe(false);
   });
 
-  it("falha ao clicar em elemento desabilitado", async () => {
+  it("fails to click a disabled element", async () => {
     await expect(browser.click("#desabilitado")).rejects.toThrow(/Timeout|enabled/i);
   });
 
-  it("falha ao clicar em elemento inexistente", async () => {
+  it("fails to click a nonexistent element", async () => {
     await expect(browser.click("#nao-existe")).rejects.toThrow(/Timeout|waiting for/i);
   });
 });

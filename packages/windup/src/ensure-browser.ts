@@ -24,7 +24,7 @@ export function installChromium(reason: string): boolean {
   const require = createRequire(import.meta.url);
   let cli: string;
   try {
-    // "playwright-core/cli" não está no exports do pacote; o bin é cli.js na raiz.
+    // "playwright-core/cli" is not in the package's exports; the bin is cli.js at the root.
     const pkgJson = require.resolve("playwright-core/package.json");
     cli = pkgJson.replace(/package\.json$/, "cli.js");
   } catch {

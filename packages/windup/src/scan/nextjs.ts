@@ -2,15 +2,15 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Indexador de rotas Next.js por convenção de arquivos (SPEC-002, camada 1).
- * Sem LLM, sem parser: só o filesystem. Cobre app router e pages router.
+ * Next.js route indexer by file convention (SPEC-002, layer 1).
+ * No LLM, no parser: just the filesystem. Covers app router and pages router.
  *
- * Conhece o FRAMEWORK (convenção pública do Next), nunca sites (doc 07).
+ * Knows the FRAMEWORK (Next's public convention), never sites (doc 07).
  */
 export interface StaticRoute {
-  /** Rota URL ("/products/[id]" vira "/products/:id"). */
+  /** URL route ("/products/[id]" becomes "/products/:id"). */
   route: string;
-  /** Arquivos-fonte que definem/compõem a rota (insumo do P3: diff → stale). */
+  /** Source files that define/compose the route (input for P3: diff → stale). */
   files: string[];
 }
 
@@ -30,7 +30,7 @@ export async function indexNextRoutes(projectRoot: string): Promise<StaticRoute[
 const PAGE_FILES = new Set(["page.tsx", "page.jsx", "page.ts", "page.js"]);
 const IGNORED_DIRS = new Set(["api", "node_modules"]);
 
-/** app router: cada page.* define uma rota; (grupos) não afetam a URL. */
+/** app router: each page.* defines a route; (groups) do not affect the URL. */
 async function walkAppRouter(dir: string, root: string): Promise<StaticRoute[]> {
   const routes: StaticRoute[] = [];
   const entries = await readdir(dir, { withFileTypes: true });
@@ -55,7 +55,7 @@ function appSegmentsToRoute(rel: string): string {
   return `/${segments.join("/")}`.replace(/\/+$/, "") || "/";
 }
 
-/** pages router: cada arquivo .tsx/.jsx é uma rota (menos _app/_document/api). */
+/** pages router: every .tsx/.jsx file is a route (except _app/_document/api). */
 async function walkPagesRouter(dir: string, root: string): Promise<StaticRoute[]> {
   const routes: StaticRoute[] = [];
   const entries = await readdir(dir, { withFileTypes: true });
@@ -77,7 +77,7 @@ async function walkPagesRouter(dir: string, root: string): Promise<StaticRoute[]
 }
 
 function dynamicSegment(segment: string): string {
-  // [id] → :id · [...slug] → :slug* — notação neutra para o url_pattern.
+  // [id] → :id · [...slug] → :slug* — neutral notation for the url_pattern.
   const catchAll = segment.match(/^\[\.\.\.(.+)\]$/);
   if (catchAll) return `:${catchAll[1]}*`;
   const dynamic = segment.match(/^\[(.+)\]$/);
@@ -86,9 +86,9 @@ function dynamicSegment(segment: string): string {
 }
 
 /**
- * Fontes que compõem a rota além do page.*: imports locais diretos
- * (1 nível — heurística barata; suficiente para elementos dos componentes
- * importados pela página).
+ * Sources composing the route beyond the page.*: direct local imports
+ * (1 level — cheap heuristic; enough for elements of the components
+ * imported by the page).
  */
 export async function collectRouteSources(route: StaticRoute, projectRoot: string): Promise<string[]> {
   const files = [...route.files];
@@ -118,7 +118,7 @@ async function resolveSource(base: string): Promise<string | null> {
       const s = await stat(candidate);
       if (s.isFile()) return candidate;
     } catch {
-      // tenta o próximo
+      // try the next one
     }
   }
   return null;

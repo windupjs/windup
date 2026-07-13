@@ -1,6 +1,6 @@
 /**
- * API programática do Windup — a CLI é uma casca fina sobre isto.
- * Completada no P1 (M2) com loadConfig/defineConfig; o núcleo já é público.
+ * Windup's programmatic API — the CLI is a thin shell over this.
+ * Completed in P1 (M2) with loadConfig/defineConfig; the core is already public.
  */
 export { runScenario, type Planner, type RunOptions, type PlanGeneration } from "./runner.js";
 export { LlmPlanner, GeminiPlanner } from "./planner.js";
@@ -22,9 +22,9 @@ import { loadScenario } from "./scenario.js";
 import type { RunMetrics } from "./types.js";
 
 /**
- * Executa um cenário pelo id (arquivo em scenariosDir) — atalho da API para
- * integração com runners (vitest/jest). Resolve o windup.config.* a partir
- * de opts.cwd (default: process.cwd()).
+ * Runs a scenario by id (a file in scenariosDir) — API shortcut for
+ * integrating with runners (vitest/jest). Resolves windup.config.* from
+ * opts.cwd (default: process.cwd()).
  */
 export async function run(scenarioId: string, opts: Partial<RunOptions> & { cwd?: string } = {}): Promise<RunMetrics> {
   setContext(await createContextFromConfig(opts.cwd));

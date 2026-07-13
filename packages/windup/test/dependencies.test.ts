@@ -9,11 +9,11 @@ import { createContext, setContext, getContext } from "../src/context.js";
 const scenario = (id: string, extra: Record<string, unknown> = {}) => ({
   scenario_id: id,
   start_url: `https://app.test/${id}`,
-  task: `tarefa ${id} com verificação final`,
+  task: `task ${id} with a final verification`,
   ...extra,
 });
 
-describe("dependências de cenários (depends_on)", () => {
+describe("scenario dependencies (depends_on)", () => {
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "windup-deps-"));
@@ -27,7 +27,7 @@ describe("dependências de cenários (depends_on)", () => {
       return registry[id] as Awaited<ReturnType<ScenarioLoader>>;
     };
 
-  it("resolve a cadeia em ordem de execução, com dedupe", async () => {
+  it("resolves the chain in execution order, with dedupe", async () => {
     const registry = {
       login: scenario("login"),
       "abrir-empresa": scenario("abrir-empresa", { depends_on: ["login"] }),
@@ -37,7 +37,7 @@ describe("dependências de cenários (depends_on)", () => {
     expect(chain.map((s) => s.scenario_id)).toEqual(["login", "abrir-empresa"]);
   });
 
-  it("detecta ciclo e estoura com mensagem clara", async () => {
+  it("detects a cycle and throws with a clear message", async () => {
     const registry = {
       a: scenario("a", { depends_on: ["b"] }),
       b: scenario("b", { depends_on: ["a"] }),
@@ -45,12 +45,12 @@ describe("dependências de cenários (depends_on)", () => {
     await expect(resolveDependencyChain(registry.a, loader(registry))).rejects.toThrow(/cycle/);
   });
 
-  it("cenário sem start_url e com depends_on continua da página da dependência (loadScenario)", async () => {
+  it("scenario without start_url and with depends_on continues from the dependency's page (loadScenario)", async () => {
     const dir = getContext().paths.scenariosDir;
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "criar-conta.json"),
-      JSON.stringify({ scenario_id: "criar-conta", depends_on: ["login"], task: "criar a conta bancária e verificar na lista" }),
+      JSON.stringify({ scenario_id: "criar-conta", depends_on: ["login"], task: "create the bank account and verify it in the list" }),
     );
     process.env.WINDUP_BASE_URL = "https://app.test";
     try {
@@ -60,7 +60,7 @@ describe("dependências de cenários (depends_on)", () => {
 
       await writeFile(
         path.join(dir, "com-url.json"),
-        JSON.stringify({ scenario_id: "com-url", depends_on: ["login"], start_url: "/painel", task: "abrir o painel e verificar o título" }),
+        JSON.stringify({ scenario_id: "com-url", depends_on: ["login"], start_url: "/painel", task: "open the panel and verify the title" }),
       );
       const withUrl = await loadScenario("com-url");
       expect(withUrl.continue_from_dependency).toBe(false);
@@ -70,14 +70,14 @@ describe("dependências de cenários (depends_on)", () => {
     }
   });
 
-  it("planner de cenário dependente recebe skipGoto (planeja vendo a página pós-dependência)", async () => {
-    // contrato da interface: o runner repassa { skipGoto: true } quando
-    // continue_from_dependency; validado aqui no nível do tipo/chamada.
+  it("the planner of a dependent scenario receives skipGoto (plans while seeing the post-dependency page)", async () => {
+    // interface contract: the runner passes { skipGoto: true } when
+    // continue_from_dependency; validated here at the type/call level.
     const calls: Array<{ skipGoto?: boolean }> = [];
     const planner: Planner = {
       async generate(_s, _b, _f, opts) {
         calls.push(opts ?? {});
-        throw new Error("stop"); // não precisamos executar de verdade
+        throw new Error("stop"); // we don't need to actually execute
       },
     };
     await expect(planner.generate(scenario("x") as never, {} as never, undefined, { skipGoto: true })).rejects.toThrow("stop");

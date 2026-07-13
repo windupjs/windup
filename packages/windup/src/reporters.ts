@@ -79,8 +79,8 @@ export function htmlReport(results: RunMetrics[]): string {
     .map((r) => {
       const ok = r.result === "passed";
       const llm = r.llm_model ? `${r.llm_provider ? `${r.llm_provider}/` : ""}${r.llm_model}` : "—";
-      // Fechado por padrão: com muitos casos, parágrafos de prosa dominariam a
-      // tabela — o rótulo indica que existe; um clique expande (<details>, sem JS).
+      // Closed by default: with many cases, prose paragraphs would dominate the
+      // table — the label shows it exists; one click expands (<details>, no JS).
       const deps = r.dependencies?.length
         ? `<div class="deps">deps: ${r.dependencies.map((d) => `${esc(d.scenario_id)} (${d.result === "passed" ? esc(d.cache) : "FAILED"})`).join(" → ")}</div>`
         : "";

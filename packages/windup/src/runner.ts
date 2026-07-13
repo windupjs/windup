@@ -12,31 +12,31 @@ export interface PlanGeneration {
   plan: Plan;
   llm_calls: number;
   model: string;
-  /** Empresa/provider do modelo ("google", "openai") — vai para o ledger. */
+  /** Model company/provider ("google", "openai") — goes into the ledger. */
   provider?: string;
   planning_mode: "full" | "incremental";
   tokens: { input: number; output: number };
-  /** Retries semânticos usados (plano reprovado na validação); exclui re-chamadas transientes. */
+  /** Semantic retries used (plan rejected by validation); excludes transient re-calls. */
   semantic_retries: number;
-  /** Assinatura da página inicial capturada no snapshot do planejamento (E1). */
+  /** Signature of the initial page captured in the planning snapshot (E1). */
   start_sig?: string;
-  /** Tamanho do prompt de planejamento em chars (exigência do critério E2). */
+  /** Planning prompt size in chars (required by the E2 criterion). */
   prompt_chars?: number;
 }
 
-/** Única fronteira com o LLM (implementada em planner.ts; fake nos testes). */
+/** The only boundary with the LLM (implemented in planner.ts; faked in tests). */
 export interface Planner {
   generate(scenario: Scenario, browser: Browser, failureContext?: string, opts?: { skipGoto?: boolean }): Promise<PlanGeneration>;
 }
 
-/** Carregador de cenários por id (injetável nos testes; o real é loadScenario). */
+/** Scenario loader by id (injectable in tests; the real one is loadScenario). */
 export type ScenarioLoader = (id: string) => Promise<Scenario & { start_url: string }>;
 
 const MAX_DEPENDENCY_DEPTH = 5;
 
 /**
- * Resolve a cadeia de depends_on em ordem de execução (pós-ordem, dedupe),
- * com detecção de ciclo e teto de profundidade. Exportada para teste.
+ * Resolves the depends_on chain in execution order (post-order, dedupe),
+ * with cycle detection and a depth cap. Exported for testing.
  */
 export async function resolveDependencyChain(scenario: Scenario, load: ScenarioLoader): Promise<Array<Scenario & { start_url: string }>> {
   const chain: Array<Scenario & { start_url: string }> = [];
@@ -57,9 +57,9 @@ export async function resolveDependencyChain(scenario: Scenario, load: ScenarioL
 }
 
 export interface RunOptions {
-  /** false = --no-cache: não lê nem grava cache (mede o caminho LLM isoladamente). */
+  /** false = --no-cache: neither reads nor writes cache (measures the LLM path in isolation). */
   useCache: boolean;
-  /** true = --summary: 1 chamada extra de LLM ao final relatando o run em prosa (opt-in; replays continuam $0 por padrão). */
+  /** true = --summary: 1 extra LLM call at the end reporting the run in prose (opt-in; replays stay $0 by default). */
   summary?: boolean;
 }
 
@@ -74,8 +74,8 @@ export class PlanGenerationError extends Error {
 }
 
 /**
- * Orquestra 1 execução: cache → (planejador) → executor/verificador → cache.save → métricas.
- * Grava runs/<timestamp>-<cenario>.json e devolve as métricas.
+ * Orchestrates 1 run: cache → (planner) → executor/verifier → cache.save → metrics.
+ * Writes runs/<timestamp>-<scenario>.json and returns the metrics.
  */
 export async function runScenario(
   scenario: Scenario,
@@ -104,8 +104,8 @@ export async function runScenario(
     failure: null,
   };
 
-  // Coleta passiva do mapa (E2): sempre ligada — toda execução é coleta.
-  // O uso do mapa NO PROMPT é que é opcional (--no-map, no planejador).
+  // Passive map collection (E2): always on — every run collects.
+  // Using the map IN THE PROMPT is what's optional (--no-map, in the planner).
   const mapStore = await SiteMapStore.load(getContext().paths.mapFile);
   const collector: StepCollector = {
     onPage: (obs) => mapStore.upsertPage(obs),
@@ -114,9 +114,9 @@ export async function runScenario(
 
   const browser = await launchBrowser();
   try {
-    // Dependências (depends_on): cada uma roda NA MESMA sessão, com seu
-    // próprio cache/replay e self-healing. O estado final delas é o ponto
-    // de partida deste cenário.
+    // Dependencies (depends_on): each one runs IN THE SAME session, with its
+    // own cache/replay and self-healing. Their final state is this
+    // scenario's starting point.
     if (scenario.depends_on?.length) {
       metrics.dependencies = [];
       const chain = await resolveDependencyChain(scenario, loadScenario);
@@ -148,16 +148,16 @@ export async function runScenario(
       metrics.cache = "hit";
       metrics.plan = cached.plan;
 
-      // E3: o cache guarda o plano COM referências { use } (fragmento
-      // atualizado propaga); a expansão acontece a cada execução.
+      // E3: the cache stores the plan WITH { use } references (an updated
+      // fragment propagates); expansion happens on every run.
       let expandedPlan;
       try {
-        // O plano cacheado roda no ambiente ATUAL: a origem do start_url é a
-        // resolvida agora (porta/host de hoje), as ações são as de sempre.
+        // The cached plan runs in the CURRENT environment: the start_url origin is
+        // the one resolved now (today's port/host), the actions are the usual ones.
         expandedPlan = expandPlan({ ...cached.plan, start_url: scenario.start_url ?? cached.plan.start_url }, await loadFragments());
       } catch (err) {
-        // Fragmento removido/renomeado: plano cacheado ficou órfão →
-        // invalida e re-planeja, como numa falha de verificação.
+        // Fragment removed/renamed: the cached plan became orphaned →
+        // invalidate and re-plan, as in a verification failure.
         await invalidate(cached);
         metrics.cache = "invalidated";
         const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
@@ -171,8 +171,8 @@ export async function runScenario(
       metrics.duration_ms.execution = Date.now() - execStart;
       metrics.actions = result.actions;
 
-      // E1, política leniente: sig divergente é sinal, não bloqueio — o
-      // replay segue; se a verificação falhar, a invalidação normal age.
+      // E1, lenient policy: a diverging sig is a signal, not a blocker — the
+      // replay proceeds; if verification fails, normal invalidation kicks in.
       if (result.start_sig && cached.key.start_sig) {
         metrics.sig_mismatch = result.start_sig !== cached.key.start_sig;
         if (metrics.sig_mismatch) {
@@ -189,12 +189,12 @@ export async function runScenario(
       }
 
       if (result.failure?.kind === "network") {
-        // Falha de rede não diz nada sobre o plano: não invalida (doc 05).
+        // A network failure says nothing about the plan: do not invalidate (doc 05).
         metrics.failure = result.failure;
         return metrics;
       }
 
-      // Replay falhou por verificação: invalida → re-planeja o fluxo inteiro (doc 03).
+      // Replay failed on verification: invalidate → re-plan the whole flow (doc 03).
       await invalidate(cached);
       metrics.cache = "invalidated";
       const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
@@ -211,10 +211,10 @@ export async function runScenario(
       try {
         metrics.failure_snapshot = (await browser.snapshotTree()).slice(0, 6000);
       } catch {
-        // browser pode ter morrido; snapshot é diagnóstico, nunca bloqueia
+        // the browser may have died; the snapshot is diagnostic, never blocking
       }
     }
-    // Duração e custo do TESTE fecham antes do resumo: prosa não é execução.
+    // TEST duration and cost close before the summary: prose is not execution.
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
     if (opts.summary) {
@@ -223,7 +223,7 @@ export async function runScenario(
         metrics.summary = await generateRunSummary(scenario, metrics, browser);
         metrics.estimated_cost_usd = Number((metrics.estimated_cost_usd + metrics.summary.est_cost_usd).toFixed(6));
       } catch (err) {
-        // resumo é acessório: nunca derruba nem altera o resultado do run
+        // the summary is an accessory: it never crashes nor changes the run result
         console.warn(`warning: could not generate the run summary: ${err instanceof Error ? err.message : err}`);
       }
     }
@@ -289,7 +289,7 @@ async function generateAndExecute(
   metrics.actions = result.actions;
 
   if (!result.ok) {
-    // Plano recém-gerado falhou: aborta (FALHA_DE_PLANO no doc 03).
+    // Freshly generated plan failed: abort (FALHA_DE_PLANO in doc 03).
     metrics.failure = result.failure;
     return { ok: false };
   }
@@ -299,11 +299,11 @@ async function generateAndExecute(
 }
 
 /**
- * Executa UMA dependência na sessão atual: replay do cache quando há, com o
- * mesmo self-healing do fluxo normal (verificação falhou → invalida →
- * re-planeja → salva no cache DA DEPENDÊNCIA). Custos/tokens somam nas
- * métricas do cenário dependente; a dependência não gera registro próprio
- * no ledger (rodou como setup, não como teste).
+ * Runs ONE dependency in the current session: cache replay when available, with
+ * the same self-healing as the normal flow (verification failed → invalidate →
+ * re-plan → save into THE DEPENDENCY's cache). Costs/tokens add to the
+ * dependent scenario's metrics; the dependency does not get its own ledger
+ * record (it ran as setup, not as a test).
  */
 async function runDependency(
   dep: Scenario & { start_url: string },
@@ -354,9 +354,9 @@ async function replanDependency(
   const generated = await generateAndExecute(dep, planner, browser, metrics, collector, failureContext);
   const llmCalls = metrics.llm_calls - callsBefore;
   const failure = metrics.failure ? { action_id: metrics.failure.action_id, message: metrics.failure.message } : undefined;
-  // rastro parcial da dependência não pertence ao cenário principal —
-  // inclusive o result: sem este reset, dependência re-planejada com sucesso
-  // + cenário falhando depois virava PASS falso (visto no dogfood).
+  // the dependency's partial trace does not belong to the main scenario —
+  // including the result: without this reset, a successfully re-planned dependency
+  // + a scenario failing afterwards became a false PASS (seen in dogfooding).
   metrics.failure = null;
   metrics.actions = [];
   metrics.result = "failed";

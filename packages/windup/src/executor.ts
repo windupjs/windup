@@ -13,14 +13,15 @@ export interface ExecutionResult {
   ok: boolean;
   actions: ActionMetrics[];
   failure: ExecutionFailure | null;
-  /** Assinatura da página inicial após o goto (E1); null se não pôde ser calculada. */
+  /** Signature of the start page after the goto (E1); null if it could not be computed. */
   start_sig: string | null;
 }
 
 /**
- * Coleta passiva para o mapa do site (E2): o executor já passa por cada
- * página do fluxo; observar custa 1 evaluate por ação, zero rede/LLM.
- * A coleta NUNCA pode derrubar uma execução — erros são engolidos.
+ * Passive collection for the site map (E2): the executor already visits
+ * every page in the flow; observing costs 1 evaluate per action, zero
+ * network/LLM. Collection must NEVER take down an execution — errors are
+ * swallowed.
  */
 export interface StepCollector {
   onPage(obs: { sig: string; url: string; title: string; interactive: string[] }): void;
@@ -36,13 +37,13 @@ async function observePage(browser: Browser, sig: string, collector: StepCollect
       interactive: await browser.interactiveElements(),
     });
   } catch {
-    // coleta é oportunista
+    // collection is opportunistic
   }
 }
 
 /**
- * Sig da página inicial: espera o app renderizar (SPA: load não basta) antes
- * de assinar, senão a sig do DOM pré-render seria instável.
+ * Start-page sig: waits for the app to render (SPA: load is not enough)
+ * before signing, otherwise the pre-render DOM sig would be unstable.
  */
 async function initialSignature(browser: Browser, timeoutMs = 5000): Promise<string | null> {
   const deadline = Date.now() + timeoutMs;
@@ -63,7 +64,7 @@ function classifyError(err: unknown): FailureKind {
   return NETWORK_ERROR_PATTERNS.some((p) => p.test(message)) ? "network" : "verification";
 }
 
-/** Resolve value/value_ref de uma ação fill. value_ref nunca é persistido resolvido. */
+/** Resolves value/value_ref of a fill action. value_ref is never persisted resolved. */
 export function resolveValue(action: Action): string {
   if (action.value !== undefined) return action.value;
   if (action.value_ref !== undefined) {
@@ -102,15 +103,15 @@ async function performAction(browser: Browser, action: Action, timeoutMs: number
   }
 }
 
-/** Pausa entre ações para acompanhamento visual (SLOWMO_MS); 0 = desligado. Lido por chamada (a CLI seta via --slowmo). */
+/** Pause between actions for visual follow-along (SLOWMO_MS); 0 = off. Read per call (the CLI sets it via --slowmo). */
 const SLOWMO_MS = () => Number.parseInt(process.env.SLOWMO_MS ?? "0", 10) || 0;
 
 /**
- * Loop determinístico do doc 03: navega para start_url e executa as ações
- * do plano em ordem, verificando pós-condições após cada uma. Zero LLM.
+ * Deterministic loop from doc 03: navigates to start_url and executes the
+ * plan's actions in order, verifying postconditions after each one. Zero LLM.
  */
 export interface ExecuteOptions {
-  /** true = cenário dependente sem start_url: continua da página ATUAL (o estado final das dependências É o início). */
+  /** true = dependent scenario without start_url: continues from the CURRENT page (the dependencies' final state IS the start). */
   skipInitialGoto?: boolean;
 }
 
@@ -195,7 +196,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
           currentSig = sig;
         }
       } catch {
-        // coleta é oportunista
+        // collection is opportunistic
       }
     }
 

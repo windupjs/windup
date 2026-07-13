@@ -1,4 +1,4 @@
-// Rotas construídas dinamicamente — a camada estática (regex) não alcança.
+// Rotas built dinamicamente — a camada static (regex) não reaches.
 import { createBrowserRouter } from "react-router-dom";
 import { ReportPage } from "./pages/ReportPage";
 

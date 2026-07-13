@@ -18,7 +18,7 @@ async function gitFixture(): Promise<{ root: string; mapFile: string }> {
   const run = (args: string[]) => exec("git", args, { cwd: root });
   await run(["init", "-q", "-b", "main"]);
   await run(["-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"]);
-  await run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "inicial"]);
+  await run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "initial"]);
   const mapFile = path.join(root, ".windup", "site-map.json");
   setContext({
     config: { ...DEFAULT_CONFIG, framework: "next", scan: { root: "." } },
@@ -27,35 +27,35 @@ async function gitFixture(): Promise<{ root: string; mapFile: string }> {
   return { root, mapFile };
 }
 
-describe("scan --update incremental via git (P3)", () => {
-  it("editar 1 componente → só a rota afetada re-indexada; execução da mesma url vira stale", async () => {
+describe("incremental scan --update via git (P3)", () => {
+  it("editing 1 component → only the affected route re-indexed; execution knowledge of the same url goes stale", async () => {
     const { root, mapFile } = await gitFixture();
 
     const full = await runScan();
     expect(full.mode).toBe("full");
     expect(full.routes).toBe(7);
 
-    // Simula conhecimento de execução da home (mesma url do estático "/").
+    // Simulates execution knowledge of the home page (same url as the static "/").
     let store = await SiteMapStore.load(mapFile);
     store.upsertPage({ sig: "sig:home-exec", url: "http://localhost:3000/", title: "Home", interactive: ["button id=x"] });
     await store.save();
 
-    // Edita SÓ o componente Hero (importado pela home).
-    await writeFile(path.join(root, "src", "components", "Hero.tsx"), `export function Hero() {\n  return <button data-testid="cta-hero-v2">Começar já</button>;\n}\n`);
+    // Edits ONLY the Hero component (imported by the home page).
+    await writeFile(path.join(root, "src", "components", "Hero.tsx"), `export function Hero() {\n  return <button data-testid="cta-hero-v2">Start now</button>;\n}\n`);
 
     const update = await runScan({ update: true });
     expect(update.mode).toBe("incremental");
-    expect(update.routes).toBe(1); // só a home
+    expect(update.routes).toBe(1); // only the home page
 
     store = await SiteMapStore.load(mapFile);
-    // O nó estático da home foi re-indexado com o elemento novo…
-    const slice = store.sliceForPrompt("sig:desconhecida", "comecar cta hero", 8000);
+    // The home's static node was re-indexed with the new element…
+    const slice = store.sliceForPrompt("sig:desconhecida", "start cta hero", 8000);
     expect(slice).toContain("cta-hero-v2");
-    // …e o conhecimento de EXECUÇÃO da mesma url ficou stale (fora da fatia).
+    // …and the EXECUTION knowledge of the same url went stale (out of the slice).
     const raw = JSON.parse(JSON.stringify(await import("node:fs/promises").then((fs) => fs.readFile(mapFile, "utf8").then(JSON.parse))));
     expect(raw.pages["sig:home-exec"].stale).toBe(true);
 
-    // Nova observação em execução limpa o stale.
+    // A new observation from execution clears the stale flag.
     store.upsertPage({ sig: "sig:home-exec", url: "http://localhost:3000/", title: "Home", interactive: ["button id=y"] });
     await store.save();
     const raw2 = JSON.parse(await import("node:fs/promises").then((fs) => fs.readFile(mapFile, "utf8")));
@@ -64,7 +64,7 @@ describe("scan --update incremental via git (P3)", () => {
     setContext(createContext());
   }, 30_000);
 
-  it("--update sem scan anterior cai para full", async () => {
+  it("--update without a previous scan falls back to full", async () => {
     await gitFixture();
     const summary = await runScan({ update: true });
     expect(summary.mode).toBe("full");

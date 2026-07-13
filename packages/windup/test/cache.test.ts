@@ -4,14 +4,14 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CacheEntry, Plan, Scenario } from "../src/types.js";
 
-// Isola o cache num diretório temporário ANTES de importar o módulo.
+// Isolate the cache in a temp directory BEFORE importing the module.
 process.env.WINDUP_CACHE_DIR = await mkdtemp(path.join(tmpdir(), "windup-cache-"));
 const cache = await import("../src/cache.js");
 
 const scenario: Scenario = {
   scenario_id: "ciclo-teste",
   start_url: "https://exemplo.com",
-  task: "tarefa de teste",
+  task: "test task",
 };
 
 const plan: Plan = {
@@ -28,12 +28,12 @@ const plan: Plan = {
   ],
 };
 
-describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", () => {
+describe("replay-failure → invalidate → re-plan → save cycle (doc 07-A3)", () => {
   beforeAll(async () => {
     await cache.clearCache();
   });
 
-  it("miss → save → hit com plan_generation=1", async () => {
+  it("miss → save → hit with plan_generation=1", async () => {
     expect(await cache.getCached(scenario)).toBeNull();
     await cache.saveCached(scenario, plan);
     const entry = await cache.getCached(scenario);
@@ -41,13 +41,13 @@ describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", 
     expect(entry?.stats.plan_generation).toBe(1);
   });
 
-  it("recordReplay incrementa replay_count", async () => {
+  it("recordReplay increments replay_count", async () => {
     const entry = (await cache.getCached(scenario))!;
     await cache.recordReplay(entry);
     expect((await cache.getCached(scenario))!.stats.replay_count).toBe(1);
   });
 
-  it("invalidate preserva evidência em arquivo .stale-* e vira miss", async () => {
+  it("invalidate preserves evidence in a .stale-* file and becomes a miss", async () => {
     const entry = (await cache.getCached(scenario))!;
     await cache.invalidate(entry);
     expect(await cache.getCached(scenario)).toBeNull();
@@ -62,7 +62,7 @@ describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", 
     expect(staleEntry.stats.replay_failures).toBe(1);
   });
 
-  it("re-save acumula contadores e incrementa plan_generation", async () => {
+  it("re-save accumulates counters and increments plan_generation", async () => {
     await cache.saveCached(scenario, plan);
     const entry = (await cache.getCached(scenario))!;
     expect(entry.status).toBe("active");
@@ -71,10 +71,10 @@ describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", 
     expect(entry.stats.replay_failures).toBe(1);
   });
 
-  it("mantém no máximo 3 arquivos stale", async () => {
+  it("keeps at most 3 stale files", async () => {
     for (let i = 0; i < 4; i++) {
       const entry = (await cache.getCached(scenario))!;
-      await new Promise((r) => setTimeout(r, 5)); // timestamps distintos no nome
+      await new Promise((r) => setTimeout(r, 5)); // distinct timestamps in the name
       await cache.invalidate(entry);
       await cache.saveCached(scenario, plan);
     }
@@ -82,25 +82,25 @@ describe("ciclo replay-falha → invalidate → re-plano → save (doc 07-A3)", 
     expect(files.filter((f) => f.startsWith("ciclo-teste.stale-")).length).toBeLessThanOrEqual(3);
   });
 
-  it("clearCache remove também os stale", async () => {
+  it("clearCache also removes the stale files", async () => {
     await cache.clearCache();
     let files: string[] = [];
     try {
       files = await readdir(cache.cacheDir());
     } catch {
-      // diretório removido por inteiro também vale
+      // the whole directory being removed also counts
     }
     expect(files.filter((f) => f.includes("stale"))).toHaveLength(0);
   });
 });
 
-describe("task editada invalida o hit (miss)", () => {
-  it("mesma id/start_url mas task diferente → miss", async () => {
+describe("edited task invalidates the hit (miss)", () => {
+  it("same id/start_url but different task → miss", async () => {
     const { saveCached, getCached } = await import("../src/cache.js");
-    const scenario = { scenario_id: "edicao-task", start_url: "https://x.test/a", task: "tarefa original" };
-    const plan = { plan_version: "0.1" as const, scenario_id: "edicao-task", task: "tarefa original", start_url: "https://x.test/a", actions: [] };
+    const scenario = { scenario_id: "edicao-task", start_url: "https://x.test/a", task: "original task" };
+    const plan = { plan_version: "0.1" as const, scenario_id: "edicao-task", task: "original task", start_url: "https://x.test/a", actions: [] };
     await saveCached(scenario, plan);
     expect(await getCached(scenario)).not.toBeNull();
-    expect(await getCached({ ...scenario, task: "tarefa REESCRITA" })).toBeNull();
+    expect(await getCached({ ...scenario, task: "REWRITTEN task" })).toBeNull();
   });
 });

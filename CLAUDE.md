@@ -8,7 +8,7 @@ Every change that ships — new feature, new command, new flag, behavior change,
 2. `docs/specs/SPEC.md` — the living specification (architecture, data formats, principles, limitations).
 3. Root `README.md` — only when the pitch/feature list or status changes.
 
-All documentation is written in **English**. A feature without updated docs is not done. Remember the npm README only updates when a new version is published.
+ALL repository content is written in **English** — documentation, code comments, LLM prompt templates, test names and commit messages. Functional Portuguese stays only where it is data: regexes matching user input (e.g. `senha|password`) and tokenizer stopword lists. A feature without updated docs is not done. Remember the npm README only updates when a new version is published.
 
 ## Zero hardcoded site knowledge (permanent principle)
 

@@ -1,4 +1,4 @@
-// Config de navegação — path: aqui NÃO é rota do react-router.
+// Navigation config — path: here is NOT a react-router route.
 import { useNavigate } from "react-router-dom";
 
 export const menuItems = [

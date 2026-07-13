@@ -5,7 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { deriveAccountName, envName, registerCredentials } from "../src/secrets.js";
 import { createContext, setContext } from "../src/context.js";
 
-describe("windup secret (credenciais sem segredo commitado)", () => {
+describe("windup secret (credentials without committed secrets)", () => {
   let root: string;
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "windup-secrets-"));
@@ -13,15 +13,15 @@ describe("windup secret (credenciais sem segredo commitado)", () => {
   });
   afterAll(() => setContext(createContext()));
 
-  it("deriva nomes de conta e de ENV", () => {
+  it("derives account and ENV names", () => {
     expect(deriveAccountName("kallef@orbitaldev.com.br")).toBe("kallef");
     expect(deriveAccountName(undefined)).toBe("default");
     expect(envName("qa-admin", "password")).toBe("WINDUP_QA_ADMIN_PASSWORD");
   });
 
-  it("registra: valores no .env.local (atualização idempotente), mapeamento sem valores, gitignore garantido", async () => {
+  it("registers: values in .env.local (idempotent update), mapping without values, gitignore guaranteed", async () => {
     registerCredentials("admin", { user: "a@b.com", password: "s3gr3d0" });
-    registerCredentials("admin", { password: "novo" }); // atualiza a mesma chave
+    registerCredentials("admin", { password: "novo" }); // updates the same key
 
     const env = await readFile(path.join(root, ".env.local"), "utf8");
     expect(env).toContain("WINDUP_ADMIN_USER=a@b.com");
@@ -35,7 +35,7 @@ describe("windup secret (credenciais sem segredo commitado)", () => {
     expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(".env.local");
   });
 
-  it("createContext mescla o windup.credentials.json no manifesto (config explícita vence)", async () => {
+  it("createContext merges windup.credentials.json into the manifest (explicit config wins)", async () => {
     await writeFile(
       path.join(root, "windup.credentials.json"),
       JSON.stringify({ accounts: { qa: { user: "ENV:WINDUP_QA_USER" } } }),

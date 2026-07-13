@@ -4,7 +4,7 @@ import type { CacheEntry, Plan, Scenario } from "./types.js";
 import { getContext } from "./context.js";
 import { startPath } from "./start-url.js";
 
-/** Diretório do cache de trajetórias, resolvido pelo contexto ativo. */
+/** Trajectory cache directory, resolved from the active context. */
 export function cacheDir(): string {
   return getContext().paths.cacheDir;
 }
@@ -18,22 +18,22 @@ function entryPath(scenarioId: string): string {
 }
 
 /**
- * Hit = arquivo existe + status active + versões compatíveis + start_url igual.
- * Qualquer outra coisa é miss (doc 04).
+ * Hit = file exists + status active + compatible versions + same start_url.
+ * Anything else is a miss (doc 04).
  */
 export async function getCached(scenario: Scenario): Promise<CacheEntry | null> {
   const entry = await readEntry(entryPath(scenario.scenario_id));
   if (!entry) return null;
-  // Identidade do start_url é o PATH: porta/host mudam por ambiente e o
-  // cache viaja junto (entradas antigas com URL absoluta continuam batendo).
+  // The start_url identity is the PATH: port/host change per environment and
+  // the cache travels along (old entries with absolute URLs still match).
   const compatible =
     entry.status === "active" &&
     entry.cache_version === CACHE_VERSION &&
     entry.plan?.plan_version === PLAN_VERSION &&
     entry.key?.scenario_id === scenario.scenario_id &&
     startPath(entry.key?.start_url ?? "/") === startPath(scenario.start_url ?? "/") &&
-    // Task editada = teste diferente: o plano antigo não vale mais (miss,
-    // não invalidação — o save do plano novo sobrescreve normalmente).
+    // An edited task = a different test: the old plan no longer applies (a
+    // miss, not an invalidation — the new plan's save overwrites normally).
     (entry.plan.task === undefined || entry.plan.task === scenario.task);
   return compatible ? entry : null;
 }
@@ -55,11 +55,11 @@ async function staleFiles(scenarioId: string): Promise<string[]> {
   }
   return files
     .filter((f) => f.startsWith(`${scenarioId}.stale-`) && f.endsWith(".json"))
-    .sort() // timestamp ISO no nome: ordem lexicográfica = cronológica
+    .sort() // ISO timestamp in the name: lexicographic order = chronological
     .map((f) => path.join(cacheDir(), f));
 }
 
-/** Stats da entrada anterior (ativa ou stale mais recente), para acumular entre re-planos (doc 07-A3). */
+/** Stats of the previous entry (active or most recent stale), to accumulate across re-plans (doc 07-A3). */
 async function previousStats(scenarioId: string): Promise<CacheEntry["stats"] | null> {
   const active = await readEntry(entryPath(scenarioId));
   if (active) return active.stats;
@@ -70,9 +70,9 @@ async function previousStats(scenarioId: string): Promise<CacheEntry["stats"] | 
 }
 
 /**
- * Escrita só após execução completa e verificada (responsabilidade do runner).
- * Contadores acumulam entre re-planos; plan_generation conta re-gerações —
- * insumo para detectar cenários instáveis.
+ * Written only after a complete, verified execution (the runner's job).
+ * Counters accumulate across re-plans; plan_generation counts regenerations —
+ * input for detecting unstable scenarios.
  */
 export async function saveCached(scenario: Scenario, plan: Plan, startSig?: string): Promise<void> {
   const prev = await previousStats(scenario.scenario_id);
@@ -80,7 +80,7 @@ export async function saveCached(scenario: Scenario, plan: Plan, startSig?: stri
     cache_version: CACHE_VERSION,
     key: {
       scenario_id: scenario.scenario_id,
-      // identidade independente de ambiente
+      // environment-independent identity
       start_url: startPath(scenario.start_url ?? "/"),
       ...(startSig ? { start_sig: startSig } : {}),
     },
@@ -98,7 +98,7 @@ export async function saveCached(scenario: Scenario, plan: Plan, startSig?: stri
   await writeFile(entryPath(scenario.scenario_id), JSON.stringify(entry, null, 2));
 }
 
-/** Registra um replay bem-sucedido (alimenta a evidência do critério C2). */
+/** Records a successful replay (feeds the evidence for criterion C2). */
 export async function recordReplay(entry: CacheEntry): Promise<void> {
   entry.stats.replay_count += 1;
   entry.stats.last_replayed_at = new Date().toISOString();
@@ -106,9 +106,9 @@ export async function recordReplay(entry: CacheEntry): Promise<void> {
 }
 
 /**
- * Falha de verificação em replay: marca stale e RENOMEIA o arquivo para
- * <id>.stale-<timestamp>.json — o save do re-plano não pode sobrescrever a
- * evidência (doc 07-A3). Mantém no máximo os 3 stale mais recentes.
+ * Verification failure on replay: marks it stale and RENAMES the file to
+ * <id>.stale-<timestamp>.json — the re-plan's save must not overwrite the
+ * evidence (doc 07-A3). Keeps at most the 3 most recent stale files.
  */
 export async function invalidate(entry: CacheEntry): Promise<void> {
   entry.status = "stale";
@@ -125,7 +125,7 @@ export async function invalidate(entry: CacheEntry): Promise<void> {
   }
 }
 
-/** Apaga o cache inteiro, incluindo entradas stale. */
+/** Deletes the entire cache, including stale entries. */
 export async function clearCache(): Promise<void> {
   await rm(cacheDir(), { recursive: true, force: true });
 }

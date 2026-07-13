@@ -2,44 +2,44 @@ import { loadConfig as c12LoadConfig } from "c12";
 import path from "node:path";
 
 /**
- * Configuração do projeto (windup.config.ts) — schema completo da SPEC-002.
- * As seções `scan` (P2) e `context` (E4) já são tipadas mas ainda inertes:
- * existir desde já evita migração de config quando as fases chegarem.
+ * Project configuration (windup.config.ts) — full SPEC-002 schema.
+ * The `scan` (P2) and `context` (E4) sections are already typed but still
+ * inert: existing now avoids a config migration when those phases arrive.
  */
 export interface WindupConfig {
-  /** Base para start_url relativo nos cenários (ex.: "/login"). */
+  /** Base for relative start_url in scenarios (e.g. "/login"). */
   baseUrl?: string;
   llm: {
-    /** Provider ativo por padrão; troque por execução com --llm / WINDUP_LLM. */
+    /** Provider active by default; switch per run with --llm / WINDUP_LLM. */
     provider: "google" | "openai";
     model: string;
     /**
-     * Vários providers configurados AO MESMO TEMPO — modelo default e chave
-     * de cada um. A seleção por execução (`--llm openai[:modelo]`) usa estes
-     * defaults quando o modelo não vem na flag.
+     * Several providers configured AT THE SAME TIME — each one's default model
+     * and key. Per-run selection (`--llm openai[:model]`) uses these
+     * defaults when the model is not in the flag.
      */
     providers?: Partial<
       Record<
         "google" | "openai",
         {
           model?: string;
-          /** Nome da env var com a API key (default: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY). */
+          /** Name of the env var holding the API key (default: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY). */
           apiKeyEnv?: string;
-          /** Só openai: endpoint OpenAI-compatível alternativo (Azure, proxy, modelo local). */
+          /** openai only: alternative OpenAI-compatible endpoint (Azure, proxy, local model). */
           baseUrl?: string;
         }
       >
     >;
   };
-  /** Pasta dos cenários, relativa à config (commitada). */
+  /** Scenarios folder, relative to the config (committed). */
   scenarios: string;
-  /** Framework detectado pelo init (gancho do P2; só informativo por ora). */
+  /** Framework detected by init (P2 hook; informational only for now). */
   framework?: string | null;
   signature?: {
-    /** true = sig divergente vira miss (padrão: leniente, só avisa). */
+    /** true = a diverging sig becomes a miss (default: lenient, warn only). */
     strict?: boolean;
   };
-  /** P2 — indexação de projeto (inerte por enquanto). */
+  /** P2 — project indexing (inert for now). */
   scan?: {
     root?: string;
     include?: string[];
@@ -47,7 +47,7 @@ export interface WindupConfig {
     dynamic?: { enabled: boolean; maxDepth?: number; maxPages?: number };
     llmAssist?: { enabled: boolean; maxCalls?: number };
   };
-  /** E4 — manifesto do projeto (inerte por enquanto; SPEC-001 componente 3). */
+  /** E4 — project manifest (inert for now; SPEC-001 component 3). */
   context?: {
     conventions?: string[];
     credentials?: Record<string, Record<string, string>>;
@@ -60,21 +60,21 @@ export const DEFAULT_CONFIG: WindupConfig = {
   scenarios: "e2e/scenarios",
 };
 
-/** Identidade tipada para o windup.config.ts do usuário. */
+/** Typed identity for the user's windup.config.ts. */
 export function defineConfig(config: Partial<WindupConfig>): Partial<WindupConfig> {
   return config;
 }
 
 export interface LoadedConfig {
   config: WindupConfig;
-  /** Diretório da config (root do projeto do usuário); cwd se não houver arquivo. */
+  /** Config directory (the user's project root); cwd if there is no file. */
   root: string;
   configFile: string | null;
 }
 
 /**
- * Resolve windup.config.{ts,js,mjs,json} subindo a árvore a partir do cwd
- * (c12 + jiti: TS sem build, sem depender do tsconfig do usuário).
+ * Resolves windup.config.{ts,js,mjs,json} walking up the tree from the cwd
+ * (c12 + jiti: TS without a build, without depending on the user's tsconfig).
  */
 export async function loadWindupConfig(cwd: string = process.cwd()): Promise<LoadedConfig> {
   const { config, configFile } = await c12LoadConfig<WindupConfig>({

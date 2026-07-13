@@ -5,4 +5,4 @@ const runFile = process.argv[2];
 const m = JSON.parse(await readFile(runFile, "utf8"));
 const scenario = await loadScenario(m.scenario_id);
 await saveCached(scenario, m.plan);
-console.log("cache semeado com o plano de", runFile);
+console.log("cache seeded with the plan from", runFile);

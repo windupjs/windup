@@ -19,11 +19,11 @@ export interface CostsReport {
   tokens: { input: number; output: number };
   est_cost_usd: number;
   free_replays: number;
-  /** LLM-assist de scans (P4): gasto de IA fora de runs, mesmo ledger. */
+  /** LLM-assist for scans (P4): AI spend outside runs, same ledger. */
   scans: { count: number; llm_calls: number; tokens: { input: number; output: number }; est_cost_usd: number };
-  /** Cenários gerados via `windup new` (autoria assistida) — mesmo ledger. */
+  /** Scenarios generated via `windup new` (assisted authoring) — same ledger. */
   authoring: { count: number; llm_calls: number; tokens: { input: number; output: number }; est_cost_usd: number };
-  /** Por empresa (google, openai...) — quem alterna entre LLMs vê o gasto de cada uma. */
+  /** Per company (google, openai...) — whoever alternates between LLMs sees each one's spend. */
   by_provider: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
   by_model: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
   by_scenario: Record<string, { runs: number; llm_calls: number; est_cost_usd: number }>;
@@ -41,9 +41,9 @@ export interface CostsReport {
 }
 
 /**
- * Registros anteriores ao multi-provider não têm llm_provider — infere pelo
- * nome do modelo (nomes são únicos entre empresas), para o histórico antigo
- * aparecer na quebra por provider sem reescrever o ledger.
+ * Records predating multi-provider have no llm_provider — infer it from the
+ * model name (names are unique across companies), so old history shows up in
+ * the per-provider breakdown without rewriting the ledger.
  */
 export function inferProvider(model: string | null, recorded?: string | null): string | null {
   if (recorded) return recorded;
@@ -146,7 +146,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
       bucket.tokens.input += s.tokens.input;
       bucket.tokens.output += s.tokens.output;
       bucket.est_cost_usd += cost;
-      report.est_cost_usd += cost; // total geral inclui scans e autoria
+      report.est_cost_usd += cost; // grand total includes scans and authoring
       if (s.llm_model) {
         if (s.llm_provider) accumulate(report.by_provider, s.llm_provider, s.llm_calls, s.tokens, cost);
         accumulate(report.by_model, s.llm_model, s.llm_calls, s.tokens, cost);

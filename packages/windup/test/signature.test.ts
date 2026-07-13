@@ -8,38 +8,38 @@ const loginPage: RawElement[] = [
 ];
 
 describe("computeSignature (E1)", () => {
-  it("mesma página → mesma sig", () => {
+  it("same page → same sig", () => {
     expect(computeSignature(loginPage)).toBe(computeSignature([...loginPage]));
   });
 
-  it("é insensível à ordem dos elementos", () => {
+  it("is insensitive to element order", () => {
     expect(computeSignature(loginPage)).toBe(computeSignature([...loginPage].reverse()));
   });
 
-  it("é insensível a elementos repetidos (N cards iguais)", () => {
+  it("is insensitive to repeated elements (N identical cards)", () => {
     expect(computeSignature(loginPage)).toBe(computeSignature([...loginPage, loginPage[0]]));
   });
 
-  it("é insensível a caixa (case)", () => {
+  it("is case-insensitive", () => {
     const upper = loginPage.map((e) => ({ ...e, id: e.id?.toUpperCase() }));
     expect(computeSignature(loginPage)).toBe(computeSignature(upper));
   });
 
-  it("elemento a mais → sig diferente", () => {
+  it("an extra element → different sig", () => {
     const altered = [...loginPage, { tag: "button", id: "novo-botao" }];
     expect(computeSignature(loginPage)).not.toBe(computeSignature(altered));
   });
 
-  it("id trocado → sig diferente", () => {
+  it("changed id → different sig", () => {
     const altered = loginPage.map((e) => (e.id === "login-button" ? { ...e, id: "login-button-v2" } : e));
     expect(computeSignature(loginPage)).not.toBe(computeSignature(altered));
   });
 
-  it("formato sig:<16 hex>", () => {
+  it("sig:<16 hex> format", () => {
     expect(computeSignature(loginPage)).toMatch(/^sig:[0-9a-f]{16}$/);
   });
 
-  it("página vazia tem sig estável", () => {
+  it("an empty page has a stable sig", () => {
     expect(computeSignature([])).toBe(computeSignature([]));
   });
 });

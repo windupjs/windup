@@ -1,24 +1,24 @@
 import { getContext } from "./context.js";
 
 /**
- * Fronteira multi-provider com LLMs. Tudo que fala com um modelo (planner,
- * scan assist) passa por um LlmClient — trocar de empresa/modelo é escolher
- * outro client, nunca tocar em quem chama.
+ * Multi-provider boundary with LLMs. Everything that talks to a model (planner,
+ * scan assist) goes through an LlmClient — switching company/model means picking
+ * another client, never touching the callers.
  *
- * Seleção do provider/modelo por execução (precedência):
- *   1. WINDUP_LLM env — "provider", "provider:model" ou "provider/model"
- *      (a flag --llm da CLI escreve aqui);
- *   2. LLM_MODEL env (legado) — só o modelo, no provider da config;
+ * Provider/model selection per run (precedence):
+ *   1. WINDUP_LLM env — "provider", "provider:model" or "provider/model"
+ *      (the CLI's --llm flag writes here);
+ *   2. LLM_MODEL env (legacy) — model only, on the config's provider;
  *   3. config llm.provider + llm.model.
- * O modelo default de um provider escolhido sem ":model" vem de
- * config.llm.providers[provider].model, senão do default embutido.
+ * The default model of a provider chosen without ":model" comes from
+ * config.llm.providers[provider].model, otherwise from the built-in default.
  */
 
 export type ProviderName = "google" | "openai";
 
 export interface LlmRequest {
   prompt: string;
-  /** JSON Schema relaxado: o Google usa como responseSchema; a OpenAI recebe no prompt + json mode. */
+  /** Relaxed JSON Schema: Google uses it as responseSchema; OpenAI gets it in the prompt + json mode. */
   schema?: object;
   maxOutputTokens: number;
   temperature: number;
@@ -28,7 +28,7 @@ export interface LlmRequest {
 export interface LlmResponse {
   text: string;
   tokens: { input: number; output: number };
-  /** true = resposta cortada por limite de tokens (degeneração/plano grande demais) — falha transiente. */
+  /** true = response cut by the token limit (degeneration/plan too large) — transient failure. */
   truncated: boolean;
 }
 
@@ -51,7 +51,7 @@ function defaultModelFor(provider: ProviderName): string {
   return getContext().config.llm.providers?.[provider]?.model ?? PROVIDER_DEFAULTS[provider].model;
 }
 
-/** "openai", "openai:gpt-5-mini" ou "openai/gpt-5-mini" → {provider, model}. Exportada para teste. */
+/** "openai", "openai:gpt-5-mini" or "openai/gpt-5-mini" → {provider, model}. Exported for testing. */
 export function parseLlmSpec(spec: string): { provider: ProviderName; model: string } {
   const match = spec.match(/^([a-z0-9-]+)[:/](.+)$/);
   const providerName = (match ? match[1] : spec).toLowerCase();
@@ -68,7 +68,7 @@ export function resolveLlm(): { provider: ProviderName; model: string } {
   if (spec) return parseLlmSpec(spec);
   const config = getContext().config.llm;
   const provider = isProvider(config.provider) ? config.provider : "google";
-  // Legado (pré-multi-provider): LLM_MODEL trocava só o modelo.
+  // Legacy (pre-multi-provider): LLM_MODEL swapped only the model.
   const legacy = process.env.LLM_MODEL?.trim();
   if (legacy) return { provider, model: legacy.replace(/^google\//, "") };
   return { provider, model: config.model ?? defaultModelFor(provider) };
@@ -103,9 +103,9 @@ function googleClient(model: string, apiKey: string): LlmClient {
         contents: req.prompt,
         config: {
           ...(req.schema ? { responseMimeType: "application/json", responseSchema: req.schema } : {}),
-          // Planejar é transcrição de tarefa em ações, não raciocínio longo:
-          // thinking desligado corta ~10x de latência e custo no flash.
-          // Os modelos *pro* não aceitam budget 0 — usam o mínimo (128).
+          // Planning is transcribing a task into actions, not long reasoning:
+          // thinking disabled cuts ~10x of latency and cost on flash.
+          // The *pro* models do not accept budget 0 — they use the minimum (128).
           thinkingConfig: { thinkingBudget: model.includes("pro") ? 128 : 0 },
           maxOutputTokens: req.maxOutputTokens,
           temperature: req.temperature,
@@ -125,21 +125,21 @@ function googleClient(model: string, apiKey: string): LlmClient {
 }
 
 /**
- * OpenAI via REST (chat/completions) — sem SDK: uma chamada fetch não paga
- * uma árvore de dependências. baseUrl configurável cobre qualquer endpoint
- * OpenAI-compatível (Azure, proxies, modelos locais).
+ * OpenAI via REST (chat/completions) — no SDK: a fetch call does not pay for
+ * a dependency tree. Configurable baseUrl covers any OpenAI-compatible
+ * endpoint (Azure, proxies, local models).
  */
 function openaiClient(model: string, apiKey: string, baseUrl?: string): LlmClient {
   const url = `${(baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "")}/chat/completions`;
-  // Modelos com raciocínio embutido não aceitam temperature/seed; o esforço
-  // mínimo cumpre o mesmo papel do thinkingBudget 0 do Gemini.
+  // Models with built-in reasoning do not accept temperature/seed; minimal
+  // effort plays the same role as Gemini's thinkingBudget 0.
   const reasoningEffort = /^gpt-5/.test(model) ? "minimal" : /^o\d/.test(model) ? "low" : null;
   return {
     provider: "openai",
     model,
     async generate(req) {
-      // json mode não recebe schema: vai como instrução no prompt (o Ajv
-      // local continua sendo a autoridade, como no Google).
+      // json mode does not take a schema: it goes as an instruction in the prompt
+      // (the local Ajv remains the authority, as with Google).
       const content = req.schema
         ? `${req.prompt}\n\nRespond ONLY with valid JSON matching this JSON Schema:\n${JSON.stringify(req.schema)}`
         : req.prompt;

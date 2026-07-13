@@ -34,7 +34,7 @@ describe("indexReactRouterRoutes", () => {
     expect(byRoute["/settings"].some((f) => f.endsWith("Settings.tsx"))).toBe(true);
   });
 
-  it("resolve a página real dentro de wrappers de layout no element", async () => {
+  it("resolves the real page inside layout wrappers in element", async () => {
     const routes = await indexReactRouterRoutes(FIXTURE);
     const billing = routes.find((r) => r.route === "/billing")!;
     expect(billing.files.some((f) => f.endsWith("Billing.tsx"))).toBe(true);

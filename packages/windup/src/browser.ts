@@ -49,11 +49,11 @@ class PlaywrightSession implements Browser {
   ) {}
 
   /**
-   * Política de alvo: o primeiro match VISÍVEL, não o primeiro do DOM.
-   * Seletores textuais (:has-text) casam com itens ocultos (menus fechados,
-   * spotlight, dialogs) que vêm antes no DOM — com .first() puro, o alvo
-   * "certo e visível" perdia para um fantasma invisível (visto no dogfood).
-   * O filtro é dinâmico: elementos que ficam visíveis depois contam.
+   * Targeting policy: the first VISIBLE match, not the first in the DOM.
+   * Text selectors (:has-text) match hidden items (closed menus, spotlight,
+   * dialogs) that come earlier in the DOM — with plain .first(), the "right
+   * and visible" target lost to an invisible ghost (seen in dogfooding).
+   * The filter is dynamic: elements that become visible later count.
    */
   private visible(selector: string) {
     return this.page.locator(selector).filter({ visible: true }).first();

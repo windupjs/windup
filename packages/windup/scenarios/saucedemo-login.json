@@ -1,5 +1,5 @@
 {
   "scenario_id": "saucedemo-login",
   "start_url": "https://www.saucedemo.com",
-  "task": "Fazer login no saucedemo.com com o usuário standard_user e senha secret_sauce e verificar que a lista de produtos aparece."
+  "task": "Log in to saucedemo.com with the user standard_user and password secret_sauce and verify that the product list appears."
 }

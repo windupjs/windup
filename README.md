@@ -78,7 +78,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 |---|---|
 | [`packages/windup/`](packages/windup/) | The product: npm package [`windupjs`](https://www.npmjs.com/package/windupjs) (bin `windup` + programmatic API + vitest adapter) |
 | [`docs/specs/SPEC.md`](docs/specs/SPEC.md) | **Living specification** (English): architecture, data formats, principles, limitations |
-| [`docs/specs/`](docs/specs/) | Historical specs and measured results per delivery tranche (Portuguese) |
+| [`docs/specs/`](docs/specs/) | Historical specs and measured results per delivery tranche |
 | [`docs/spike/`](docs/spike/) | The validation spike that proved the architecture — evidence frozen at tag `spike-validada` |
 | [`spike/`](spike/) | Spike code (frozen; does not evolve) |
 

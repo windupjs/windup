@@ -35,21 +35,21 @@ describe("windup costs (buildCostsReport)", () => {
     await writeFile(path.join(runsDir, "a.json"), run({}));
     await writeFile(path.join(runsDir, "b.json"), run({ started_at: "2026-07-12T11:00:00.000Z", cache: "hit", llm_calls: 0, llm_model: null, tokens: { input: 0, output: 0 } }));
     await writeFile(path.join(runsDir, "c.json"), run({ started_at: "2026-07-10T09:00:00.000Z", scenario_id: "s2", llm_model: "gemini-2.5-flash", llm_calls: 4, tokens: { input: 9000, output: 24000 } }));
-    // run com outro provider (multi-provider): llm_provider gravado
+    // run with another provider (multi-provider): llm_provider recorded
     await writeFile(
       path.join(runsDir, "d.json"),
       run({ started_at: "2026-07-12T12:00:00.000Z", scenario_id: "s3", llm_model: "gpt-5-mini", llm_provider: "openai", llm_calls: 2, tokens: { input: 8000, output: 2000 } }),
     );
-    await writeFile(path.join(runsDir, "bench-x.json"), '{"nao":"conta"}');
+    await writeFile(path.join(runsDir, "bench-x.json"), '{"does":"not-count"}');
     await writeFile(path.join(runsDir, "quebrado.json"), "{corrompido");
   });
 
-  it("agrega totais, replays gratuitos e quebra por modelo/cenário", async () => {
+  it("aggregates totals, free replays and the breakdown by model/scenario", async () => {
     const r = await buildCostsReport();
     expect(r.runs).toBe(4);
     expect(r.llm_calls).toBe(7);
     expect(r.free_replays).toBe(1);
-    // custo recomputado com a tabela por modelo:
+    // cost recomputed with the per-model table:
     // lite: 4000*0.25/1M + 1000*1.5/1M = 0.0025 · flash: 9000*0.3/1M + 24000*2.5/1M = 0.0627
     // gpt-5-mini: 8000*0.25/1M + 2000*2/1M = 0.006
     expect(r.est_cost_usd).toBeCloseTo(0.0025 + 0.0627 + 0.006, 4);
@@ -59,16 +59,16 @@ describe("windup costs (buildCostsReport)", () => {
     expect(r.by_scenario.s2.llm_calls).toBe(4);
   });
 
-  it("quebra por provider — registros antigos sem llm_provider são inferidos pelo modelo", async () => {
+  it("breakdown by provider — old records without llm_provider are inferred from the model", async () => {
     const r = await buildCostsReport();
-    // gemini-* (sem llm_provider gravado) → google; gpt-5-mini gravado como openai
+    // gemini-* (no llm_provider recorded) → google; gpt-5-mini recorded as openai
     expect(r.by_provider.google.calls).toBe(5);
     expect(r.by_provider.google.est_cost_usd).toBeCloseTo(0.0025 + 0.0627, 4);
     expect(r.by_provider.openai.calls).toBe(2);
     expect(r.by_provider.openai.est_cost_usd).toBeCloseTo(0.006, 4);
   });
 
-  it("ordena os últimos runs do mais recente para o mais antigo e respeita --last", async () => {
+  it("orders the last runs from newest to oldest and respects --last", async () => {
     const r = await buildCostsReport({ last: 2 });
     expect(r.last_runs).toHaveLength(2);
     expect(r.last_runs[0].scenario).toBe("s3");
@@ -77,8 +77,8 @@ describe("windup costs (buildCostsReport)", () => {
     expect(r.last_runs[1].est_cost_usd).toBe(0);
   });
 
-  it("--days filtra por janela de tempo", async () => {
-    // c.json é de 2026-07-10; com days=1 a partir de "agora" (>= 12/07) ele sai
+  it("--days filters by time window", async () => {
+    // c.json is from 2026-07-10; with days=1 counted from "now" (>= 07/12) it drops out
     const r = await buildCostsReport({ days: 1 });
     expect(r.by_scenario.s2).toBeUndefined();
   });
