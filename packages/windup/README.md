@@ -43,6 +43,19 @@ import { run } from "windupjs";
 const result = await run("checkout");   // RunMetrics: result, llm_calls, custo, ações
 ```
 
+## CI/CD
+
+```bash
+# roda todos os cenários e emite JUnit XML (GitHub/GitLab/Jenkins entendem nativamente)
+npx windup run --all --reporter junit --report-file reports/windup.xml
+
+# a URL do ambiente NUNCA precisa estar no cenário: sobrescreva por flag ou env
+npx windup run --all --base-url https://staging.suaapp.com --reporter junit
+WINDUP_BASE_URL=http://localhost:8080 npx windup run checkout
+```
+
+O cache de planos é **portável entre ambientes**: a identidade é o *path* do start URL, não host/porta — o plano gerado no dev replaya no staging/CI sem nova chamada de LLM. Exit code ≠ 0 quando qualquer cenário falha. `--reporter json` para consumo programático; `windup costs --json` para rastrear gasto de IA no pipeline.
+
 ## Integração com vitest/jest
 
 ```ts

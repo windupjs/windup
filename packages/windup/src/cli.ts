@@ -40,27 +40,69 @@ function printRun(metrics: RunMetrics): void {
 }
 
 program
-  .command("run <scenario>")
-  .description("Run a scenario (replays from cache when available, plans via LLM otherwise)")
+  .command("run [scenario]")
+  .description("Run one scenario, or every scenario with --all (replays from cache; plans via LLM on miss)")
+  .option("--all", "run every scenario in the scenarios directory (CI mode)")
   .option("--no-cache", "bypass the trajectory cache (always plan; nothing is cached)")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")
   .option("--repeat <n>", "run N times in sequence", "1")
   .option("--headed", "show the browser window (headless off)")
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
-  .action(async (scenarioId: string, opts: { cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string }) => {
+  .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
+  .option("--reporter <format>", "write a report: junit | json")
+  .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
-    const scenario = await loadScenario(scenarioId);
+    if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
+    if (opts.reporter && !["junit", "json"].includes(opts.reporter)) {
+      console.error(`unknown reporter "${opts.reporter}" — use junit or json`);
+      process.exitCode = 2;
+      return;
+    }
+
+    let ids: string[];
+    if (opts.all) {
+      const { readdir } = await import("node:fs/promises");
+      const { getContext } = await import("./context.js");
+      ids = (await readdir(getContext().paths.scenariosDir))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => f.replace(/\.json$/, ""))
+        .sort();
+      if (ids.length === 0) {
+        console.error("no scenarios found — write one first (npx windup init creates an example)");
+        process.exitCode = 2;
+        return;
+      }
+    } else if (scenarioId) {
+      ids = [scenarioId];
+    } else {
+      console.error("pass a scenario id or --all");
+      process.exitCode = 2;
+      return;
+    }
+
     const planner = new GeminiPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
+    const results = [];
     let failures = 0;
-    for (let i = 1; i <= repeat; i++) {
-      if (repeat > 1) console.log(`run ${i}/${repeat}`);
-      const metrics = await runScenario(scenario, planner, { useCache: opts.cache });
-      printRun(metrics);
-      if (metrics.result !== "passed") failures += 1;
+    for (const id of ids) {
+      const scenario = await loadScenario(id);
+      for (let i = 1; i <= repeat; i++) {
+        if (repeat > 1) console.log(`run ${i}/${repeat}`);
+        const metrics = await runScenario(scenario, planner, { useCache: opts.cache });
+        printRun(metrics);
+        results.push(metrics);
+        if (metrics.result !== "passed") failures += 1;
+      }
     }
-    if (repeat > 1) console.log(`${repeat - failures}/${repeat} runs passed`);
+    if (results.length > 1) console.log(`${results.length - failures}/${results.length} runs passed`);
+
+    if (opts.reporter) {
+      const { writeReport } = await import("./reporters.js");
+      const file = await writeReport(results, opts.reporter as "junit" | "json", opts.reportFile);
+      console.log(`report (${opts.reporter}): ${file}`);
+    }
     process.exitCode = failures === 0 ? 0 : 1;
   });
 

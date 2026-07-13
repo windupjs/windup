@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 import type { CacheEntry, Plan, Scenario } from "./types.js";
 import { getContext } from "./context.js";
+import { startPath } from "./start-url.js";
 
 /** Diretório do cache de trajetórias, resolvido pelo contexto ativo. */
 export function cacheDir(): string {
@@ -23,12 +24,14 @@ function entryPath(scenarioId: string): string {
 export async function getCached(scenario: Scenario): Promise<CacheEntry | null> {
   const entry = await readEntry(entryPath(scenario.scenario_id));
   if (!entry) return null;
+  // Identidade do start_url é o PATH: porta/host mudam por ambiente e o
+  // cache viaja junto (entradas antigas com URL absoluta continuam batendo).
   const compatible =
     entry.status === "active" &&
     entry.cache_version === CACHE_VERSION &&
     entry.plan?.plan_version === PLAN_VERSION &&
     entry.key?.scenario_id === scenario.scenario_id &&
-    entry.key?.start_url === scenario.start_url;
+    startPath(entry.key?.start_url ?? "/") === startPath(scenario.start_url ?? "/");
   return compatible ? entry : null;
 }
 
@@ -74,7 +77,8 @@ export async function saveCached(scenario: Scenario, plan: Plan, startSig?: stri
     cache_version: CACHE_VERSION,
     key: {
       scenario_id: scenario.scenario_id,
-      start_url: scenario.start_url,
+      // identidade independente de ambiente
+      start_url: startPath(scenario.start_url ?? "/"),
       ...(startSig ? { start_sig: startSig } : {}),
     },
     plan,

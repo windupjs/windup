@@ -55,7 +55,13 @@ export interface Plan {
 
 export interface Scenario {
   scenario_id: string;
-  start_url: string;
+  /**
+   * URL inicial. Opcional (default "/") e NUNCA precisa ser absoluta: caminhos
+   * resolvem contra a baseUrl efetiva — e --base-url/WINDUP_BASE_URL
+   * sobrescrevem a ORIGEM mesmo de URLs absolutas (porta/host mudam por
+   * ambiente; o teste é o mesmo).
+   */
+  start_url?: string;
   task: string;
   /** Conhecimento site-específico fornecido pelo AUTOR do cenário (doc 07: nada de site hardcoded no motor). */
   hints?: string[];

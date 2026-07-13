@@ -178,7 +178,9 @@ export class GeminiPlanner implements Planner {
 
   async generate(scenario: Scenario, browser: Browser, failureContext?: string): Promise<PlanGeneration> {
     const ai = this.client();
-    await browser.goto(scenario.start_url);
+    // loadScenario resolve o start_url por ambiente; o fallback cobre chamadas diretas da API.
+    const startUrl = scenario.start_url ?? "/";
+    await browser.goto(startUrl);
     // Espera o app renderizar antes do snapshot (SPA: load não basta).
     await waitForAnyInteractive(browser);
     const startSig = await browser.pageSignature();

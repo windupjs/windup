@@ -91,7 +91,9 @@ export async function runScenario(
       // atualizado propaga); a expansão acontece a cada execução.
       let expandedPlan;
       try {
-        expandedPlan = expandPlan(cached.plan, await loadFragments());
+        // O plano cacheado roda no ambiente ATUAL: a origem do start_url é a
+        // resolvida agora (porta/host de hoje), as ações são as de sempre.
+        expandedPlan = expandPlan({ ...cached.plan, start_url: scenario.start_url ?? cached.plan.start_url }, await loadFragments());
       } catch (err) {
         // Fragmento removido/renomeado: plano cacheado ficou órfão →
         // invalida e re-planeja, como numa falha de verificação.
