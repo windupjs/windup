@@ -47,6 +47,7 @@ describe("reporters CI/CD", () => {
         llm_model: "gemini-3.1-flash-lite",
         llm_provider: "google",
         estimated_cost_usd: 0.0019,
+        summary: { text: "Os preços observados foram $29.99 e $9.99.", model: "m", provider: "google", tokens: { input: 1, output: 1 }, est_cost_usd: 0.0005 },
         actions: [
           { id: "a1", duration_ms: 120, verify_ms: 30, status: "passed" },
           { id: "a2", duration_ms: 90, verify_ms: 25, status: "passed" },
@@ -64,6 +65,9 @@ describe("reporters CI/CD", () => {
     expect(html).toContain(">FAIL<");
     expect(html).toContain("google/gemini-3.1-flash-lite");
     expect(html).toContain("2 action(s)");
+    // debrief fechado por padrão: <details> SEM atributo open
+    expect(html).toContain('<details class="ai-summary"><summary>AI debrief</summary>');
+    expect(html).not.toContain('<details class="ai-summary" open');
     expect(html).toContain("&lt;b&gt;#pay&lt;/b&gt;"); // mensagem de falha escapada
     expect(html).not.toContain("<b>#pay</b>");
     expect(html).not.toContain("<script"); // zero JS: abre em qualquer artifact viewer de CI

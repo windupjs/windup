@@ -78,8 +78,10 @@ export function htmlReport(results: RunMetrics[]): string {
     .map((r) => {
       const ok = r.result === "passed";
       const llm = r.llm_model ? `${r.llm_provider ? `${r.llm_provider}/` : ""}${r.llm_model}` : "—";
+      // Fechado por padrão: com muitos casos, parágrafos de prosa dominariam a
+      // tabela — o rótulo indica que existe; um clique expande (<details>, sem JS).
       const summary = r.summary
-        ? `<div class="ai-summary"><span class="ai-label">AI debrief</span>${esc(r.summary.text)}</div>`
+        ? `<details class="ai-summary"><summary>AI debrief</summary><div class="ai-text">${esc(r.summary.text)}</div></details>`
         : "";
       const failure = r.failure
         ? `<div class="failure"><span class="kind">[${esc(r.failure.kind)}]</span> action=${esc(r.failure.action_id ?? "-")}: ${esc(r.failure.message)}</div>`
@@ -140,8 +142,9 @@ td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:no
 .row-failed td { background:color-mix(in srgb, var(--fail-bg) 35%, transparent); }
 .failure { margin-top:6px; font-size:12.5px; color:var(--fail); font-family:ui-monospace,Menlo,monospace; white-space:pre-wrap; }
 .failure .kind { font-weight:700; }
-.ai-summary { margin-top:8px; font:13px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; color:var(--ink); background:color-mix(in srgb, var(--accent) 7%, transparent); border-left:2px solid var(--accent); padding:8px 12px; border-radius:0 3px 3px 0; max-width:72ch; white-space:pre-wrap; }
-.ai-label { display:block; font:600 10px/1 ui-monospace,Menlo,monospace; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); margin-bottom:5px; }
+details.ai-summary { margin-top:6px; }
+details.ai-summary > summary { font:600 10.5px/1.6 ui-monospace,Menlo,monospace; text-transform:uppercase; letter-spacing:.1em; color:var(--accent); cursor:pointer; }
+.ai-text { margin-top:6px; font:13px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; color:var(--ink); background:color-mix(in srgb, var(--accent) 7%, transparent); border-left:2px solid var(--accent); padding:8px 12px; border-radius:0 3px 3px 0; max-width:72ch; white-space:pre-wrap; }
 details { margin-top:6px; font-family:"Avenir Next","Segoe UI",system-ui,sans-serif; }
 summary { cursor:pointer; font-size:12px; color:var(--muted); }
 table.actions { margin-top:6px; font-size:12px; }
