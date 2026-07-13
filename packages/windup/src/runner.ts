@@ -31,6 +31,8 @@ export interface Planner {
 export interface RunOptions {
   /** false = --no-cache: não lê nem grava cache (mede o caminho LLM isoladamente). */
   useCache: boolean;
+  /** true = --summary: 1 chamada extra de LLM ao final relatando o run em prosa (opt-in; replays continuam $0 por padrão). */
+  summary?: boolean;
 }
 
 export class PlanGenerationError extends Error {
@@ -149,8 +151,19 @@ export async function runScenario(
     if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
+    // Duração e custo do TESTE fecham antes do resumo: prosa não é execução.
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
+    if (opts.summary) {
+      try {
+        const { generateRunSummary } = await import("./summary.js");
+        metrics.summary = await generateRunSummary(scenario, metrics, browser);
+        metrics.estimated_cost_usd = Number((metrics.estimated_cost_usd + metrics.summary.est_cost_usd).toFixed(6));
+      } catch (err) {
+        // resumo é acessório: nunca derruba nem altera o resultado do run
+        console.warn(`warning: could not generate the run summary: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     await browser.close();
     await mapStore.save();
     await writeRunMetrics(metrics);

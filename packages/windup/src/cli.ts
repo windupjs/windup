@@ -51,9 +51,10 @@ program
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
   .option("--llm <provider[:model]>", "LLM for planning, e.g. openai, openai:gpt-5-mini, google:gemini-3.1-flash-lite (also: WINDUP_LLM env)")
+  .option("--summary", "after each run, an LLM writes a short debrief: what was done, concrete observed results, difficulties (1 extra LLM call per run)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -93,8 +94,12 @@ program
       const scenario = await loadScenario(id);
       for (let i = 1; i <= repeat; i++) {
         if (repeat > 1) console.log(`run ${i}/${repeat}`);
-        const metrics = await runScenario(scenario, planner, { useCache: opts.cache });
+        const metrics = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary });
         printRun(metrics);
+        if (metrics.summary) {
+          console.log(`      summary (${metrics.summary.provider}/${metrics.summary.model}, $${metrics.summary.est_cost_usd}):`);
+          for (const line of metrics.summary.text.split("\n")) console.log(`      ${line}`);
+        }
         results.push(metrics);
         if (metrics.result !== "passed") failures += 1;
       }

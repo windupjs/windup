@@ -126,6 +126,13 @@ export interface RunMetrics {
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
   /** Plano executado (diagnóstico; ausente se a geração falhou antes de haver plano). */
   plan?: Plan;
+  /**
+   * Resumo pós-execução gerado por LLM (`run --summary`, opt-in): o que o
+   * teste fez, resultados concretos observados e dificuldades. Custo desta
+   * chamada NÃO entra em llm_calls (que mede planejamento), mas soma em
+   * estimated_cost_usd.
+   */
+  summary?: { text: string; model: string; provider: string; tokens: { input: number; output: number }; est_cost_usd: number };
 }
 
 export const DEFAULT_TIMEOUT_MS = 5000;

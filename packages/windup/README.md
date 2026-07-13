@@ -138,7 +138,19 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--reporter junit|json|html` · `--report-file <path>`
+
+### AI debrief (`--summary`)
+
+For humans reading results (not CI), `--summary` adds one LLM call after each run that writes a short debrief: what the test did, the outcome, **concrete values observed on the final page** (prices, messages, product names — quoted literally from the page), and any difficulties (slow steps, re-planning, failures). It prints in the terminal, lands in the run ledger, and shows as a highlighted block in the HTML/JSON reports.
+
+```bash
+npx windup run checkout --summary --reporter html
+# summary: "The test logged in and completed checkout for 3 items; the
+#  confirmation page showed 'Thank you for your order'. Prices observed: ..."
+```
+
+Off by default on purpose — cached replays stay at zero LLM calls and $0. The debrief cost (~$0.0005 on the default model) is tracked separately in the run metrics and included in `estimated_cost_usd`.
 
 ## Configuration (`windup.config.ts`)
 
