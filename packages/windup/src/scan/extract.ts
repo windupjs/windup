@@ -23,8 +23,54 @@ export interface StaticElement {
 
 // Tags cruas + componentes interativos de design systems (shadcn/MUI/Chakra/
 // Ant usam estes NOMES — convenção do ecossistema, não de nenhum site).
-const INTERACTIVE_TAGS =
-  /<(button|input|a|select|textarea|label|Button|IconButton|Input|TextField|Textarea|Select|Combobox|Checkbox|Switch|Radio|Link|NavLink|Label)\b([^>]*?)(?:\/)?>(?:([^<]{0,60}))?/g;
+const TAG_START =
+  /<(button|input|a|select|textarea|label|Button|IconButton|Input|TextField|Textarea|Select|Combobox|Checkbox|Switch|Radio|Link|NavLink|Label)\b/g;
+
+/**
+ * Fim real da tag JSX: um ">" só encerra quando fora de chaves e aspas —
+ * handlers inline (onChange={(e) => ...}) contêm ">" que não terminam a tag.
+ */
+function tagEnd(source: string, from: number): { end: number; selfClosing: boolean } | null {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = from; i < Math.min(source.length, from + 2000); i++) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+    else if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+    else if (ch === ">" && depth <= 0) {
+      return { end: i, selfClosing: source[i - 1] === "/" };
+    }
+  }
+  return null;
+}
+
+/**
+ * Remove blocos {expressão} balanceados — atributos dinâmicos não interessam
+ * ao parser. Literais de string ({"x"}) viram string normal antes do strip.
+ */
+function stripJsxExpressions(text: string): string {
+  const literalized = text.replace(/\{\s*(["'`])([^"'`]*)\1\s*\}/g, '"$2"');
+  let out = "";
+  let depth = 0;
+  for (const ch of literalized) {
+    if (ch === "{") depth++;
+    else if (ch === "}") depth = Math.max(0, depth - 1);
+    else if (depth === 0) out += ch;
+  }
+  return out;
+}
+
+/** Texto-filho só vale se for texto humano, não expressão/código. */
+function cleanText(raw: string | undefined): string | undefined {
+  const text = raw?.trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!text || /[{}<>=]/.test(text)) return undefined;
+  return text;
+}
 
 /** Componente de design system → tag semântica equivalente. */
 const SEMANTIC_TAG: Record<string, string> = {
@@ -44,8 +90,13 @@ function attr(attrs: string, name: string): string | undefined {
 /** Extrai elementos interativos declarados no fonte de um componente. */
 export function extractElements(source: string): StaticElement[] {
   const elements: StaticElement[] = [];
-  for (const match of source.matchAll(INTERACTIVE_TAGS)) {
-    const [, rawTag, attrs, text] = match;
+  for (const match of source.matchAll(TAG_START)) {
+    const rawTag = match[1];
+    const attrsStart = (match.index ?? 0) + match[0].length;
+    const endInfo = tagEnd(source, attrsStart);
+    if (!endInfo) continue;
+    const attrs = stripJsxExpressions(source.slice(attrsStart, endInfo.end));
+    const text = endInfo.selfClosing ? undefined : source.slice(endInfo.end + 1, endInfo.end + 61).split("<")[0];
     const tag = SEMANTIC_TAG[rawTag.toLowerCase()] ?? rawTag.toLowerCase();
     const el: StaticElement = {
       tag,
@@ -54,7 +105,7 @@ export function extractElements(source: string): StaticElement[] {
       dataTest: attr(attrs, "data-test") ?? attr(attrs, "data-testid"),
       type: attr(attrs, "type"),
       ariaLabel: attr(attrs, "aria-label"),
-      label: text?.trim().replace(/\s+/g, " ").slice(0, 40) || attr(attrs, "placeholder"),
+      label: cleanText(text) || attr(attrs, "placeholder"),
       to: attr(attrs, "to") ?? (tag === "a" ? attr(attrs, "href") : undefined),
       htmlFor: attr(attrs, "htmlFor") ?? attr(attrs, "for"),
     };

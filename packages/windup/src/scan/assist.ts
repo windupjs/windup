@@ -154,7 +154,8 @@ export async function runAssist(candidates: AssistCandidate[], caller?: AssistCa
       const parsed = JSON.parse(result.text) as { routes?: Array<{ path?: string; elements?: string[] }> };
       for (const route of parsed.routes ?? []) {
         if (!route.path || !route.path.startsWith("/")) continue;
-        outcome.pages.push({ path: route.path, elements: route.elements ?? [], file: candidate.file });
+        const cleanPath = route.path.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
+        outcome.pages.push({ path: cleanPath, elements: route.elements ?? [], file: candidate.file });
       }
     } catch (err) {
       console.warn(`scan assist: skipping ${candidate.file}: ${err instanceof Error ? err.message : err}`);

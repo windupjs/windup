@@ -221,11 +221,18 @@ export class SiteMapStore {
     return removed;
   }
 
+  /** Já existe conhecimento melhor (execution/static) para esta url? */
+  coveredByBetterSource(urlPattern: string): boolean {
+    return Object.values(this.map.pages).some(
+      (p) => p.url_pattern === urlPattern && (p.source === "execution" || p.source === "static"),
+    );
+  }
+
   /** Nós inferidos por IA, com seus fontes (para invalidação por hash no scan). */
-  llmPages(): Array<{ sig: string; url_pattern: string; files: string[] }> {
+  llmPages(): Array<{ sig: string; url_pattern: string; files: string[]; elements: number }> {
     return Object.entries(this.map.pages)
       .filter(([, p]) => p.source === "llm")
-      .map(([sig, p]) => ({ sig, url_pattern: p.url_pattern, files: p.files ?? [] }));
+      .map(([sig, p]) => ({ sig, url_pattern: p.url_pattern, files: p.files ?? [], elements: p.interactive.length }));
   }
 
   removePage(sig: string): void {

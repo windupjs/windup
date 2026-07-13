@@ -111,8 +111,9 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
       let prunedLlm = 0;
       for (const node of store.llmPages()) {
         const file = node.files[0];
-        let gone = !file;
-        if (file) {
+        // Duplicado de fonte melhor ou vazio: não agrega — sai (migra mapas antigos).
+        let gone = node.elements === 0 || store.coveredByBetterSource(node.url_pattern) || !file;
+        if (!gone && file) {
           try {
             const hash = sha16(await readFile(file, "utf8"));
             if (!store.assistAlreadySeen(file, hash)) gone = true;
@@ -159,6 +160,13 @@ async function runAssistLayer(
 
   const coveredFiles = new Set<string>();
   for (const route of routes) for (const f of sources.get(route) ?? route.files) coveredFiles.add(path.resolve(f));
+  // Arquivo declarador compartilhado (router) nunca é candidato: a IA leria
+  // o router e devolveria as rotas que o static já tem (duplicação inútil).
+  const sharedDeclaring = new Set<string>();
+  const declCount = new Map<string, number>();
+  for (const route of routes) for (const f of route.files) declCount.set(path.resolve(f), (declCount.get(path.resolve(f)) ?? 0) + 1);
+  for (const [f, n] of declCount) if (n > 2) sharedDeclaring.add(f);
+
   const nodesWithoutElements = new Set<string>();
   // (rotas cujo nó ficou sem elementos: os fontes valem uma segunda leitura via LLM)
   for (const route of routes) {
@@ -169,7 +177,12 @@ async function runAssistLayer(
         if (extractElements(await readFile(f, "utf8")).length > 0) { any = true; break; }
       } catch { /* ignore */ }
     }
-    if (!any) for (const f of files) nodesWithoutElements.add(path.resolve(f));
+    if (!any) {
+      for (const f of files) {
+        const abs = path.resolve(f);
+        if (!sharedDeclaring.has(abs)) nodesWithoutElements.add(abs);
+      }
+    }
   }
 
   const files: Array<{ file: string; content: string }> = [];
@@ -184,6 +197,7 @@ async function runAssistLayer(
   const hashes = new Map<string, string>();
   for (const { file, content } of files) hashes.set(file, sha16(content));
   const candidates = allCandidates.filter((c) => {
+    if (sharedDeclaring.has(c.file)) return false;
     const hash = hashes.get(c.file);
     return !hash || !store.assistAlreadySeen(c.file, hash);
   });
@@ -196,6 +210,11 @@ async function runAssistLayer(
     const hash = hashes.get(c.file);
     if (hash) store.recordAssistSeen(c.file, hash);
   }
+  // Nó de IA só entra quando AGREGA: tem elementos e nenhuma fonte melhor
+  // (execution/static) cobre a mesma url.
+  outcome.pages = outcome.pages.filter(
+    (page) => page.elements.length > 0 && !store.coveredByBetterSource(`**${page.path}`),
+  );
   for (const page of outcome.pages) {
     store.upsertLlmPage(page.path, page.elements.slice(0, 150), page.file);
   }
