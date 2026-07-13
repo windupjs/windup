@@ -45,7 +45,11 @@ program
   .option("--no-cache", "bypass the trajectory cache (always plan; nothing is cached)")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")
   .option("--repeat <n>", "run N times in sequence", "1")
-  .action(async (scenarioId: string, opts: { cache: boolean; map: boolean; repeat: string }) => {
+  .option("--headed", "show the browser window (headless off)")
+  .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
+  .action(async (scenarioId: string, opts: { cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string }) => {
+    if (opts.headed) process.env.HEADLESS = "false";
+    if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     const scenario = await loadScenario(scenarioId);
     const planner = new GeminiPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
