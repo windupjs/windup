@@ -23,7 +23,7 @@ Cenário = JSON com a tarefa em linguagem natural:
 }
 ```
 
-Requisitos: Node ≥ 20 e `GOOGLE_GENERATIVE_AI_API_KEY` num `.env` (só para planejar; replays não usam LLM). O Chromium é baixado automaticamente no install (uma vez, cache da máquina); para usar um Chrome existente aponte `CHROME_PATH`, ou pule o download com `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
+Requisitos: Node ≥ 20 e `GOOGLE_GENERATIVE_AI_API_KEY` num `.env.local` ou `.env` (`.env.local` tem precedência — use-o quando o `.env` do projeto for versionado; só para planejar, replays não usam LLM). O Chromium é baixado automaticamente no install (uma vez, cache da máquina); para usar um Chrome existente aponte `CHROME_PATH`, ou pule o download com `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
 
 ## Comandos
 

@@ -1,3 +1,4 @@
+import "../env.js";
 import { readdir } from "node:fs/promises";
 import { afterAll, describe, it } from "vitest";
 import { shutdownBrowserEngine } from "../browser.js";

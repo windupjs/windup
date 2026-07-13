@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import "dotenv/config";
+import "./env.js";
 import { Command } from "commander";
 import { clearCache } from "./cache.js";
 import { GeminiPlanner } from "./planner.js";

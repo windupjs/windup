@@ -63,7 +63,7 @@ export default defineConfig({
   outro(`Created windup.config.ts, ${scenariosDir}/example.json and .windup/ (gitignored).
 
   Next steps:
-    1. Add GOOGLE_GENERATIVE_AI_API_KEY to your .env
+    1. Add GOOGLE_GENERATIVE_AI_API_KEY to your .env.local (or .env)
     2. npx windup scan          index your project's routes into the site map
     3. Write a scenario in ${scenariosDir}/ and run: npx windup run <scenario-id>`);
 }
