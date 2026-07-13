@@ -30,6 +30,48 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 - **Fragments** — proven action blocks (e.g. login) that the planner composes via `{ "type": "use" }` instead of regenerating.
 - **Zero hardcoded site knowledge** — the engine knows frameworks and the web, never *your* site. All site knowledge arrives as input (scenarios, config, manifest) or is discovered at runtime.
 
+## A five-minute tour
+
+The full workflow on a fresh project, with what you should expect to see:
+
+```bash
+# 1. Install — Chromium is provisioned automatically
+npm i -D windupjs
+
+# 2. Initialize — 3 questions (base URL, model, scenarios dir)
+npx windup init
+#    → windup.config.ts + e2e/scenarios/ + .windup/ (gitignored)
+
+# 3. Index your app from source — before anything ever runs
+npx windup scan
+#    scan complete (full): framework=react-router routes=106 elements=1125
+#    The site map now knows your real routes and selectors; the planner
+#    will use them instead of guessing. Re-run after big changes
+#    (windup scan --update re-indexes only files changed since, via git).
+
+# 4. Register test credentials once — values never touch git
+npx windup secret set admin        # hidden prompts → .env.local + mapping
+
+# 5. Author a scenario from a rough instruction
+npx windup new "log in with the admin account and create an invoice for ACME"
+#    → e2e/scenarios/create-invoice-acme.json — precise task grounded in
+#      your real screens, account referenced by name, final verification
+
+# 6. First run — the LLM plans once (~3s, ~$0.002)
+npx windup run create-invoice-acme
+#    PASS  create-invoice-acme  cache=miss llm_calls=1 ... cost=$0.0024
+
+# 7. Every run after — deterministic replay, zero LLM
+npx windup run create-invoice-acme
+#    PASS  create-invoice-acme  cache=hit llm_calls=0 total=600ms cost=$0
+
+# 8. Read results like a human, ship reports to CI
+npx windup run --all --summary --reporter html
+npx windup costs                   # AI spend: totals, per provider/model
+```
+
+If a run fails after an app change, the cached plan is invalidated and re-planned automatically on the next run — you edit scenarios, not selectors.
+
 ## Scenarios
 
 A scenario is a JSON file in your scenarios directory (default `e2e/scenarios/`):
@@ -209,6 +251,25 @@ const result = await run("checkout");   // RunMetrics: result, llm_calls, cost, 
 import { windupSuite } from "windupjs/vitest";
 await windupSuite();                    // one native test per scenario
 ```
+
+## Engineering notes — the techniques behind Windup
+
+A summary of the approaches that make natural-language tests deterministic and cheap:
+
+- **Plan once, replay free.** The LLM is used exactly once per scenario (plus automatic re-planning when the app changes). Its output is a schema-validated **JSON action plan — data, not code**: no generated scripts, no conditionals, no runtime improvisation. Replays execute the cached plan with zero model calls.
+- **Deterministic execution.** Plans run on Playwright with native actionability checks and trusted input events. Every action carries an explicit postcondition (`expect`: element visible / URL glob / input value) verified **LLM-free** — verification costs a DOM query, not tokens.
+- **Self-healing cache.** Trajectories are cached keyed by scenario + start-URL *path* (portable across dev/staging/CI hosts). A failed verification invalidates the plan, preserves the stale entry as evidence, and triggers a re-plan with the failure as context.
+- **Structural page signatures.** Pages are identified by a SHA-256 of their normalized interactive elements — no text, no data — so environment noise doesn't split identities, and start-page drift is detected (leniently) on replay.
+- **Layered site knowledge.** A site-map graph feeds the planner real routes and selectors, built from three sources with strict precedence — runtime observation (every execution is also collection) > static source scan (Next.js / react-router indexers, design-system-aware JSX parsing) > capped LLM-assist for files static analysis can't resolve. Knowledge is cache, not truth: anything stale degrades to runtime discovery.
+- **Prompt budget discipline.** The planning prompt stays ≈ constant size (~32k chars): page tree, map slice, fragments catalog, and project manifest each have hard char budgets. Long prompts measurably degrade small models — budgets are a correctness feature, not an optimization.
+- **Mechanical normalization over prompt hope.** Model output is sanitized deterministically: empty fields dropped, ids renumbered, `wait_for`⇄`expect` normalized, fragment-echo actions deduped, credentials scrubbed from authored scenarios. Cross-provider A/B testing showed prompt instructions alone don't hold across models — code has the final word.
+- **Two-tier retry.** Semantic failures (invalid plan) get one short retry carrying the validation errors; transient API pathologies (token-loop degeneration, network) get re-calls with varied seeds. Full-prompt retries are avoided — they reliably re-trigger degeneration.
+- **Composable building blocks.** Fragments are curated, committed sub-trajectories (e.g. login) that plans reference by id — updated once, propagated everywhere, expanded at run time. The project manifest injects team knowledge (conventions, accounts, vocabulary) into every plan.
+- **Secrets by reference.** Credential values live in `.env.local`/CI secrets; committed files carry only account → ENV-name mappings. Plans use `value_ref`, resolved at execution time — secrets never reach the LLM, the cache, or git.
+- **Provider-agnostic LLM boundary.** One interface, Google and OpenAI implementations (the OpenAI client is plain REST — no SDK weight), selectable per run. Swapping the browser engine (Stagehand → Playwright) and adding a provider were each a one-file change — the boundaries are the architecture.
+- **Cost you can audit.** Every LLM touchpoint has an explicit cap and lands in a per-run ledger with tokens, model and provider; `windup costs` recomputes from a dated price table, so history stays accurate as prices move.
+
+The full living specification ships in the repository at `docs/specs/SPEC.md`.
 
 ## What lives where
 
