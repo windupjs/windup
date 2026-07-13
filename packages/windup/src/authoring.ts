@@ -1,4 +1,4 @@
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { getContext } from "./context.js";
@@ -48,24 +48,37 @@ const AUTHORING_SCHEMA = {
     start_url: { type: "string" },
     task: { type: "string" },
     hints: { type: "array", items: { type: "string" } },
+    depends_on: { type: "array", items: { type: "string" } },
   },
 };
 
 /** Orçamentos na mesma disciplina do planejador: prompt de tamanho ≈ constante. */
 const MAP_BUDGET_CHARS = 8_000;
 
+export interface ExistingScenario {
+  id: string;
+  task?: string;
+}
+
 export function buildAuthoringPrompt(
   instruction: string,
   siteKnowledge: string,
   manifestSection: string,
-  existingIds: string[],
+  existing: ExistingScenario[],
   registeredAccount?: string,
 ): string {
   const knowledgeSection = siteKnowledge
     ? `\n# Conhecimento do site (rotas e elementos reais, vindos de scan e execuções)\nUse APENAS telas/rotas/elementos listados aqui ao detalhar o fluxo; NÃO invente telas que não constam. Se o conhecimento não cobrir parte do fluxo, descreva essa parte em termos do objetivo (sem inventar seletores).\n\n${siteKnowledge}\n`
     : "\n# Conhecimento do site\n(nenhum ainda — descreva o fluxo em termos do objetivo, sem inventar telas ou seletores; sugira ao autor rodar `windup scan`)\n";
-  const existingSection = existingIds.length
-    ? `\n# Cenários já existentes (o scenario_id novo NÃO pode repetir estes)\n${existingIds.join(", ")}\n`
+  const existingSection = existing.length
+    ? `\n# Cenários já existentes (o scenario_id novo NÃO pode repetir estes ids)\n${existing
+        .slice(0, 20)
+        .map((e) => `- ${e.id}${e.task ? `: ${e.task.slice(0, 140)}` : ""}`)
+        .join("\n")}\n
+Se o fluxo da instrução PRESSUPÕE um estado que um destes cenários já produz \
+(ex.: estar logado → cenário de login; empresa selecionada → cenário que seleciona), \
+devolva também "depends_on": ["<id>"] com esses ids — APENAS ids desta lista, nunca \
+inventados — e escreva a task a partir do ESTADO FINAL deles, sem repetir seus passos.\n`
     : "";
   const credsSection = registeredAccount
     ? `\n# Credenciais registradas\nAs credenciais literais da instrução foram registradas com segurança como a conta "${registeredAccount}" do Manifesto. Na task, refira-se a elas APENAS como "a conta ${registeredAccount}" — NUNCA escreva o e-mail/usuário/senha literais na task nem nas hints.\n`
@@ -121,6 +134,7 @@ function validate(data: unknown, instruction = "", registeredAccount?: string): 
     if (!s.task || typeof s.task !== "string" || s.task.trim().length < 20) errors.push("task ausente ou curta demais (reescreva o fluxo completo, terminando com o que verificar)");
     if (!s.start_url || typeof s.start_url !== "string") errors.push("start_url ausente (use um path como \"/\")");
     if (s.hints !== undefined && (!Array.isArray(s.hints) || s.hints.some((h) => typeof h !== "string"))) errors.push("hints deve ser uma lista de strings");
+    if (s.depends_on !== undefined && (!Array.isArray(s.depends_on) || s.depends_on.some((d) => typeof d !== "string"))) errors.push("depends_on deve ser uma lista de ids de cenários");
     if (s.task && registeredAccount) {
       const haystack = `${s.task} ${(s.hints ?? []).join(" ")}`;
       for (const cred of literalCredentials(instruction)) {
@@ -166,22 +180,29 @@ export async function generateScenario(
     registeredAccount = account;
   }
 
-  let existingIds: string[] = [];
+  const existing: ExistingScenario[] = [];
   try {
-    existingIds = (await readdir(ctx.paths.scenariosDir))
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.replace(/\.json$/, ""))
-      .sort();
+    const files = (await readdir(ctx.paths.scenariosDir)).filter((f) => f.endsWith(".json")).sort();
+    for (const file of files) {
+      const id = file.replace(/\.json$/, "");
+      try {
+        const parsed = JSON.parse(await readFile(path.join(ctx.paths.scenariosDir, file), "utf8")) as { task?: string };
+        existing.push({ id, task: parsed.task });
+      } catch {
+        existing.push({ id });
+      }
+    }
   } catch {
     // scenariosDir ainda não existe
   }
+  const existingIds = existing.map((e) => e.id);
 
   const tokens = { input: 0, output: 0 };
   let llmCalls = 0;
   const dependsSection = opts.dependsOn?.length
     ? `\n# Dependências declaradas\nEste cenário roda APÓS os cenários ${opts.dependsOn.map((d) => `"${d}"`).join(", ")} (na mesma sessão). Descreva o fluxo a partir do ESTADO FINAL deles (ex.: usuário já autenticado) — NÃO repita os passos que as dependências já cobrem.\n`
     : "";
-  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existingIds, registeredAccount) + dependsSection;
+  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existing, registeredAccount) + dependsSection;
   let scenario: AuthoredScenario | null = null;
   let lastErrors: string[] = [];
 
@@ -230,8 +251,15 @@ export async function generateScenario(
   // id em kebab-case, start_url como path, unicidade garantida por sufixo.
   scenario.scenario_id = kebab(opts.id ?? scenario.scenario_id) || "novo-cenario";
   scenario.start_url = startPath(scenario.start_url ?? "/");
-  if (opts.dependsOn?.length) {
-    (scenario as AuthoredScenario & { depends_on?: string[] }).depends_on = opts.dependsOn;
+  // Dependências: a flag --depends-on vence; sem ela, a SUGESTÃO do modelo
+  // vale após filtro mecânico — só ids que existem de verdade (nunca inventados).
+  const suggested = (scenario.depends_on ?? []).filter((d) => existingIds.includes(d));
+  const dropped = (scenario.depends_on ?? []).filter((d) => !existingIds.includes(d));
+  if (dropped.length) console.warn(`warning: suggested depends_on ignored (unknown scenario ids): ${dropped.join(", ")}`);
+  const dependsOn = opts.dependsOn?.length ? opts.dependsOn : suggested;
+  delete scenario.depends_on;
+  if (dependsOn.length) {
+    scenario.depends_on = dependsOn;
     // dependente sem necessidade de goto: continua da página final da dependência
     delete (scenario as Partial<AuthoredScenario>).start_url;
   }

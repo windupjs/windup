@@ -168,8 +168,34 @@ describe("windup new (autoria assistida de cenários)", () => {
     expect(result.scenario.task).toContain("a conta kallef");
   });
 
-  it("buildAuthoringPrompt lista cenários existentes para evitar colisão de id", () => {
-    const prompt = buildAuthoringPrompt("criar fatura", "", "", ["login", "checkout"]);
-    expect(prompt).toContain("login, checkout");
+  it("buildAuthoringPrompt lista cenários existentes (id + resumo) e a regra de sugerir depends_on", () => {
+    const prompt = buildAuthoringPrompt("criar fatura", "", "", [
+      { id: "login", task: "Fazer login com a conta admin e verificar o dashboard." },
+      { id: "checkout" },
+    ]);
+    expect(prompt).toContain("- login: Fazer login com a conta admin");
+    expect(prompt).toContain("- checkout");
+    expect(prompt).toContain('"depends_on"');
+    expect(prompt).toContain("APENAS ids desta lista");
+  });
+
+  it("sugestão de depends_on do modelo é aceita quando o id existe (start_url sai); id inventado é filtrado", async () => {
+    const dir = getContext().paths.scenariosDir;
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "login.json"), JSON.stringify({ scenario_id: "login", start_url: "/login", task: "Fazer login com a conta admin e verificar o dashboard." }));
+
+    const comDep = JSON.stringify({
+      scenario_id: "criar-fatura",
+      start_url: "/faturas",
+      depends_on: ["login", "cenario-inventado"],
+      task: "Já autenticado, abra o menu Faturas, crie uma fatura para a ACME e verifique que ela aparece na lista.",
+    });
+    const result = await generateScenario("estando logado, criar uma fatura para a ACME", {}, fakeClient([comDep]));
+
+    expect(result.scenario.depends_on).toEqual(["login"]); // inventado filtrado mecanicamente
+    expect(result.scenario.start_url).toBeUndefined(); // continua da página final do login
+    const written = JSON.parse(await readFile(result.file, "utf8"));
+    expect(written.depends_on).toEqual(["login"]);
+    expect(written.start_url).toBeUndefined();
   });
 });

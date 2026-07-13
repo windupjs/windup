@@ -48,6 +48,17 @@ class PlaywrightSession implements Browser {
     private readonly page: Page,
   ) {}
 
+  /**
+   * Política de alvo: o primeiro match VISÍVEL, não o primeiro do DOM.
+   * Seletores textuais (:has-text) casam com itens ocultos (menus fechados,
+   * spotlight, dialogs) que vêm antes no DOM — com .first() puro, o alvo
+   * "certo e visível" perdia para um fantasma invisível (visto no dogfood).
+   * O filtro é dinâmico: elementos que ficam visíveis depois contam.
+   */
+  private visible(selector: string) {
+    return this.page.locator(selector).filter({ visible: true }).first();
+  }
+
   async goto(url: string): Promise<void> {
     await this.page.goto(url, { waitUntil: "load" });
   }
@@ -55,16 +66,16 @@ class PlaywrightSession implements Browser {
   async click(selector: string): Promise<void> {
     // Native actionability (visible/stable/enabled/receives-events) with
     // trusted input events — settles doc 07-A2 for good.
-    await this.page.locator(selector).first().click({ timeout: ACTION_TIMEOUT_MS() });
+    await this.visible(selector).click({ timeout: ACTION_TIMEOUT_MS() });
   }
 
   async fill(selector: string, value: string): Promise<void> {
-    await this.page.locator(selector).first().fill(value, { timeout: ACTION_TIMEOUT_MS() });
+    await this.visible(selector).fill(value, { timeout: ACTION_TIMEOUT_MS() });
   }
 
   async isVisible(selector: string): Promise<boolean> {
     try {
-      return await this.page.locator(selector).first().isVisible();
+      return await this.visible(selector).isVisible();
     } catch {
       return false;
     }
@@ -72,7 +83,7 @@ class PlaywrightSession implements Browser {
 
   async waitForVisible(selector: string, timeoutMs: number): Promise<boolean> {
     try {
-      await this.page.locator(selector).first().waitFor({ state: "visible", timeout: timeoutMs });
+      await this.visible(selector).waitFor({ state: "visible", timeout: timeoutMs });
       return true;
     } catch {
       return false;
@@ -80,7 +91,7 @@ class PlaywrightSession implements Browser {
   }
 
   async inputValue(selector: string): Promise<string> {
-    return this.page.locator(selector).first().inputValue({ timeout: ACTION_TIMEOUT_MS() });
+    return this.visible(selector).inputValue({ timeout: ACTION_TIMEOUT_MS() });
   }
 
   url(): string {

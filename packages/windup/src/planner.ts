@@ -44,7 +44,7 @@ export function buildManifestSection(): string {
   return `\n# Manifesto do projeto (fornecido pelo time — confie nele)\n${parts.join("\n\n").slice(0, MANIFEST_MAX_CHARS)}\n`;
 }
 
-function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string): string {
+function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string, continuesFromDependency = false): string {
   // Princípio do doc 07: ZERO conhecimento de site hardcoded no prompt.
   // Conhecimento site-específico só entra por hints do autor, mapa do site
   // (E2) ou manifesto do projeto (E4) — nunca por código nosso.
@@ -77,9 +77,12 @@ sem nenhuma inteligência em tempo de execução — os seletores precisam estar
 # Tarefa
 ${scenario.task}
 
-# URL inicial
+${continuesFromDependency
+    ? `# Ponto de partida
+Você JÁ ESTÁ DENTRO do app, na página mostrada abaixo (estado final das dependências do cenário — ex.: já autenticado). NÃO inclua goto inicial. Para chegar a outras telas, NAVEGUE CLICANDO nos links e menus visíveis (ex.: a[href='/rota']) — NUNCA use ações goto: recarregar a página pode perder o estado da sessão.`
+    : `# URL inicial
 ${scenario.start_url}
-(o executor já navega para essa URL antes da primeira ação; não inclua um goto para ela)
+(o executor já navega para essa URL antes da primeira ação; não inclua um goto para ela)`}
 
 # Contexto da página inicial (árvore de acessibilidade)
 ${pageTree}
@@ -189,7 +192,7 @@ export class LlmPlanner implements Planner {
     const tokens = { input: 0, output: 0 };
     let llmCalls = 0;
     let lastErrors: string[] = [];
-    let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, fragmentsCatalog, failureContext);
+    let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, fragmentsCatalog, failureContext, opts.skipGoto === true);
     const promptChars = prompt.length;
 
     // Dois níveis de retry, de natureza diferente:
@@ -346,6 +349,8 @@ export function normalizeActions(data: unknown): unknown {
       case "goto":
         delete action.value;
         delete action.value_ref;
+        delete action.use;
+        delete action.target;
         break;
       case "use":
         delete action.value;

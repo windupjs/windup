@@ -207,6 +207,13 @@ export async function runScenario(
     if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
+    if (metrics.result === "failed" && metrics.failure) {
+      try {
+        metrics.failure_snapshot = (await browser.snapshotTree()).slice(0, 6000);
+      } catch {
+        // browser pode ter morrido; snapshot é diagnóstico, nunca bloqueia
+      }
+    }
     // Duração e custo do TESTE fecham antes do resumo: prosa não é execução.
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
@@ -347,9 +354,12 @@ async function replanDependency(
   const generated = await generateAndExecute(dep, planner, browser, metrics, collector, failureContext);
   const llmCalls = metrics.llm_calls - callsBefore;
   const failure = metrics.failure ? { action_id: metrics.failure.action_id, message: metrics.failure.message } : undefined;
-  // rastro parcial da dependência não pertence ao cenário principal
+  // rastro parcial da dependência não pertence ao cenário principal —
+  // inclusive o result: sem este reset, dependência re-planejada com sucesso
+  // + cenário falhando depois virava PASS falso (visto no dogfood).
   metrics.failure = null;
   metrics.actions = [];
+  metrics.result = "failed";
   if (generated.ok) {
     if (useCache) await saveCached(dep, generated.plan!, generated.start_sig);
     return { ok: true, cache, llm_calls: llmCalls };

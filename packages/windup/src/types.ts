@@ -140,6 +140,8 @@ export interface RunMetrics {
    * estimated_cost_usd.
    */
   summary?: { text: string; model: string; provider: string; tokens: { input: number; output: number }; est_cost_usd: number };
+  /** Snapshot (árvore a11y) da página no momento da falha — diagnóstico no ledger; ausente em runs verdes. */
+  failure_snapshot?: string;
   /** Dependências executadas antes deste cenário (depends_on), na ordem. */
   dependencies?: Array<{ scenario_id: string; cache: CacheOutcome; llm_calls: number; result: "passed" | "failed"; duration_ms: number }>;
 }

@@ -109,7 +109,7 @@ Flows rarely start from zero — creating a bank account requires being logged i
 - Each dependency keeps its own self-healing: if its cached plan breaks, it re-plans and re-caches — dependents benefit automatically.
 - Editing a scenario's `task` now invalidates its cached plan (a rewritten test is a different test).
 
-`windup new "..." --depends-on login` authors a dependent scenario directly — the task is written from the dependency's final state, without repeating its steps.
+`windup new` handles dependencies both ways: `--depends-on login` declares them explicitly, and **the author LLM also suggests them on its own** — it sees every existing scenario (id + task) and, when the instruction presupposes a state one of them produces ("already logged in…"), emits `depends_on` automatically (mechanically filtered against real scenario ids — never invented). Either way the task is written from the dependency's final state, without repeating its steps.
 
 ### Authoring with `windup new`
 
