@@ -29,6 +29,8 @@ export interface AuthoredScenario {
 export interface AuthoringResult {
   file: string;
   scenario: AuthoredScenario;
+  /** Conta registrada automaticamente a partir de credenciais literais da instrução. */
+  registered_account?: string;
   llm_calls: number;
   tokens: { input: number; output: number };
   model: string;
@@ -55,6 +57,7 @@ export function buildAuthoringPrompt(
   siteKnowledge: string,
   manifestSection: string,
   existingIds: string[],
+  registeredAccount?: string,
 ): string {
   const knowledgeSection = siteKnowledge
     ? `\n# Conhecimento do site (rotas e elementos reais, vindos de scan e execuções)\nUse APENAS telas/rotas/elementos listados aqui ao detalhar o fluxo; NÃO invente telas que não constam. Se o conhecimento não cobrir parte do fluxo, descreva essa parte em termos do objetivo (sem inventar seletores).\n\n${siteKnowledge}\n`
@@ -62,19 +65,21 @@ export function buildAuthoringPrompt(
   const existingSection = existingIds.length
     ? `\n# Cenários já existentes (o scenario_id novo NÃO pode repetir estes)\n${existingIds.join(", ")}\n`
     : "";
+  const credsSection = registeredAccount
+    ? `\n# Credenciais registradas\nAs credenciais literais da instrução foram registradas com segurança como a conta "${registeredAccount}" do Manifesto. Na task, refira-se a elas APENAS como "a conta ${registeredAccount}" — NUNCA escreva o e-mail/usuário/senha literais na task nem nas hints.\n`
+    : "";
   return `Você é um gestor de testes E2E experiente. Transforme a instrução crua abaixo num cenário de teste bem escrito para o Windup (testes em linguagem natural com execução determinística).
 
 # Instrução crua do autor
 ${instruction}
-${knowledgeSection}${manifestSection}${existingSection}
+${knowledgeSection}${manifestSection}${credsSection}${existingSection}
 # O que devolver (JSON)
 - "scenario_id": kebab-case, curto e descritivo do fluxo (ex.: "criar-fatura").
 - "start_url": path relativo onde o fluxo começa, escolhido EXATAMENTE da lista de rotas conhecidas quando ela existir (nunca invente um path — nem convenções como "/index.html"); "/" na dúvida. Nunca inclua host/porta.
 - "task": a instrução reescrita como um fluxo de usuário claro, específico e executável, em prosa passo a passo:
   - cite telas, menus e botões pelos nomes REAIS do conhecimento do site quando existirem;
   - para preenchimento de formulários, especifique valores fictícios CONCRETOS (nomes, e-mails, quantias);
-  - se a instrução citar uma conta que exista no Manifesto do projeto, refira-se à conta pelo NOME (ex.: "a conta admin") em vez de credenciais literais;
-  - se a instrução trouxer credenciais LITERAIS (usuário/e-mail/senha escritos nela) sem conta correspondente no Manifesto, MANTENHA-AS na task EXATAMENTE como fornecidas — são credenciais de teste e o teste depende delas para executar; NUNCA as omita ou substitua;
+  - se a instrução citar uma conta que exista no Manifesto do projeto (inclusive a conta indicada na seção "Credenciais registradas", se houver), refira-se à conta pelo NOME (ex.: "a conta admin") — NUNCA escreva e-mail/usuário/senha literais na task;
   - a task DEVE terminar dizendo O QUE VERIFICAR: uma condição observável que comprove o sucesso (mensagem exibida, item na lista, URL da tela de destino);
   - escreva a task no MESMO idioma da instrução do autor.
 - "hints": OPCIONAL — no máximo 3 dicas de seletores/telas tiradas do conhecimento do site que ajudem o planejador; omita se não agregar.
@@ -105,7 +110,7 @@ export function literalCredentials(instruction: string): string[] {
   return [...found];
 }
 
-function validate(data: unknown, instruction = ""): { ok: boolean; errors: string[] } {
+function validate(data: unknown, instruction = "", registeredAccount?: string): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
   const s = data as Partial<AuthoredScenario> | null;
   if (!s || typeof s !== "object") errors.push("resposta não é um objeto JSON");
@@ -114,11 +119,11 @@ function validate(data: unknown, instruction = ""): { ok: boolean; errors: strin
     if (!s.task || typeof s.task !== "string" || s.task.trim().length < 20) errors.push("task ausente ou curta demais (reescreva o fluxo completo, terminando com o que verificar)");
     if (!s.start_url || typeof s.start_url !== "string") errors.push("start_url ausente (use um path como \"/\")");
     if (s.hints !== undefined && (!Array.isArray(s.hints) || s.hints.some((h) => typeof h !== "string"))) errors.push("hints deve ser uma lista de strings");
-    if (s.task) {
+    if (s.task && registeredAccount) {
       const haystack = `${s.task} ${(s.hints ?? []).join(" ")}`;
       for (const cred of literalCredentials(instruction)) {
-        if (!haystack.includes(cred)) {
-          errors.push(`a task omitiu a credencial literal "${cred}" fornecida na instrução — credenciais de teste DEVEM permanecer na task exatamente como fornecidas (o executor depende delas)`);
+        if (haystack.includes(cred)) {
+          errors.push(`a task/hints contém a credencial literal "${cred}" — as credenciais foram registradas como a conta "${registeredAccount}"; refira-se a ela pelo nome, nunca pelos valores`);
         }
       }
     }
@@ -138,6 +143,27 @@ export async function generateScenario(
   const siteKnowledge = store.sliceForAuthoring(instruction, MAP_BUDGET_CHARS);
   const knownPaths = store.knownPaths();
 
+  // Segurança por padrão: credenciais literais na instrução NÃO vão para o
+  // cenário (arquivo commitado). Viram uma conta registrada — valores no
+  // .env.local, mapeamento no windup.credentials.json — e a task referencia
+  // a conta; o executor resolve o ENV só em runtime.
+  const creds = literalCredentials(instruction);
+  let registeredAccount: string | undefined;
+  if (creds.length) {
+    const { deriveAccountName, registerCredentials } = await import("./secrets.js");
+    const email = creds.find((c) => c.includes("@"));
+    const password = creds.find((c) => !c.includes("@"));
+    const account = deriveAccountName(email);
+    const existing = ctx.config.context?.credentials?.[account];
+    if (!existing) {
+      registerCredentials(account, {
+        ...(email ? { user: email } : {}),
+        ...(password ? { password } : {}),
+      });
+    }
+    registeredAccount = account;
+  }
+
   let existingIds: string[] = [];
   try {
     existingIds = (await readdir(ctx.paths.scenariosDir))
@@ -150,7 +176,7 @@ export async function generateScenario(
 
   const tokens = { input: 0, output: 0 };
   let llmCalls = 0;
-  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existingIds);
+  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existingIds, registeredAccount);
   let scenario: AuthoredScenario | null = null;
   let lastErrors: string[] = [];
 
@@ -167,8 +193,15 @@ export async function generateScenario(
       lastErrors = ["resposta não era JSON válido"];
     }
     if (parsed) {
-      const check = validate(parsed, instruction);
+      const check = validate(parsed, instruction, registeredAccount);
       if (check.ok) {
+        scenario = parsed as AuthoredScenario;
+        break;
+      }
+      // Vazamento de credencial no ÚLTIMO retry não aborta: a limpeza
+      // mecânica abaixo resolve — o modelo não tem a palavra final sobre
+      // o que vai para um arquivo commitado.
+      if (attempt === 2 && check.errors.every((e) => e.includes("contém a credencial literal"))) {
         scenario = parsed as AuthoredScenario;
         break;
       }
@@ -178,6 +211,14 @@ export async function generateScenario(
   }
   if (!scenario) {
     throw new Error(`could not generate a valid scenario after retry: ${lastErrors.join("; ")}`);
+  }
+
+  // Cinto e suspensório: nada de credencial literal sobrevive no arquivo.
+  if (registeredAccount) {
+    for (const cred of creds) {
+      scenario.task = scenario.task.split(cred).join(`a conta ${registeredAccount}`);
+      scenario.hints = scenario.hints?.map((h) => h.split(cred).join(`a conta ${registeredAccount}`));
+    }
   }
 
   // Normalizações mecânicas (mesma filosofia do sanitize do planejador):
@@ -221,5 +262,5 @@ export async function generateScenario(
   };
   await writeFile(path.join(ctx.paths.runsDir, `authoring-${record.started_at.replace(/[:.]/g, "-")}.json`), JSON.stringify(record, null, 2));
 
-  return { file, scenario, llm_calls: llmCalls, tokens, model: llm.model, provider: llm.provider, est_cost_usd: cost };
+  return { file, scenario, registered_account: registeredAccount, llm_calls: llmCalls, tokens, model: llm.model, provider: llm.provider, est_cost_usd: cost };
 }

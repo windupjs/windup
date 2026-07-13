@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { DEFAULT_CONFIG, loadWindupConfig, type WindupConfig } from "./config.js";
 
 /**
@@ -29,6 +30,19 @@ export function createContext(
 ): WindupContext {
   const dataDir = path.join(root, ".windup");
   const config = opts.config ?? DEFAULT_CONFIG;
+  // windup.credentials.json (mapeamento conta → ENV, commitável e sem valores;
+  // ver secrets.ts) entra no manifesto. A config explícita vence em conflito.
+  try {
+    const file = JSON.parse(readFileSync(path.join(root, "windup.credentials.json"), "utf8")) as {
+      accounts?: Record<string, Record<string, string>>;
+    };
+    if (file.accounts && Object.keys(file.accounts).length) {
+      config.context = config.context ?? {};
+      config.context.credentials = { ...file.accounts, ...config.context.credentials };
+    }
+  } catch {
+    // sem arquivo de credenciais — manifesto segue só com a config
+  }
   return {
     config,
     paths: {

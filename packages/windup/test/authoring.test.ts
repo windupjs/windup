@@ -126,32 +126,46 @@ describe("windup new (autoria assistida de cenários)", () => {
     expect(client.prompts[0]).toContain("windup scan");
   });
 
-  it("credenciais literais da instrução DEVEM sobreviver na task — omissão vira retry", async () => {
+  it("credenciais literais viram conta registrada: .env.local + mapeamento, e a task NÃO contém os valores", async () => {
     expect(literalCredentials("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo"))
       .toEqual(["kallef@orbitaldev.com.br", "ka211189"]);
 
-    const semSenha = JSON.stringify({
+    const seguro = JSON.stringify({
       scenario_id: "saldo-inter",
       start_url: "/login",
-      task: "Acesse a página de login, insira as credenciais do usuário kallef@orbitaldev.com.br, autentique e verifique o saldo do banco Inter na listagem.",
+      task: "Acesse /login, entre com a conta kallef e verifique o saldo do banco Inter na listagem de contas bancárias.",
     });
-    const comSenha = JSON.stringify({
-      scenario_id: "saldo-inter",
-      start_url: "/login",
-      task: "Acesse /login, entre com kallef@orbitaldev.com.br e senha ka211189, e verifique o saldo do banco Inter na listagem de contas bancárias.",
-    });
-    const client = fakeClient([semSenha, comSenha]);
+    const client = fakeClient([seguro]);
     const result = await generateScenario("login com kallef@orbitaldev.com.br e senha ka211189 e conferir o saldo do banco inter", {}, client);
-    expect(result.llm_calls).toBe(2); // 1ª resposta omitiu a senha → retry semântico
-    expect(client.prompts[1]).toContain('omitiu a credencial literal "ka211189"');
-    expect(result.scenario.task).toContain("ka211189");
-    expect(result.scenario.task).toContain("kallef@orbitaldev.com.br");
+
+    expect(result.registered_account).toBe("kallef");
+    expect(client.prompts[0]).toContain('a conta "kallef"');
+    expect(result.scenario.task).not.toContain("ka211189");
+    const written = await readFile(result.file, "utf8");
+    expect(written).not.toContain("ka211189");
+
+    const envLocal = await readFile(path.join(root, ".env.local"), "utf8");
+    expect(envLocal).toContain("WINDUP_KALLEF_USER=kallef@orbitaldev.com.br");
+    expect(envLocal).toContain("WINDUP_KALLEF_PASSWORD=ka211189");
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toContain(".env.local");
+    const mapping = JSON.parse(await readFile(path.join(root, "windup.credentials.json"), "utf8"));
+    expect(mapping.accounts.kallef.password).toBe("ENV:WINDUP_KALLEF_PASSWORD");
+    expect(JSON.stringify(mapping)).not.toContain("ka211189");
   });
 
-  it("prompt de autoria manda preservar credenciais literais quando não há conta no manifesto", async () => {
-    const client = fakeClient([VALID]);
-    await generateScenario("criar fatura", {}, client);
-    expect(client.prompts[0]).toContain("MANTENHA-AS na task EXATAMENTE como fornecidas");
+  it("vazamento de credencial na task vira retry; persistindo, é limpo mecanicamente antes de gravar", async () => {
+    const vazado = JSON.stringify({
+      scenario_id: "saldo",
+      start_url: "/login",
+      task: "Entre com kallef@orbitaldev.com.br e senha ka211189 e verifique o saldo do banco Inter na listagem.",
+    });
+    const client = fakeClient([vazado, vazado]); // vaza nas duas tentativas
+    const result = await generateScenario("login com kallef@orbitaldev.com.br e senha ka211189 e ver o saldo do inter", {}, client);
+    expect(client.prompts[1]).toContain("contém a credencial literal");
+    expect(result.scenario.task).not.toContain("ka211189");
+    expect(result.scenario.task).not.toContain("kallef@orbitaldev.com.br");
+    expect(result.scenario.task).toContain("a conta kallef");
   });
 
   it("buildAuthoringPrompt lista cenários existentes para evitar colisão de id", () => {

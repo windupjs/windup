@@ -131,7 +131,65 @@ program
     console.log(`  task:      ${result.scenario.task}`);
     if (result.scenario.hints?.length) console.log(`  hints:     ${result.scenario.hints.join(" | ")}`);
     console.log("");
+    if (result.registered_account) {
+      console.log(`credentials detected in the instruction — registered as account "${result.registered_account}":`);
+      console.log(`  values   → .env.local (gitignored; set the same variable names as CI secrets)`);
+      console.log(`  mapping  → windup.credentials.json (commit it — contains only ENV names, no secrets)`);
+      console.log("");
+    }
     console.log(`review the file (it is your test — edit freely), then: npx windup run ${result.scenario.scenario_id}`);
+  });
+
+const secret = program.command("secret").description("Manage test credentials — values in .env.local, mapping in windup.credentials.json, never in scenarios or git");
+secret
+  .command("set <account>")
+  .description("Register an account (e.g. windup secret set admin); prompts for hidden values unless flags are given")
+  .option("--user <value>", "username/e-mail (prefer the interactive prompt for secrets)")
+  .option("--password <value>", "password (prefer the interactive prompt: flags leak into shell history)")
+  .action(async (account: string, opts: { user?: string; password?: string }) => {
+    const { registerCredentials } = await import("./secrets.js");
+    let { user, password } = opts;
+    if (!user || !password) {
+      const { text, password: hidden, isCancel } = await import("@clack/prompts");
+      if (!user) {
+        const answer = await text({ message: `user/e-mail for "${account}" (empty to skip)` });
+        if (isCancel(answer)) return;
+        user = (answer as string) || undefined;
+      }
+      if (!password) {
+        const answer = await hidden({ message: `password for "${account}" (hidden; empty to skip)` });
+        if (isCancel(answer)) return;
+        password = (answer as string) || undefined;
+      }
+    }
+    const fields = { ...(user ? { user } : {}), ...(password ? { password } : {}) };
+    if (!Object.keys(fields).length) {
+      console.error("nothing to register — provide at least one field");
+      process.exitCode = 2;
+      return;
+    }
+    const result = registerCredentials(account, fields);
+    console.log(`account "${result.account}" registered:`);
+    for (const [field, env] of Object.entries(result.envs)) console.log(`  ${field.padEnd(10)} → ${env}  (value in .env.local)`);
+    console.log(`mapping in windup.credentials.json (commit it); reference the account by name in tasks: "the ${result.account} account"`);
+  });
+secret
+  .command("list")
+  .description("List registered accounts and whether their ENV values are set (never prints values)")
+  .action(async () => {
+    const { getContext } = await import("./context.js");
+    const credentials = getContext().config.context?.credentials ?? {};
+    if (!Object.keys(credentials).length) {
+      console.log("no accounts registered — use: windup secret set <account>");
+      return;
+    }
+    for (const [account, fields] of Object.entries(credentials)) {
+      console.log(account);
+      for (const [field, ref] of Object.entries(fields)) {
+        const env = ref.replace(/^ENV:/, "");
+        console.log(`  ${field.padEnd(10)} ${ref}  ${process.env[env] ? "[set]" : "[MISSING in .env.local / CI]"}`);
+      }
+    }
   });
 
 program

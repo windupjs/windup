@@ -57,7 +57,18 @@ npx windup new "log in with the qa user, add the backpack to the cart and check 
 #   form data, account referenced as "the qa account", explicit final verification
 ```
 
-It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. **Literal test credentials in the instruction are preserved in the task verbatim** (they're what the test runs with — enforced mechanically, the model cannot drop them); accounts that exist in the manifest are referenced by name instead. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
+It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. **Credentials in the instruction never land in the scenario file**: they are auto-registered as a named account (values in `.env.local`, mapping in `windup.credentials.json`) and the task references the account — see Test credentials below. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
+
+## Test credentials
+
+Credentials never live in scenario files, plans, the cache or git — only **references**. Values stay in `.env.local` (gitignored) or CI secrets; the account → ENV-name mapping lives in `windup.credentials.json` (committed — it contains no values) and is merged into the project manifest automatically.
+
+```bash
+npx windup secret set admin        # hidden interactive prompts → .env.local + mapping
+npx windup secret list             # accounts + whether each ENV is set (never prints values)
+```
+
+Tasks then reference the account by name — *"log in with the admin account"* — and plans use `value_ref: "ENV:WINDUP_ADMIN_PASSWORD"`, resolved only at execution time. `windup new` does this automatically: credentials typed in the instruction are detected, registered, and scrubbed — the generated scenario mentions the account, never the values. In CI, define the same variable names as pipeline secrets.
 
 ## Environments (dev / staging / CI)
 
@@ -134,6 +145,8 @@ Example GitHub Actions step:
 | `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
+| `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
+| `windup secret list` | Accounts + whether each ENV is set (never prints values) |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
@@ -204,6 +217,8 @@ await windupSuite();                    // one native test per scenario
 | `windup.config.ts` | Configuration | ✅ |
 | `e2e/scenarios/*.json` | Your tests, in natural language | ✅ |
 | `e2e/fragments/*.json` | Curated reusable blocks | ✅ |
+| `windup.credentials.json` | Account → ENV-name mapping (no values) | ✅ |
+| `.env.local` | Credential values | ❌ (auto-gitignored; CI uses secrets with the same names) |
 | `.windup/` | Derived state: plan cache, run ledger, site map, reports | ❌ (init adds it to `.gitignore`) |
 
 ## License
