@@ -36,6 +36,7 @@ Windup turns it into a schema-validated JSON plan of browser actions, executes i
 npm i -D windupjs        # Chromium provisioned automatically
 npx windup init          # 3 questions → windup.config.ts
 npx windup scan          # index your app's routes & elements from source
+npx windup new "log in as admin and create an invoice"   # LLM-assisted authoring
 npx windup run checkout  # 1st run: the LLM plans · after that: ~1s replay, $0
 ```
 
@@ -57,6 +58,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 - **Fragments** — proven action blocks (e.g. login) the planner composes instead of regenerating.
 - **Environment-portable** — start URLs resolve per environment (`--base-url` / `WINDUP_BASE_URL`); the plan cache is keyed by path, so plans generated on `localhost` replay on staging and CI for free.
 - **CI-ready** — `windup run --all --reporter junit`, non-zero exit on failure, AI-spend ledger via `windup costs`.
+- **Assisted authoring** — `windup new "rough instruction"` turns a one-liner into a precise, verifiable scenario grounded in your app's real screens (site map) and accounts (manifest) — a file you review and commit.
 - **Bring your LLM** — Google Gemini and OpenAI in-box, several configured at once, picked per run (`--llm openai:gpt-5-mini`); spend tracked per provider and model.
 - **Zero hardcoded site knowledge** — the engine knows frameworks and the web platform, never *your* site.
 

@@ -110,6 +110,26 @@ program
   });
 
 program
+  .command("new <instruction...>")
+  .description("Generate a scenario from a rough instruction — the LLM acts as a test author, enriching it with site-map knowledge and the project manifest")
+  .option("--id <id>", "scenario id (default: derived from the flow)")
+  .option("--force", "overwrite if a scenario with the same id exists")
+  .option("--llm <provider[:model]>", "LLM for authoring (e.g. openai:gpt-5-mini)")
+  .action(async (instructionWords: string[], opts: { id?: string; force?: boolean; llm?: string }) => {
+    if (opts.llm) process.env.WINDUP_LLM = opts.llm;
+    const { generateScenario } = await import("./authoring.js");
+    const result = await generateScenario(instructionWords.join(" "), { id: opts.id, force: opts.force });
+    console.log(`scenario created: ${result.file}  (${result.provider}/${result.model}, ${result.llm_calls} call(s), $${result.est_cost_usd})`);
+    console.log("");
+    console.log(`  id:        ${result.scenario.scenario_id}`);
+    console.log(`  start_url: ${result.scenario.start_url}`);
+    console.log(`  task:      ${result.scenario.task}`);
+    if (result.scenario.hints?.length) console.log(`  hints:     ${result.scenario.hints.join(" | ")}`);
+    console.log("");
+    console.log(`review the file (it is your test — edit freely), then: npx windup run ${result.scenario.scenario_id}`);
+  });
+
+program
   .command("bench <scenario>")
   .description("Run the full validation protocol (generation, replay, failure recovery) and report criteria")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")

@@ -5,6 +5,7 @@
 export { runScenario, type Planner, type RunOptions, type PlanGeneration } from "./runner.js";
 export { LlmPlanner, GeminiPlanner } from "./planner.js";
 export { createLlmClient, resolveLlm, PROVIDER_DEFAULTS, type LlmClient, type ProviderName } from "./llm.js";
+export { generateScenario, type AuthoringResult, type AuthoredScenario } from "./authoring.js";
 export { loadScenario } from "./scenario.js";
 export { clearCache } from "./cache.js";
 export { runBench } from "./bench.js";

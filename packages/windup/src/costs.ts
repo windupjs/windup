@@ -21,6 +21,8 @@ export interface CostsReport {
   free_replays: number;
   /** LLM-assist de scans (P4): gasto de IA fora de runs, mesmo ledger. */
   scans: { count: number; llm_calls: number; tokens: { input: number; output: number }; est_cost_usd: number };
+  /** Cenários gerados via `windup new` (autoria assistida) — mesmo ledger. */
+  authoring: { count: number; llm_calls: number; tokens: { input: number; output: number }; est_cost_usd: number };
   /** Por empresa (google, openai...) — quem alterna entre LLMs vê o gasto de cada uma. */
   by_provider: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
   by_model: Record<string, { calls: number; tokens: { input: number; output: number }; est_cost_usd: number }>;
@@ -63,14 +65,16 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
 
   const cutoff = opts.days ? Date.now() - opts.days * 86_400_000 : null;
   const runs: RunMetrics[] = [];
-  const scans: Array<{ llm_calls: number; llm_model: string | null; llm_provider: string | null; tokens: { input: number; output: number } }> = [];
+  type ToolRecord = { llm_calls: number; llm_model: string | null; llm_provider: string | null; tokens: { input: number; output: number } };
+  const scans: ToolRecord[] = [];
+  const authorings: ToolRecord[] = [];
   for (const file of files) {
     try {
       const m = JSON.parse(await readFile(path.join(runsDir, file), "utf8")) as RunMetrics & { kind?: string };
       if (!m.started_at) continue;
       if (cutoff && Date.parse(m.started_at) < cutoff) continue;
-      if (m.kind === "scan") {
-        scans.push({
+      if (m.kind === "scan" || m.kind === "authoring") {
+        (m.kind === "scan" ? scans : authorings).push({
           llm_calls: m.llm_calls ?? 0,
           llm_model: m.llm_model ?? null,
           llm_provider: inferProvider(m.llm_model ?? null, m.llm_provider),
@@ -93,6 +97,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     est_cost_usd: 0,
     free_replays: 0,
     scans: { count: 0, llm_calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 },
+    authoring: { count: 0, llm_calls: 0, tokens: { input: 0, output: 0 }, est_cost_usd: 0 },
     by_provider: {},
     by_model: {},
     by_scenario: {},
@@ -133,17 +138,19 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     bs.est_cost_usd += cost;
   }
 
-  for (const s of scans) {
-    const cost = estimateCostUsd(s.tokens, s.llm_model);
-    report.scans.count += 1;
-    report.scans.llm_calls += s.llm_calls;
-    report.scans.tokens.input += s.tokens.input;
-    report.scans.tokens.output += s.tokens.output;
-    report.scans.est_cost_usd += cost;
-    report.est_cost_usd += cost; // total geral inclui scans
-    if (s.llm_model) {
-      if (s.llm_provider) accumulate(report.by_provider, s.llm_provider, s.llm_calls, s.tokens, cost);
-      accumulate(report.by_model, s.llm_model, s.llm_calls, s.tokens, cost);
+  for (const [bucket, records] of [[report.scans, scans], [report.authoring, authorings]] as const) {
+    for (const s of records) {
+      const cost = estimateCostUsd(s.tokens, s.llm_model);
+      bucket.count += 1;
+      bucket.llm_calls += s.llm_calls;
+      bucket.tokens.input += s.tokens.input;
+      bucket.tokens.output += s.tokens.output;
+      bucket.est_cost_usd += cost;
+      report.est_cost_usd += cost; // total geral inclui scans e autoria
+      if (s.llm_model) {
+        if (s.llm_provider) accumulate(report.by_provider, s.llm_provider, s.llm_calls, s.tokens, cost);
+        accumulate(report.by_model, s.llm_model, s.llm_calls, s.tokens, cost);
+      }
     }
   }
 
@@ -166,6 +173,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
 function round(report: CostsReport): void {
   report.est_cost_usd = Number(report.est_cost_usd.toFixed(4));
   report.scans.est_cost_usd = Number(report.scans.est_cost_usd.toFixed(4));
+  report.authoring.est_cost_usd = Number(report.authoring.est_cost_usd.toFixed(4));
   for (const bp of Object.values(report.by_provider)) bp.est_cost_usd = Number(bp.est_cost_usd.toFixed(4));
   for (const bm of Object.values(report.by_model)) bm.est_cost_usd = Number(bm.est_cost_usd.toFixed(4));
   for (const bs of Object.values(report.by_scenario)) bs.est_cost_usd = Number(bs.est_cost_usd.toFixed(4));
@@ -174,7 +182,7 @@ function round(report: CostsReport): void {
 const fmtTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 export function printCostsReport(report: CostsReport, runsDir: string): void {
-  if (report.runs === 0 && report.scans.count === 0) {
+  if (report.runs === 0 && report.scans.count === 0 && report.authoring.count === 0) {
     console.log("no runs recorded yet — the ledger lives in .windup/runs/");
     return;
   }
@@ -190,6 +198,13 @@ export function printCostsReport(report: CostsReport, runsDir: string): void {
     console.log(
       `scans     ${report.scans.count} scan(s) with LLM-assist  llm_calls=${report.scans.llm_calls}  ` +
         `tokens=${fmtTokens(report.scans.tokens.input)}/${fmtTokens(report.scans.tokens.output)}  $${report.scans.est_cost_usd}`,
+    );
+  }
+
+  if (report.authoring.count > 0) {
+    console.log(
+      `authoring ${report.authoring.count} scenario(s) generated  llm_calls=${report.authoring.llm_calls}  ` +
+        `tokens=${fmtTokens(report.authoring.tokens.input)}/${fmtTokens(report.authoring.tokens.output)}  $${report.authoring.est_cost_usd}`,
     );
   }
 

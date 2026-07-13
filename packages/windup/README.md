@@ -8,6 +8,7 @@ Describe a test in plain language — *"log in as the test account, add product 
 npm i -D windupjs        # Chromium is provisioned automatically (one-time, machine-wide cache)
 npx windup init          # 3 questions → windup.config.ts + example scenario
 npx windup scan          # index your app's routes & elements from source code
+npx windup new "log in as admin and create an invoice"   # LLM-assisted scenario authoring
 npx windup run checkout  # 1st run: the LLM plans · every run after: ~1s replay, $0
 ```
 
@@ -45,6 +46,18 @@ A scenario is a JSON file in your scenarios directory (default `e2e/scenarios/`)
 - `start_url` is **optional** (defaults to `/`) and should stay environment-free: a path, resolved against the effective base URL.
 - End the task with **what to verify** — that becomes the plan's final postcondition.
 - Never put secrets in tasks. Reference accounts from the project manifest (below); the plan will use `value_ref: "ENV:VAR"` and the real value is resolved only at runtime, never cached.
+
+### Authoring with `windup new`
+
+You don't have to write detailed tasks by hand. Give `windup new` a rough instruction and the LLM acts as a test author — it rewrites it into a precise, verifiable scenario using the **site map** (real screens, menus and elements from `windup scan` and past runs) and the **project manifest** (accounts referenced by name, never literal credentials):
+
+```bash
+npx windup new "log in with the qa user, add the backpack to the cart and check out"
+# → e2e/scenarios/purchase-backpack-qa.json — real screen names, concrete fake
+#   form data, account referenced as "the qa account", explicit final verification
+```
+
+It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
 
 ## Environments (dev / staging / CI)
 
@@ -114,10 +127,11 @@ Example GitHub Actions step:
 | Command | Description |
 |---|---|
 | `windup init` | Create `windup.config.ts`, `.windup/` (gitignored) and an example scenario |
+| `windup new "<instruction>" [--id x] [--force]` | Generate a scenario from a rough instruction (LLM test author + site map + manifest) |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |
 | `windup run --all` | Run every scenario — CI mode |
 | `windup scan [--update] [--no-assist]` | Statically index routes and interactive elements into the site map; `--update` re-indexes only files changed since the last scan (git diff); `--no-assist` skips the LLM layer (zero cost) |
-| `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan spend |
+| `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |

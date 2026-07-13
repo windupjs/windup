@@ -332,6 +332,54 @@ export class SiteMapStore {
     return blocks.join("\n\n");
   }
 
+  /**
+   * Paths conhecidos e utilizáveis como início de fluxo (não-stale, com
+   * elementos interativos), no formato de path ("/cart.html").
+   */
+  knownPaths(): string[] {
+    const paths = Object.values(this.map.pages)
+      .filter((p) => !p.stale && p.interactive.length > 0)
+      .map((p) => p.url_pattern.replace(/^\*+/, "") || "/");
+    return [...new Set(paths)].sort();
+  }
+
+  /**
+   * Fatia para AUTORIA de cenários (windup new): diferente do planejador,
+   * aqui não há página inicial — o autor precisa da visão geral do app.
+   * Índice compacto de todas as rotas conhecidas + blocos detalhados das
+   * páginas que casam com a instrução (todas as fontes), até o orçamento.
+   */
+  sliceForAuthoring(instruction: string, budgetChars: number): string {
+    // Páginas sem elementos interativos ficam de fora: como rota de partida
+    // ou referência elas só induzem o autor ao erro (visto no dogfood: um
+    // /index.html que não renderiza no headless tinha nó com 0 elementos).
+    const alive = Object.entries(this.map.pages).filter(([, p]) => !p.stale && p.interactive.length > 0);
+    if (alive.length === 0) return "";
+
+    const index = [...new Set(alive.map(([, p]) => p.url_pattern))]
+      .sort()
+      .map((pattern) => `- ${pattern}`)
+      .join("\n");
+    const blocks: string[] = [`Rotas conhecidas do app:\n${index}`];
+    let used = blocks[0].length;
+
+    const terms = tokenize(instruction);
+    const seenPatterns = new Set<string>();
+    const scored = alive
+      .map(([sig, page]) => ({ sig, page, score: score(page, terms) }))
+      .filter(({ score: s }) => s > 0)
+      .sort((a, b) => b.score - a.score || b.page.seen_count - a.page.seen_count);
+    for (const { sig, page } of scored) {
+      if (seenPatterns.has(page.url_pattern)) continue;
+      const block = this.formatPage(sig, page);
+      if (used + block.length > budgetChars) continue;
+      blocks.push(block);
+      seenPatterns.add(page.url_pattern);
+      used += block.length;
+    }
+    return blocks.join("\n\n");
+  }
+
   private formatPage(sig: string, page: MapPage): string {
     const routes = this.map.transitions
       .filter((t) => t.to === sig && this.map.pages[t.from])
