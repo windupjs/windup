@@ -22,6 +22,11 @@ export const PRICING = {
     "gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
     "gemini-3.5-flash": { input: 1.5, output: 9.0 },
     "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+    // Aliases flutuantes da Google — preço do alvo ATUAL (verificado por
+    // fingerprint de tokens em 2026-07-13: lite-latest ≡ 3.1-flash-lite).
+    // Reconferir quando a Google reapontar.
+    "gemini-flash-lite-latest": { input: 0.25, output: 1.5 },
+    "gemini-flash-latest": { input: 1.5, output: 9.0 },
     // openai
     "gpt-5": { input: 1.25, output: 10.0 },
     "gpt-5-mini": { input: 0.25, output: 2.0 },
