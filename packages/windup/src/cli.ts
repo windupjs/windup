@@ -51,15 +51,15 @@ program
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
   .option("--llm <provider[:model]>", "LLM for planning, e.g. openai, openai:gpt-5-mini, google:gemini-3.1-flash-lite (also: WINDUP_LLM env)")
-  .option("--reporter <format>", "write a report: junit | json")
+  .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
   .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
     if (opts.llm) process.env.WINDUP_LLM = opts.llm;
-    if (opts.reporter && !["junit", "json"].includes(opts.reporter)) {
-      console.error(`unknown reporter "${opts.reporter}" — use junit or json`);
+    if (opts.reporter && !["junit", "json", "html"].includes(opts.reporter)) {
+      console.error(`unknown reporter "${opts.reporter}" — use junit, json or html`);
       process.exitCode = 2;
       return;
     }
@@ -103,7 +103,7 @@ program
 
     if (opts.reporter) {
       const { writeReport } = await import("./reporters.js");
-      const file = await writeReport(results, opts.reporter as "junit" | "json", opts.reportFile);
+      const file = await writeReport(results, opts.reporter as "junit" | "json" | "html", opts.reportFile);
       console.log(`report (${opts.reporter}): ${file}`);
     }
     process.exitCode = failures === 0 ? 0 : 1;

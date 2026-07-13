@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { junitReport, jsonReport } from "../src/reporters.js";
+import { htmlReport, junitReport, jsonReport } from "../src/reporters.js";
 import type { RunMetrics } from "../src/types.js";
 
 function metric(over: Partial<RunMetrics>): RunMetrics {
@@ -37,5 +37,35 @@ describe("reporters CI/CD", () => {
     ]));
     expect(out.summary).toEqual({ total: 2, passed: 1, failed: 1, llm_calls: 1, est_cost_usd: 0.002, duration_ms: 3000 });
     expect(out.cases[1].failure.kind).toBe("network");
+  });
+
+  it("html: documento self-contained com summary, badges, falha escapada e detalhe de ações", () => {
+    const html = htmlReport([
+      metric({
+        scenario_id: "login",
+        llm_calls: 1,
+        llm_model: "gemini-3.1-flash-lite",
+        llm_provider: "google",
+        estimated_cost_usd: 0.0019,
+        actions: [
+          { id: "a1", duration_ms: 120, verify_ms: 30, status: "passed" },
+          { id: "a2", duration_ms: 90, verify_ms: 25, status: "passed" },
+        ],
+      }),
+      metric({
+        scenario_id: "checkout",
+        result: "failed",
+        failure: { kind: "verification", action_id: "a3", message: 'selector "<b>#pay</b>" not visible' },
+      }),
+    ]);
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("1/2 passed"); // <title>
+    expect(html).toContain(">PASS<");
+    expect(html).toContain(">FAIL<");
+    expect(html).toContain("google/gemini-3.1-flash-lite");
+    expect(html).toContain("2 action(s)");
+    expect(html).toContain("&lt;b&gt;#pay&lt;/b&gt;"); // mensagem de falha escapada
+    expect(html).not.toContain("<b>#pay</b>");
+    expect(html).not.toContain("<script"); // zero JS: abre em qualquer artifact viewer de CI
   });
 });
