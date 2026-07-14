@@ -11,6 +11,7 @@
 [![npm version](https://img.shields.io/npm/v/windupjs?color=b8860b&label=windupjs)](https://www.npmjs.com/package/windupjs)
 [![node](https://img.shields.io/node/v/windupjs?color=339933)](https://nodejs.org)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/windupjs/windup/actions/workflows/ci.yml/badge.svg)](https://github.com/windupjs/windup/actions/workflows/ci.yml)
 [![engine: Playwright](https://img.shields.io/badge/engine-Playwright-2EAD33)](https://playwright.dev)
 
 [windup.run](https://windup.run) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Why Windup](#why-windup) · [User docs](packages/windup/README.md) · [Specification](docs/specs/SPEC.md)

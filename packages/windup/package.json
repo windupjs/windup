@@ -1,7 +1,7 @@
 {
   "name": "windupjs",
-  "version": "0.18.2",
-  "description": "Windup \u2014 testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho",
+  "version": "0.18.3",
+  "description": "Windup — testes E2E em linguagem natural: a LLM planeja uma vez, o replay roda sozinho",
   "type": "module",
   "license": "MIT",
   "engines": {

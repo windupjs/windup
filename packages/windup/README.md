@@ -4,6 +4,8 @@
 
 **[windup.run](https://windup.run)** · [npm](https://www.npmjs.com/package/windupjs)
 
+![Windup demo: a plain-English test runs once with the LLM, then replays deterministically with zero LLM calls and $0](https://raw.githubusercontent.com/windupjs/windup/main/assets/windup-demo.gif)
+
 Describe a test in plain language — *"log in as the test account, add product X to the cart, check out and verify the order confirmation"* — and Windup turns it into a deterministic JSON plan of browser actions. From the second run on, the test replays **with zero LLM calls**: ~1 second, $0, stable results.
 
 ```bash
