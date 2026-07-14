@@ -52,15 +52,17 @@ program
   .option("--headed", "show the browser window (headless off)")
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
+  .option("--browser <name>", "browser engine: chromium (default) | firefox | webkit (firefox/webkit need: npx playwright install <name>)")
   .option("--llm <provider[:model]>", "LLM for planning, e.g. openai, openai:gpt-5-mini, google:gemini-3.1-flash-lite (also: WINDUP_LLM env)")
   .option("--summary", "after each run, an LLM writes a short debrief: what was done, concrete observed results, difficulties (1 extra LLM call per run)")
   .option("--suggest", "on a FAILED run, an LLM proposes a concrete fix to the scenario (task/hints) from the real final page and the site map (1 extra LLM call, only on failure)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
+    if (opts.browser) process.env.WINDUP_BROWSER = opts.browser;
     if (opts.llm) process.env.WINDUP_LLM = opts.llm;
     if (opts.reporter && !["junit", "json", "html"].includes(opts.reporter)) {
       console.error(`unknown reporter "${opts.reporter}" — use junit, json or html`);

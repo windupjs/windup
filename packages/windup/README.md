@@ -225,7 +225,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--browser chromium|firefox|webkit` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
 
 ### AI debrief (`--summary`)
 
@@ -252,6 +252,18 @@ npx windup run create-invoice --suggest
 
 It turns a red run into a specific edit — instead of reverse-engineering the app by hand. Only fires on failure (green runs cost nothing), never edits the scenario itself, and shows as a highlighted block in the HTML/JSON reports. Pairs naturally with `--summary`.
 
+## Browsers
+
+Windup runs on **Chromium by default** (provisioned automatically on install). To run the same scenarios on **Firefox** or **WebKit**, install that browser once and select it:
+
+```bash
+npx playwright install firefox        # one-time, per browser
+npx windup run checkout --browser firefox
+npx windup run --all --browser webkit
+```
+
+Set it per project in `windup.config.ts` (`browser: "firefox"`) or per run with `--browser` / `WINDUP_BROWSER`. A plan generated on one browser replays on the others — selectors are cross-browser — so you author once and run everywhere.
+
 ## Configuration (`windup.config.ts`)
 
 ```ts
@@ -267,6 +279,7 @@ export default defineConfig({
   },
   scenarios: "e2e/scenarios",
   framework: "react-router",          // detected by init; used by scan
+  // browser: "chromium",             // or "firefox" / "webkit" (need: npx playwright install <name>)
   scan: {
     llmAssist: { enabled: true, maxCalls: 20 },   // hard cost cap per scan
   },

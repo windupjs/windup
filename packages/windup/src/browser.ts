@@ -1,4 +1,6 @@
-import { chromium, type Browser as PWBrowser, type BrowserContext, type Page } from "playwright-core";
+import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserType, type Page } from "playwright-core";
+import { getContext } from "./context.js";
+import { WindupError } from "./errors.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
 import { computeSignature, type RawElement } from "./signature.js";
 
@@ -157,20 +159,47 @@ class PlaywrightSession implements Browser {
 
 let engine: Promise<PWBrowser> | null = null;
 
-function launchOptions() {
-  return {
-    headless: process.env.HEADLESS !== "false",
-    ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
-    args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
-  };
+export type BrowserName = "chromium" | "firefox" | "webkit";
+const ENGINES: Record<BrowserName, BrowserType> = { chromium, firefox, webkit };
+
+/** Resolve + validate the browser name (pure; exported for testing). */
+export function resolveBrowserName(envValue: string | undefined, configValue: string | undefined): BrowserName {
+  const raw = (envValue ?? configValue ?? "chromium").toLowerCase();
+  if (raw !== "chromium" && raw !== "firefox" && raw !== "webkit") {
+    throw new WindupError(`unknown browser "${raw}" — use chromium, firefox or webkit`);
+  }
+  return raw;
+}
+
+/** Selected browser: WINDUP_BROWSER env → config.browser → chromium. */
+function selectedBrowser(): BrowserName {
+  return resolveBrowserName(process.env.WINDUP_BROWSER, getContext().config.browser);
+}
+
+function launchOptions(name: BrowserName) {
+  const headless = process.env.HEADLESS !== "false";
+  if (name === "chromium") {
+    return {
+      headless,
+      ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
+      args: ["--window-size=1280,1000", ...(process.env.CHROME_ARGS?.split(" ") ?? [])],
+    };
+  }
+  // firefox/webkit: chromium-only args/env don't apply.
+  return { headless };
 }
 
 function getEngine(): Promise<PWBrowser> {
-  // Lazy fallback for --ignore-scripts installs: if the Chromium binary is
+  const name = selectedBrowser();
+  // Lazy fallback for --ignore-scripts installs: if Chromium's binary is
   // missing, download it once and retry — `npm i -D windupjs` must be enough.
-  engine ??= chromium.launch(launchOptions()).catch(async (err) => {
-    if (isMissingBrowserError(err) && installChromium("first run")) {
-      return chromium.launch(launchOptions());
+  // firefox/webkit are not auto-downloaded (opt-in extra browsers).
+  engine ??= ENGINES[name].launch(launchOptions(name)).catch(async (err) => {
+    if (name === "chromium" && isMissingBrowserError(err) && installChromium("first run")) {
+      return chromium.launch(launchOptions("chromium"));
+    }
+    if (isMissingBrowserError(err)) {
+      throw new WindupError(`the ${name} browser is not installed — run:  npx playwright install ${name}`);
     }
     throw err;
   });

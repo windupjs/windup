@@ -35,6 +35,8 @@ export interface WindupConfig {
   scenarios: string;
   /** Framework detected by init (P2 hook; informational only for now). */
   framework?: string | null;
+  /** Browser engine: chromium (default, auto-provisioned) | firefox | webkit (need `npx playwright install <name>`). Also: --browser / WINDUP_BROWSER. */
+  browser?: "chromium" | "firefox" | "webkit";
   signature?: {
     /** true = a diverging sig becomes a miss (default: lenient, warn only). */
     strict?: boolean;
