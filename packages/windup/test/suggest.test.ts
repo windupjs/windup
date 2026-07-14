@@ -60,6 +60,9 @@ describe("run --suggest (post-failure fix suggestion)", () => {
     expect(prompt).toContain("did not become visible");
     expect(prompt).toContain('button "Create"'); // real control on the page
     expect(prompt).toContain("SAME language as the scenario task");
+    // untrusted page content is delimited and marked as data, not instructions
+    expect(prompt).toContain("UNTRUSTED page content");
+    expect(prompt).toContain("PAGE_CONTENT");
   });
 
   it("marks the failed action and shows per-step status", () => {

@@ -38,6 +38,7 @@ describe("run --summary (post-run summary)", () => {
     expect(prompt).toContain("slow actions (>5s): a1");
     expect(prompt).toContain('Starter R$ 49');
     expect(prompt).toContain("LITERALLY");
+    expect(prompt).toContain("UNTRUSTED page content");
   });
 
   it("a failure enters the prompt as the outcome", () => {

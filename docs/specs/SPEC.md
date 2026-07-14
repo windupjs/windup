@@ -72,6 +72,10 @@ Module boundaries (all in `packages/windup/src/`):
 
 Default planner model: **`gemini-3.1-flash-lite`** (measured: 1 clean call/generation, ~3–4s, ≈ $0.0025/generation; selected by A/B against 3.5-flash which degenerates and costs ~34×). Known pathology handled defensively: flash-family structured output can degenerate into token loops (non-deterministic per prompt content) — mitigated by transient retries with varied seeds, `maxOutputTokens` caps, short semantic-retry prompts, and near-constant prompt size budgets. Provider-agnostic since 0.10: Google Gemini and OpenAI ship in-box behind the `llm.ts` boundary, several providers can be configured at once, and any run/bench/scan picks one with `--llm provider[:model]` (`WINDUP_LLM` in CI). Every ledger record carries provider+model; prices are a flat per-model table (model names are globally unique). Adding a vendor = one client implementation in `llm.ts`.
 
+## 5b. Security posture
+
+Page content captured from the app under test (accessibility snapshots, element lists, final-page snapshots) is fed to the LLM for planning, summaries and fix suggestions — always **delimited and marked as untrusted data**, with an explicit instruction to treat it as data, never as instructions. Because plans are schema-validated data executed deterministically, a page cannot make Windup run arbitrary code; the residual risk is a crafted page biasing a generated plan or summary (run against apps you control, in test environments). Credential values never enter scenarios, plans, the cache or LLM prompts (`value_ref`, resolved at run time). The `.windup/` directory may hold app-captured data and is gitignored. Full threat model in [`SECURITY.md`](../../SECURITY.md).
+
 ## 6. Known limitations / debts
 
 - Nested react-router relative paths are collected best-effort (flat, not joined) — corrected by execution observations.

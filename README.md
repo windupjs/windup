@@ -86,6 +86,10 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 
 All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. Benchmarked: plan generation ≥ 4/5 first-try without hints, replay 10/10 with `llm_calls=0`, automatic recovery from broken selectors. Engine: Playwright (trusted input events). Planner LLMs: Google Gemini and OpenAI, selectable per run; default `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
 
+## Security
+
+Page content is fed to the LLM as untrusted data; plans are schema-validated and executed deterministically. Credentials never reach the LLM, cache or scenarios. Full threat model and reporting: [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE)
