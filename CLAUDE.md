@@ -22,4 +22,4 @@ must return nothing. Site knowledge enters only via input (scenarios, hints, con
 
 ## Release routine
 
-`npm run typecheck && npm test` green → bump version in `packages/windup` → build → commit + push → publish to npm (ephemeral `.npmrc`, never persist the token) → `git tag v<version> && git push --tags` → `gh release create v<version> --title v<version> --notes "<one-line summary>"`. Every npm version MUST have a matching GitHub tag + release. Update SPEC/README before the publish so the npm page ships the new docs.
+`npm run typecheck && npm test` green → bump version in `packages/windup` → build → commit + push → publish to npm (ephemeral `.npmrc`, never persist the token) → `git tag v<version> && git push --tags` → `gh release create v<version> --title v<version> --notes "<one-line summary>"`. Every npm version MUST have a matching GitHub tag + release. Update SPEC/README **and add a CHANGELOG.md entry** before the publish so the npm page ships the new docs and the changelog stays current.

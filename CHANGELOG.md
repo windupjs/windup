@@ -4,6 +4,12 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.20.0
+- **Cross-browser** — run scenarios on `chromium` (default, auto-provisioned), `firefox` or `webkit` via `--browser` / `WINDUP_BROWSER` / `config.browser`. Firefox/WebKit are opt-in (`npx playwright install <name>`); a single plan replays across all three (CSS selectors are engine-agnostic).
+
+## 0.19.0
+- **Parallel runs** — `run --concurrency <n>` runs scenarios in parallel over one shared warm browser with isolated contexts (one shared site map, order-preserving results). Measured ~2× faster on an 11-scenario suite at concurrency 4. Default 1 (behavior unchanged).
+
 ## 0.18.x
 - **`run --suggest`** — on a failed run, an LLM analyzes the executed plan, the
   failing step, the real final page and the site map, and proposes a concrete
