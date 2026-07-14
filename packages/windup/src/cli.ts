@@ -126,11 +126,35 @@ program
   .option("--id <id>", "scenario id (default: derived from the flow)")
   .option("--force", "overwrite if a scenario with the same id exists")
   .option("--depends-on <ids>", "comma-separated prerequisite scenarios (e.g. --depends-on login); the new scenario continues from their final state")
+  .option("--validate", "run the generated scenario and, if it fails, refine it from the failure and retry (up to 3 attempts) — you get a scenario that already passed once")
   .option("--llm <provider[:model]>", "LLM for authoring (e.g. openai:gpt-5-mini)")
-  .action(async (instructionWords: string[], opts: { id?: string; force?: boolean; dependsOn?: string; llm?: string }) => {
+  .action(async (instructionWords: string[], opts: { id?: string; force?: boolean; dependsOn?: string; validate?: boolean; llm?: string }) => {
     if (opts.llm) process.env.WINDUP_LLM = opts.llm;
-    const { generateScenario } = await import("./authoring.js");
     const dependsOn = opts.dependsOn?.split(",").map((d) => d.trim()).filter(Boolean);
+
+    if (opts.validate) {
+      const { generateValidatedScenario } = await import("./validate.js");
+      const { result, validated, attempts } = await generateValidatedScenario(instructionWords.join(" "), { id: opts.id, force: opts.force, dependsOn });
+      console.log(`scenario created: ${result.file}  (${result.provider}/${result.model})`);
+      console.log("");
+      console.log(`  id:        ${result.scenario.scenario_id}`);
+      if (result.scenario.start_url) console.log(`  start_url: ${result.scenario.start_url}`);
+      console.log(`  task:      ${result.scenario.task}`);
+      console.log("");
+      for (const a of attempts) {
+        console.log(`  attempt ${a.attempt}: ${a.result.toUpperCase()}${a.failure ? ` — ${a.failure}` : ""}`);
+      }
+      console.log("");
+      if (validated) {
+        console.log(`✓ validated in ${attempts.length} attempt(s) — the scenario passed and its plan is cached. Run it any time: npx windup run ${result.scenario.scenario_id}`);
+      } else {
+        console.log(`⚠ could not get it green in ${attempts.length} attempts — the best draft was saved. Review it, then try: npx windup run ${result.scenario.scenario_id} --suggest`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    const { generateScenario } = await import("./authoring.js");
     const result = await generateScenario(instructionWords.join(" "), { id: opts.id, force: opts.force, dependsOn });
     console.log(`scenario created: ${result.file}  (${result.provider}/${result.model}, ${result.llm_calls} call(s), $${result.est_cost_usd})`);
     console.log("");

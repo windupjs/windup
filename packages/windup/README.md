@@ -121,7 +121,14 @@ npx windup new "log in with the qa user, add the backpack to the cart and check 
 #   form data, account referenced as "the qa account", explicit final verification
 ```
 
-It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. **Credentials in the instruction never land in the scenario file**: they are auto-registered as a named account (values in `.env.local`, mapping in `windup.credentials.json`) and the task references the account — see Test credentials below. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
+It generates the `scenario_id`, picks the `start_url` from known routes (falling back to `/` — it never invents paths), and adds selector hints from the map when they help. Add **`--validate`** to have it run the generated scenario and, if it fails, refine it from the failure and retry (up to 3 attempts) — you get back a scenario that *already passed once*, with a warm cache:
+
+```bash
+npx windup new "log in and create a cost center named Marketing" --validate
+#   attempt 1: FAIL — element button:has-text('Save') not visible
+#   attempt 2: PASSED
+#   ✓ validated in 2 attempts — the plan is cached
+``` **Credentials in the instruction never land in the scenario file**: they are auto-registered as a named account (values in `.env.local`, mapping in `windup.credentials.json`) and the task references the account — see Test credentials below. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
 
 ## Test credentials
 
@@ -202,7 +209,7 @@ Example GitHub Actions step:
 | Command | Description |
 |---|---|
 | `windup init` | Create `windup.config.ts`, `.windup/` (gitignored) and an example scenario |
-| `windup new "<instruction>" [--id x] [--force] [--depends-on ids]` | Generate a scenario from a rough instruction (LLM test author + site map + manifest) |
+| `windup new "<instruction>" [--id x] [--force] [--depends-on ids] [--validate]` | Generate a scenario from a rough instruction; `--validate` runs and refines it until it passes (≤3 attempts) |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |
 | `windup run --all` | Run every scenario — CI mode |
 | `windup scan [--update] [--no-assist]` | Statically index routes and interactive elements into the site map; `--update` re-indexes only files changed since the last scan (git diff); `--no-assist` skips the LLM layer (zero cost) |

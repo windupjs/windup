@@ -150,7 +150,7 @@ function validate(data: unknown, instruction = "", registeredAccount?: string): 
 
 export async function generateScenario(
   instruction: string,
-  opts: { id?: string; force?: boolean; dependsOn?: string[] } = {},
+  opts: { id?: string; force?: boolean; dependsOn?: string[]; refineFrom?: string } = {},
   client?: LlmClient,
 ): Promise<AuthoringResult> {
   const ctx = getContext();
@@ -200,10 +200,13 @@ export async function generateScenario(
 
   const tokens = { input: 0, output: 0 };
   let llmCalls = 0;
+  const refineSection = opts.refineFrom
+    ? `\n# Previous attempt failed — fix it\nA previous version of this scenario was executed and FAILED. Use the evidence below to produce an IMPROVED scenario (adjust the task steps, screens, selectors mentioned, or add a hint). Do not repeat the same mistake.\n${opts.refineFrom}\n`
+    : "";
   const dependsSection = opts.dependsOn?.length
     ? `\n# Declared dependencies\nThis scenario runs AFTER the scenarios ${opts.dependsOn.map((d) => `"${d}"`).join(", ")} (in the same session). Describe the flow starting from their FINAL STATE (e.g. user already authenticated) — do NOT repeat the steps the dependencies already cover.\n`
     : "";
-  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existing, registeredAccount) + dependsSection;
+  let prompt = buildAuthoringPrompt(instruction, siteKnowledge, buildManifestSection(), existing, registeredAccount) + dependsSection + refineSection;
   let scenario: AuthoredScenario | null = null;
   let lastErrors: string[] = [];
 
