@@ -1,4 +1,4 @@
-# Windup 🥁🦆
+# Windup 🤖
 
 **Natural-language E2E tests with deterministic replay — the LLM plans once, replays run without it.**
 
