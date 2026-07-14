@@ -17,6 +17,10 @@
 
 </div>
 
+<p align="center">
+  <img src="assets/windup-demo.gif" width="820" alt="Windup demo: a plain-English test runs once with the LLM, then replays deterministically with zero LLM calls and $0" />
+</p>
+
 ---
 
 Write the test the way you'd explain it to a person:
