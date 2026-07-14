@@ -1,5 +1,5 @@
 {
-  "name": "rubberduck-monorepo",
+  "name": "windup-monorepo",
   "private": true,
   "workspaces": [
     "packages/*"

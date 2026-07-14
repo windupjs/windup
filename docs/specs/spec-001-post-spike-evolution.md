@@ -58,13 +58,13 @@ Named, reusable sub-trajectories:
 ```
 
 - A plan can reference `{ "use": "login-admin" }` as its first "action"; the executor expands it inline.
-- **Fragment origins:** (a) the user promotes a stretch of a cached plan to a fragment (`rubberduck fragment extract`); (b) automatic detection of common prefixes across plans in the same project (later phase).
+- **Fragment origins:** (a) the user promotes a stretch of a cached plan to a fragment (`windup fragment extract`); (b) automatic detection of common prefixes across plans in the same project (later phase).
 - **Gains:** smaller prompt (the LLM composes blocks instead of regenerating), partial cache hit (a new flow that starts with a known login already has its prefix resolved), readable tests (a Gherkin-like task maps to fragments: "given I am logged in as admin…" → `use: login-admin`).
 - The planner receives the fragment catalog (id + description + postcondition, never the actions) in the prompt and is instructed to use them when they cover part of the task.
 
 ## Component 3 — Project manifest
 
-File versioned in the user's repo (`rubberduck.config.*`, see SPEC-002), `context` section:
+File versioned in the user's repo (`windup.config.*`, see SPEC-002), `context` section:
 
 ```jsonc
 {

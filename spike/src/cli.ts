@@ -9,7 +9,7 @@ import type { RunMetrics } from "./types.js";
 
 const program = new Command();
 
-program.name("spike").description("Spike de validação RubberDuck: plano LLM → execução determinística → replay via cache");
+program.name("spike").description("Validation spike: LLM plan -> deterministic execution -> cache replay");
 
 function printRun(metrics: RunMetrics, file: string | null = null): void {
   const status = metrics.result === "passed" ? "PASSOU" : "FALHOU";

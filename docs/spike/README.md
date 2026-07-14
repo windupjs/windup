@@ -1,4 +1,4 @@
-# Validation Spike — RubberDuck
+# Validation Spike
 
 Specs for the initial validation scope: prove that the loop **LLM-generated JSON plan → deterministic execution → cheap verification → cached replay without LLM** works in a real scenario, before investing in the MVP. No interface — just CLI, Docker, and metrics.
 

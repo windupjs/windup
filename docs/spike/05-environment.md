@@ -7,7 +7,7 @@ Everything runs in Docker for reproducibility: any machine with Docker + a Gemin
 ## Repository structure (proposed)
 
 ```
-RubberDuck/
+windup/
 ├── docs/                  # this documentation
 ├── spike/
 │   ├── src/               # spike code (TypeScript)

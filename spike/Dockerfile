@@ -1,4 +1,4 @@
-# Spike RubberDuck: Node 22 + Chromium (multi-arch: funciona em amd64 e arm64)
+# Validation spike: Node 22 + Chromium (multi-arch: works on amd64 and arm64)
 FROM node:22-slim
 
 RUN apt-get update \
