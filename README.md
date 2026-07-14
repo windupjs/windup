@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/windup-avatar-small.png" width="340" alt="Windup — the wind-up testing robot" />
+<img src="assets/brand/windup-logo-lockup.png" width="620" alt="Windup — the wind-up testing robot" />
 
 # Windup
 
