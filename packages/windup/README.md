@@ -190,6 +190,7 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 ```
 
 - `--all` runs every scenario in the directory (one warm browser for the whole suite).
+- `--concurrency <n>` runs scenarios in parallel (one shared browser, isolated contexts) — measured ~2× faster on a mixed 11-scenario suite at `--concurrency 4`, more on suites with planning or long flows.
 - Exit code is non-zero when any scenario fails.
 - `--reporter junit` emits JUnit XML (GitHub Actions, GitLab and Jenkins consume it natively); `--reporter json` emits a machine-readable summary; `--reporter html` emits a self-contained human-friendly page (zero JS/deps — upload it as a CI artifact or open locally). Default output: `.windup/reports/`.
 - `windup costs --json` reports AI spend for pipeline tracking.
@@ -224,7 +225,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
 
 ### AI debrief (`--summary`)
 

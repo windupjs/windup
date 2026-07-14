@@ -48,6 +48,7 @@ program
   .option("--no-cache", "bypass the trajectory cache (always plan; nothing is cached)")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")
   .option("--repeat <n>", "run N times in sequence", "1")
+  .option("--concurrency <n>", "run scenarios in parallel, up to N at a time (default 1; great for CI suites)", "1")
   .option("--headed", "show the browser window (headless off)")
   .option("--slowmo <ms>", "pause between actions in ms (watchable demo pace)")
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
@@ -56,7 +57,7 @@ program
   .option("--suggest", "on a FAILED run, an LLM proposes a concrete fix to the scenario (task/hints) from the real final page and the site map (1 extra LLM call, only on failure)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; suggest?: boolean; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -90,26 +91,55 @@ program
 
     const planner = new LlmPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
-    const results = [];
-    let failures = 0;
-    for (const id of ids) {
-      const scenario = await loadScenario(id);
-      for (let i = 1; i <= repeat; i++) {
-        if (repeat > 1) console.log(`run ${i}/${repeat}`);
-        const metrics = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest });
-        printRun(metrics);
-        if (metrics.summary) {
-          console.log(`      summary (${metrics.summary.provider}/${metrics.summary.model}, $${metrics.summary.est_cost_usd}):`);
-          for (const line of metrics.summary.text.split("\n")) console.log(`      ${line}`);
-        }
-        if (metrics.suggestion) {
-          console.log(`      suggested fix (${metrics.suggestion.provider}/${metrics.suggestion.model}, $${metrics.suggestion.est_cost_usd}):`);
-          for (const line of metrics.suggestion.text.split("\n")) console.log(`      ${line}`);
-        }
-        results.push(metrics);
-        if (metrics.result !== "passed") failures += 1;
+    const concurrency = Math.max(1, Number.parseInt(opts.concurrency ?? "1", 10) || 1);
+
+    const printExtras = (metrics: RunMetrics): void => {
+      if (metrics.summary) {
+        console.log(`      summary (${metrics.summary.provider}/${metrics.summary.model}, $${metrics.summary.est_cost_usd}):`);
+        for (const line of metrics.summary.text.split("\n")) console.log(`      ${line}`);
+      }
+      if (metrics.suggestion) {
+        console.log(`      suggested fix (${metrics.suggestion.provider}/${metrics.suggestion.model}, $${metrics.suggestion.est_cost_usd}):`);
+        for (const line of metrics.suggestion.text.split("\n")) console.log(`      ${line}`);
+      }
+    };
+
+    // Build the flat task list (each id × repeat). Scenarios are loaded up front.
+    const scenarios = await Promise.all(ids.map((id) => loadScenario(id)));
+    const jobs = scenarios.flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
+
+    let results: RunMetrics[];
+    if (concurrency > 1 && jobs.length > 1) {
+      // Parallel: one shared site map (saved once at the end); results print as
+      // each finishes, then a summary line. --headed/--slowmo don't mix well
+      // with concurrency (many windows / paced demos) — warn.
+      if (opts.headed || opts.slowmo) console.warn("warning: --headed/--slowmo with --concurrency > 1 will interleave; use concurrency 1 to watch a run");
+      const { SiteMapStore } = await import("./sitemap.js");
+      const { getContext } = await import("./context.js");
+      const { runPool } = await import("./runner.js");
+      const sharedMap = await SiteMapStore.load(getContext().paths.mapFile);
+      console.log(`running ${jobs.length} scenario(s) with concurrency ${concurrency}...`);
+      results = await runPool(
+        jobs.map((scenario) => async () => {
+          const m = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest, sharedMap });
+          printRun(m);
+          printExtras(m);
+          return m;
+        }),
+        concurrency,
+      );
+      await sharedMap.save();
+    } else {
+      results = [];
+      for (let j = 0; j < jobs.length; j++) {
+        if (repeat > 1) console.log(`run ${(j % repeat) + 1}/${repeat}`);
+        const m = await runScenario(jobs[j], planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest });
+        printRun(m);
+        printExtras(m);
+        results.push(m);
       }
     }
+    const failures = results.filter((m) => m.result !== "passed").length;
     if (results.length > 1) console.log(`${results.length - failures}/${results.length} runs passed`);
 
     if (opts.reporter) {

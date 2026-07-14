@@ -63,6 +63,13 @@ export interface RunOptions {
   summary?: boolean;
   /** true = --suggest: on a FAILED run, 1 extra LLM call proposes a concrete fix to the scenario (opt-in). */
   suggest?: boolean;
+  /**
+   * Shared site-map store for parallel runs: when provided, this run upserts
+   * into it and does NOT save (the caller saves once after all runs). JS is
+   * single-threaded, so concurrent synchronous upserts never race. When
+   * absent, the run owns its own store and saves it in the finally.
+   */
+  sharedMap?: SiteMapStore;
 }
 
 export class PlanGenerationError extends Error {
@@ -108,7 +115,7 @@ export async function runScenario(
 
   // Passive map collection (E2): always on — every run collects.
   // Using the map IN THE PROMPT is what's optional (--no-map, in the planner).
-  const mapStore = await SiteMapStore.load(getContext().paths.mapFile);
+  const mapStore = opts.sharedMap ?? (await SiteMapStore.load(getContext().paths.mapFile));
   const collector: StepCollector = {
     onPage: (obs) => mapStore.upsertPage(obs),
     onTransition: (from, action, to) => mapStore.recordTransition(from, action, to),
@@ -239,7 +246,7 @@ export async function runScenario(
       }
     }
     await browser.close();
-    await mapStore.save();
+    if (!opts.sharedMap) await mapStore.save();
     await writeRunMetrics(metrics);
   }
 }
@@ -376,4 +383,23 @@ async function replanDependency(
     return { ok: true, cache, llm_calls: llmCalls };
   }
   return { ok: false, cache, llm_calls: llmCalls, failure };
+}
+
+/**
+ * Runs `tasks` with at most `limit` in flight at once, preserving result order.
+ * Small hand-rolled pool (no dependency). A task that rejects is not caught
+ * here — callers wrap runScenario so it always resolves to metrics.
+ */
+export async function runPool<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, tasks.length)) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= tasks.length) return;
+      results[i] = await tasks[i]();
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
