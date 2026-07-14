@@ -6,6 +6,7 @@ import { LlmPlanner } from "./planner.js";
 import { runScenario } from "./runner.js";
 import { loadScenario } from "./scenario.js";
 import { runBench } from "./bench.js";
+import { WindupError } from "./errors.js";
 import type { RunMetrics } from "./types.js";
 
 const program = new Command();
@@ -52,9 +53,10 @@ program
   .option("--base-url <url>", "override the start URL origin (also: WINDUP_BASE_URL env)")
   .option("--llm <provider[:model]>", "LLM for planning, e.g. openai, openai:gpt-5-mini, google:gemini-3.1-flash-lite (also: WINDUP_LLM env)")
   .option("--summary", "after each run, an LLM writes a short debrief: what was done, concrete observed results, difficulties (1 extra LLM call per run)")
+  .option("--suggest", "on a FAILED run, an LLM proposes a concrete fix to the scenario (task/hints) from the real final page and the site map (1 extra LLM call, only on failure)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; llm?: string; summary?: boolean; suggest?: boolean; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -94,11 +96,15 @@ program
       const scenario = await loadScenario(id);
       for (let i = 1; i <= repeat; i++) {
         if (repeat > 1) console.log(`run ${i}/${repeat}`);
-        const metrics = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary });
+        const metrics = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest });
         printRun(metrics);
         if (metrics.summary) {
           console.log(`      summary (${metrics.summary.provider}/${metrics.summary.model}, $${metrics.summary.est_cost_usd}):`);
           for (const line of metrics.summary.text.split("\n")) console.log(`      ${line}`);
+        }
+        if (metrics.suggestion) {
+          console.log(`      suggested fix (${metrics.suggestion.provider}/${metrics.suggestion.model}, $${metrics.suggestion.est_cost_usd}):`);
+          for (const line of metrics.suggestion.text.split("\n")) console.log(`      ${line}`);
         }
         results.push(metrics);
         if (metrics.result !== "passed") failures += 1;
@@ -320,7 +326,25 @@ cache
     console.log("trajectory cache cleared");
   });
 
-program.parseAsync(process.argv).finally(async () => {
-  const { shutdownBrowserEngine } = await import("./browser.js");
-  await shutdownBrowserEngine();
-});
+/**
+ * A thrown error must reach the user as a clean, actionable line — never a
+ * raw Node stack trace. Known WindupError messages are already user-facing;
+ * anything else prints its message with a hint to re-run with WINDUP_DEBUG=1
+ * for the full stack.
+ */
+program
+  .parseAsync(process.argv)
+  .catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`\nerror: ${message}`);
+    if (process.env.WINDUP_DEBUG && err instanceof Error && err.stack) {
+      console.error(`\n${err.stack}`);
+    } else if (!(err instanceof WindupError)) {
+      console.error("(re-run with WINDUP_DEBUG=1 for the full stack trace)");
+    }
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    const { shutdownBrowserEngine } = await import("./browser.js");
+    await shutdownBrowserEngine();
+  });

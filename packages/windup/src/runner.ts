@@ -61,6 +61,8 @@ export interface RunOptions {
   useCache: boolean;
   /** true = --summary: 1 extra LLM call at the end reporting the run in prose (opt-in; replays stay $0 by default). */
   summary?: boolean;
+  /** true = --suggest: on a FAILED run, 1 extra LLM call proposes a concrete fix to the scenario (opt-in). */
+  suggest?: boolean;
 }
 
 export class PlanGenerationError extends Error {
@@ -217,6 +219,15 @@ export async function runScenario(
     // TEST duration and cost close before the summary: prose is not execution.
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
+    if (opts.suggest && metrics.result === "failed") {
+      try {
+        const { generateFixSuggestion } = await import("./suggest.js");
+        metrics.suggestion = await generateFixSuggestion(scenario, metrics, browser);
+        metrics.estimated_cost_usd = Number((metrics.estimated_cost_usd + metrics.suggestion.est_cost_usd).toFixed(6));
+      } catch (err) {
+        console.warn(`warning: could not generate a fix suggestion: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     if (opts.summary) {
       try {
         const { generateRunSummary } = await import("./summary.js");

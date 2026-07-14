@@ -1,4 +1,5 @@
 import { getContext } from "./context.js";
+import { WindupError } from "./errors.js";
 
 /**
  * Multi-provider boundary with LLMs. Everything that talks to a model (planner,
@@ -56,7 +57,7 @@ export function parseLlmSpec(spec: string): { provider: ProviderName; model: str
   const match = spec.match(/^([a-z0-9-]+)[:/](.+)$/);
   const providerName = (match ? match[1] : spec).toLowerCase();
   if (!isProvider(providerName)) {
-    throw new Error(
+    throw new WindupError(
       `unknown LLM provider "${providerName}" — supported: ${Object.keys(PROVIDER_DEFAULTS).join(", ")} (format: provider or provider:model, e.g. --llm openai:gpt-5-mini)`,
     );
   }
@@ -80,7 +81,7 @@ export function createLlmClient(): LlmClient {
   const apiKeyEnv = providerCfg?.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
   const apiKey = process.env[apiKeyEnv];
   if (!apiKey) {
-    throw new Error(`${apiKeyEnv} is not set (required for planning with ${provider}; cached replays do not use the LLM)`);
+    throw new WindupError(`${apiKeyEnv} is not set (required for planning with ${provider}; cached replays do not use the LLM)`);
   }
   if (provider === "openai") {
     return openaiClient(model, apiKey, providerCfg?.baseUrl ?? process.env.OPENAI_BASE_URL);

@@ -1,4 +1,5 @@
 import { getContext } from "./context.js";
+import { WindupError } from "./errors.js";
 
 /**
  * Effective start URL for a scenario. Environments move (port, host, staging
@@ -21,7 +22,7 @@ export function resolveStartUrl(rawStartUrl: string | undefined): string {
     return raw;
   }
   if (!base) {
-    throw new Error(`start_url "${raw}" is relative and no base URL is configured (set baseUrl in windup.config, WINDUP_BASE_URL or --base-url)`);
+    throw new WindupError(`start_url "${raw}" is relative and no base URL is configured (set baseUrl in windup.config, WINDUP_BASE_URL or --base-url)`);
   }
   return new URL(raw.startsWith("/") ? raw : `/${raw}`, base).toString();
 }

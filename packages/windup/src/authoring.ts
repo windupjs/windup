@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { getContext } from "./context.js";
+import { WindupError } from "./errors.js";
 import { createLlmClient, type LlmClient } from "./llm.js";
 import { estimateCostUsd } from "./metrics.js";
 import { buildManifestSection } from "./planner.js";
@@ -282,7 +283,7 @@ export async function generateScenario(
   await mkdir(ctx.paths.scenariosDir, { recursive: true });
   const file = path.join(ctx.paths.scenariosDir, `${scenario.scenario_id}.json`);
   if (existsSync(file) && !opts.force) {
-    throw new Error(`scenario "${scenario.scenario_id}" already exists (${file}) — use --force to overwrite or --id for another name`);
+    throw new WindupError(`scenario "${scenario.scenario_id}" already exists (${file}) — use --force to overwrite or --id for another name`);
   }
   await writeFile(file, `${JSON.stringify(scenario, null, 2)}\n`);
 

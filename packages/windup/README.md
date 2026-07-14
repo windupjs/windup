@@ -215,7 +215,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
 
 ### AI debrief (`--summary`)
 
@@ -228,6 +228,19 @@ npx windup run checkout --summary --reporter html
 ```
 
 Off by default on purpose — cached replays stay at zero LLM calls and $0. The debrief cost (~$0.0005 on the default model) is tracked separately in the run metrics and included in `estimated_cost_usd`.
+
+### Fix suggestions on failure (`--suggest`)
+
+When a run **fails**, `--suggest` adds one LLM call that acts as a senior QA engineer debugging it: it compares the executed plan and the failing step against the **real final page** and the site map's known selectors, then proposes a concrete fix to the scenario — the wrong selector and the real one, a targeted screen that doesn't hold what the task expects, a missing step, or a timeout too short for a slow page.
+
+```bash
+npx windup run create-invoice --suggest
+# FAIL  create-invoice  ... element button:has-text('Save') not visible
+#   suggested fix: The 'Save' button does not exist; the dialog's real button
+#   is labeled 'Create'. Change the hint to button:has-text('Create').
+```
+
+It turns a red run into a specific edit — instead of reverse-engineering the app by hand. Only fires on failure (green runs cost nothing), never edits the scenario itself, and shows as a highlighted block in the HTML/JSON reports. Pairs naturally with `--summary`.
 
 ## Configuration (`windup.config.ts`)
 
