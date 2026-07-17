@@ -15,11 +15,15 @@ import { WindupError } from "./errors.js";
  * config.llm.providers[provider].model, otherwise from the built-in default.
  */
 
-export type ProviderName = "google" | "openai";
+export type ProviderName = "google" | "openai" | "claude-code";
 
 export interface LlmRequest {
   prompt: string;
-  /** Relaxed JSON Schema: Google uses it as responseSchema; OpenAI gets it in the prompt + json mode. */
+  /**
+   * Relaxed JSON Schema: Google uses it as responseSchema; OpenAI gets it in
+   * the prompt + json mode; claude-code gets it in the prompt only (the
+   * wrapper has no JSON mode) and the reply is un-fenced mechanically.
+   */
   schema?: object;
   maxOutputTokens: number;
   temperature: number;
@@ -39,10 +43,19 @@ export interface LlmClient {
   generate(req: LlmRequest): Promise<LlmResponse>;
 }
 
-export const PROVIDER_DEFAULTS: Record<ProviderName, { model: string; apiKeyEnv: string }> = {
+export const PROVIDER_DEFAULTS: Record<ProviderName, { model: string; apiKeyEnv: string; apiKeyOptional?: boolean }> = {
   google: { model: "gemini-3.1-flash-lite", apiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY" },
   openai: { model: "gpt-5-mini", apiKeyEnv: "OPENAI_API_KEY" },
+  // The wrapper's own auth is opt-in and off by default, so the key is optional.
+  // Model list is the wrapper's static one (its newest tier) — see claudeCodeClient.
+  "claude-code": { model: "claude-sonnet-4-6", apiKeyEnv: "CLAUDE_CODE_API_KEY", apiKeyOptional: true },
 };
+
+/** Providers billed by a subscription the developer already pays for — never per token. */
+export const SUBSCRIPTION_PROVIDERS = new Set<ProviderName>(["claude-code"]);
+
+/** Default endpoint of a locally-run claude-code-openai-wrapper. */
+const CLAUDE_CODE_DEFAULT_URL = "http://localhost:8000/v1";
 
 function isProvider(name: string): name is ProviderName {
   return name in PROVIDER_DEFAULTS;
@@ -80,13 +93,16 @@ export function createLlmClient(): LlmClient {
   const providerCfg = getContext().config.llm.providers?.[provider];
   const apiKeyEnv = providerCfg?.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
   const apiKey = process.env[apiKeyEnv];
-  if (!apiKey) {
+  if (!apiKey && !PROVIDER_DEFAULTS[provider].apiKeyOptional) {
     throw new WindupError(`${apiKeyEnv} is not set (required for planning with ${provider}; cached replays do not use the LLM)`);
   }
-  if (provider === "openai") {
-    return openaiClient(model, apiKey, providerCfg?.baseUrl ?? process.env.OPENAI_BASE_URL);
+  if (provider === "claude-code") {
+    return claudeCodeClient(model, apiKey, providerCfg?.baseUrl);
   }
-  return googleClient(model, apiKey);
+  if (provider === "openai") {
+    return openaiClient(model, apiKey!, providerCfg?.baseUrl ?? process.env.OPENAI_BASE_URL);
+  }
+  return googleClient(model, apiKey!);
 }
 
 function googleClient(model: string, apiKey: string): LlmClient {
@@ -169,6 +185,96 @@ function openaiClient(model: string, apiKey: string, baseUrl?: string): LlmClien
       };
       return {
         text: data.choices?.[0]?.message?.content ?? "",
+        tokens: {
+          input: data.usage?.prompt_tokens ?? 0,
+          output: data.usage?.completion_tokens ?? 0,
+        },
+        truncated: data.choices?.[0]?.finish_reason === "length",
+      };
+    },
+  };
+}
+
+/**
+ * A model with no JSON mode answers with the JSON wrapped in a ```json fence
+ * or a sentence ("Here is the plan: {...}"). Unwrap it mechanically — a prompt
+ * rule is not enough (the same lesson the planner learned with fragment
+ * echoes: code has the final word). Returns the text unchanged when nothing
+ * looks like JSON; Ajv remains the authority on whether it is a valid plan.
+ * Exported for testing.
+ */
+export function extractJson(text: string): string {
+  const trimmed = text.trim();
+  // A fenced block wins: models put prose around it, never inside it.
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
+  if (candidate.startsWith("{") || candidate.startsWith("[")) return candidate;
+  // Bare object buried in prose: take the outermost {...}.
+  const first = candidate.indexOf("{");
+  const last = candidate.lastIndexOf("}");
+  return first !== -1 && last > first ? candidate.slice(first, last + 1) : candidate;
+}
+
+/**
+ * Claude Code wrapper (claude-code-openai-wrapper) — a THIRD-PARTY, locally
+ * run OpenAI-compatible proxy in front of the developer's own Claude Code
+ * session, so someone with a Claude subscription can plan without an API key.
+ * Opt-in only (`--llm claude-code`), never a default: it is not a hosted API,
+ * and it is not operated by us or by Anthropic.
+ *
+ * It implements only model/messages/stream. `response_format`, `temperature`,
+ * `seed` and `max_tokens` are dropped on the floor, so this client does not
+ * send them — pretending to set a control we do not have would be a lie in the
+ * request. Two consequences the callers must live with:
+ *   - no JSON mode: the schema rides in the prompt and the reply is un-fenced
+ *     by extractJson(), so `text` keeps the LlmClient contract (parseable);
+ *   - no seed jitter: the planner's transient re-calls cannot vary the seed
+ *     (harmless — token-loop degeneration is a flash-family pathology).
+ * Tokens are real and land in the ledger; the DOLLARS are zero by design
+ * (metrics.ts: SUBSCRIPTION_PROVIDERS).
+ */
+function claudeCodeClient(model: string, apiKey: string | undefined, baseUrl?: string): LlmClient {
+  const root = (baseUrl ?? process.env.WINDUP_CLAUDE_CODE_URL ?? CLAUDE_CODE_DEFAULT_URL).replace(/\/$/, "");
+  const url = `${root}/chat/completions`;
+  return {
+    provider: "claude-code",
+    model,
+    async generate(req) {
+      const content = req.schema
+        ? `${req.prompt}\n\nRespond ONLY with valid JSON matching this JSON Schema. No prose, no markdown fences:\n${JSON.stringify(req.schema)}`
+        : req.prompt;
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+          body: JSON.stringify({ model, messages: [{ role: "user", content }], stream: false }),
+          // The wrapper drives the Claude Code CLI (process spawn + agent
+          // loop), so it is slower to first byte than a hosted API.
+          signal: AbortSignal.timeout(300_000),
+        });
+      } catch (err) {
+        // A local server that is down is not a transient blip: fail now with
+        // something actionable instead of letting the planner burn 3 retries
+        // with backoff to arrive at "fetch failed".
+        throw new WindupError(
+          `could not reach the Claude Code wrapper at ${root} (${err instanceof Error ? err.message : err}). ` +
+            `Start it first (it is a separate, third-party server), or pick another provider with --llm google|openai`,
+        );
+      }
+      if (!response.ok) {
+        const detail = (await response.text().catch(() => "")).slice(0, 500);
+        throw new Error(`Claude Code wrapper error ${response.status}: ${detail}`);
+      }
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const raw = data.choices?.[0]?.message?.content ?? "";
+      return {
+        // Only un-fence when a schema was asked for: --summary/--suggest want
+        // prose, and digging a "{" out of prose would mangle it.
+        text: req.schema ? extractJson(raw) : raw,
         tokens: {
           input: data.usage?.prompt_tokens ?? 0,
           output: data.usage?.completion_tokens ?? 0,

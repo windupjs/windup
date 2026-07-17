@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.21.0
+- **Plan with your Claude subscription** — new opt-in provider `--llm claude-code`, targeting the third-party [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) (a local proxy over your own Claude Code session). No API key required; cost is reported as **$0** in `windup costs` (tokens are real and stay in the ledger, but they're covered by your subscription — never priced at the fallback rate). Opt-in, never a default, and unsupported by us or Anthropic. The wrapper implements only `model`/`messages`/`stream`, so the schema rides in the prompt and the reply is un-fenced mechanically (Ajv still validates every plan); a down wrapper fails fast with an actionable error instead of retrying to `fetch failed`. Default model `claude-sonnet-4-6`; endpoint configurable via `baseUrl` / `WINDUP_CLAUDE_CODE_URL`.
+
 ## 0.20.0
 - **Cross-browser** — run scenarios on `chromium` (default, auto-provisioned), `firefox` or `webkit` via `--browser` / `WINDUP_BROWSER` / `config.browser`. Firefox/WebKit are opt-in (`npx playwright install <name>`); a single plan replays across all three (CSS selectors are engine-agnostic).
 

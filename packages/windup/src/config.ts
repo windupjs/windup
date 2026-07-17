@@ -11,7 +11,7 @@ export interface WindupConfig {
   baseUrl?: string;
   llm: {
     /** Provider active by default; switch per run with --llm / WINDUP_LLM. */
-    provider: "google" | "openai";
+    provider: "google" | "openai" | "claude-code";
     model: string;
     /**
      * Several providers configured AT THE SAME TIME — each one's default model
@@ -20,12 +20,15 @@ export interface WindupConfig {
      */
     providers?: Partial<
       Record<
-        "google" | "openai",
+        "google" | "openai" | "claude-code",
         {
           model?: string;
-          /** Name of the env var holding the API key (default: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY). */
+          /** Name of the env var holding the API key (default: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY; optional for claude-code). */
           apiKeyEnv?: string;
-          /** openai only: alternative OpenAI-compatible endpoint (Azure, proxy, local model). */
+          /**
+           * openai: alternative OpenAI-compatible endpoint (Azure, proxy, local model).
+           * claude-code: where the local wrapper listens (default http://localhost:8000/v1).
+           */
           baseUrl?: string;
         }
       >

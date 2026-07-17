@@ -22,4 +22,16 @@ describe("estimateCostUsd", () => {
     const desconhecido = estimateCostUsd({ input: 1_000_000, output: 1_000_000 }, "modelo-desconhecido");
     expect(desconhecido).toBeCloseTo(0.3 + 2.5, 6);
   });
+
+  it("a subscription provider costs $0 — never the fallback rate", () => {
+    const tokens = { input: 1_000_000, output: 1_000_000 };
+    // Same tokens, same unknown-to-the-table model: the PROVIDER decides.
+    expect(estimateCostUsd(tokens, "claude-sonnet-4-6", "claude-code")).toBe(0);
+    expect(estimateCostUsd(tokens, "claude-sonnet-4-6")).toBeCloseTo(0.3 + 2.5, 6);
+  });
+
+  it("a per-token provider is unaffected by the subscription rule", () => {
+    const tokens = { input: 1_000_000, output: 1_000_000 };
+    expect(estimateCostUsd(tokens, "gemini-3.1-flash-lite", "google")).toBeCloseTo(0.25 + 1.5, 6);
+  });
 });

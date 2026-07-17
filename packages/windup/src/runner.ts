@@ -225,7 +225,7 @@ export async function runScenario(
     }
     // TEST duration and cost close before the summary: prose is not execution.
     metrics.duration_ms.total = Date.now() - startedMs;
-    metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model);
+    metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model, metrics.llm_provider);
     if (opts.suggest && metrics.result === "failed") {
       try {
         const { generateFixSuggestion } = await import("./suggest.js");

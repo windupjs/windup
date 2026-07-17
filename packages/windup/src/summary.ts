@@ -98,6 +98,6 @@ export async function generateRunSummary(
     model: llm.model,
     provider: llm.provider,
     tokens: response.tokens,
-    est_cost_usd: estimateCostUsd(response.tokens, llm.model),
+    est_cost_usd: estimateCostUsd(response.tokens, llm.model, llm.provider),
   };
 }

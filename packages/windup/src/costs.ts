@@ -50,6 +50,10 @@ export function inferProvider(model: string | null, recorded?: string | null): s
   if (!model) return null;
   if (/^gemini/.test(model)) return "google";
   if (/^(gpt-|o\d)/.test(model)) return "openai";
+  // Claude models only ever reach Windup through the claude-code wrapper —
+  // revisit if a direct Anthropic provider is ever added (the two would share
+  // model names but NOT prices: subscription vs per token).
+  if (/^claude-/.test(model)) return "claude-code";
   return "unknown";
 }
 
@@ -119,7 +123,8 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
   };
 
   for (const m of runs) {
-    const cost = estimateCostUsd(m.tokens, m.llm_model);
+    const provider = inferProvider(m.llm_model, m.llm_provider);
+    const cost = estimateCostUsd(m.tokens, m.llm_model, provider);
     report.llm_calls += m.llm_calls;
     report.tokens.input += m.tokens.input;
     report.tokens.output += m.tokens.output;
@@ -127,7 +132,6 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     if (m.llm_calls === 0) report.free_replays += 1;
 
     if (m.llm_model) {
-      const provider = inferProvider(m.llm_model, m.llm_provider);
       if (provider) accumulate(report.by_provider, provider, m.llm_calls, m.tokens, cost);
       accumulate(report.by_model, m.llm_model, m.llm_calls, m.tokens, cost);
     }
@@ -140,7 +144,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
 
   for (const [bucket, records] of [[report.scans, scans], [report.authoring, authorings]] as const) {
     for (const s of records) {
-      const cost = estimateCostUsd(s.tokens, s.llm_model);
+      const cost = estimateCostUsd(s.tokens, s.llm_model, s.llm_provider);
       bucket.count += 1;
       bucket.llm_calls += s.llm_calls;
       bucket.tokens.input += s.tokens.input;
@@ -161,7 +165,7 @@ export async function buildCostsReport(opts: { last?: number; days?: number } = 
     cache: m.cache,
     llm_calls: m.llm_calls,
     tokens: m.tokens,
-    est_cost_usd: estimateCostUsd(m.tokens, m.llm_model),
+    est_cost_usd: estimateCostUsd(m.tokens, m.llm_model, inferProvider(m.llm_model, m.llm_provider)),
     model: m.llm_model,
     provider: inferProvider(m.llm_model, m.llm_provider),
   }));

@@ -291,7 +291,7 @@ export async function generateScenario(
   await writeFile(file, `${JSON.stringify(scenario, null, 2)}\n`);
 
   // Authoring spend goes into the SAME ledger (windup costs), like the scan.
-  const cost = estimateCostUsd(tokens, llm.model);
+  const cost = estimateCostUsd(tokens, llm.model, llm.provider);
   await mkdir(ctx.paths.runsDir, { recursive: true });
   const record = {
     kind: "authoring",

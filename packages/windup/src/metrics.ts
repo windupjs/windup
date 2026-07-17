@@ -42,7 +42,20 @@ export const PRICING = {
 
 const warned = new Set<string>();
 
-export function estimateCostUsd(tokens: { input: number; output: number }, model?: string | null): number {
+/**
+ * Providers whose tokens are covered by a subscription the developer already
+ * pays for (claude-code: their own Claude Code session behind a local
+ * wrapper). The tokens are real and stay in the ledger — the DOLLARS are not
+ * ours to invent. Without this, a subscription model would miss the price
+ * table, fall through to the fallback rate, and bill the user on paper for
+ * something they never paid per token. Note the price table stays honest:
+ * these models are absent from it because we do not know what they cost, not
+ * because they are free.
+ */
+const SUBSCRIPTION_PROVIDERS = new Set(["claude-code"]);
+
+export function estimateCostUsd(tokens: { input: number; output: number }, model?: string | null, provider?: string | null): number {
+  if (provider && SUBSCRIPTION_PROVIDERS.has(provider)) return 0;
   let price = model ? PRICING.models[model] : undefined;
   if (!price) {
     if (model && !warned.has(model)) {

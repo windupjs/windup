@@ -219,7 +219,7 @@ async function runAssistLayer(
     store.upsertLlmPage(page.path, page.elements.slice(0, 150), page.file);
   }
 
-  const cost = estimateCostUsd(outcome.tokens, outcome.model);
+  const cost = estimateCostUsd(outcome.tokens, outcome.model, outcome.provider);
   if (outcome.calls > 0) {
     // The scan's AI cost goes into the SAME ledger as the runs (windup costs).
     await mkdir(ctx.paths.runsDir, { recursive: true });
