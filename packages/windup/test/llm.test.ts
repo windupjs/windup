@@ -1,10 +1,29 @@
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLlmClient, extractJson, parseLlmSpec, resolveLlm, PROVIDER_DEFAULTS } from "../src/llm.js";
 import { createContext, setContext } from "../src/context.js";
 import { DEFAULT_CONFIG, type WindupConfig } from "../src/config.js";
 
+vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
+import { spawn } from "node:child_process";
+
 function withConfig(llm: WindupConfig["llm"]): void {
   setContext(createContext(process.cwd(), { config: { ...DEFAULT_CONFIG, llm } }));
+}
+
+/** A controllable fake `claude` child: emits stdout/stderr on next tick, then closes. */
+function fakeChild(opts: { stdout?: string; stderr?: string; code?: number; signal?: string | null; spawnError?: Error }) {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  process.nextTick(() => {
+    if (opts.spawnError) return void child.emit("error", opts.spawnError);
+    if (opts.stdout) child.stdout.emit("data", Buffer.from(opts.stdout));
+    if (opts.stderr) child.stderr.emit("data", Buffer.from(opts.stderr));
+    child.emit("close", opts.code ?? 0, opts.signal ?? null);
+  });
+  return child;
 }
 
 afterAll(() => setContext(createContext()));
@@ -14,6 +33,7 @@ afterEach(() => {
   delete process.env.OPENAI_API_KEY;
   delete process.env.CLAUDE_CODE_API_KEY;
   delete process.env.WINDUP_CLAUDE_CODE_URL;
+  vi.mocked(spawn).mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -163,6 +183,13 @@ describe("extractJson (no JSON mode → un-fence mechanically)", () => {
 });
 
 describe("claude-code client (third-party local wrapper)", () => {
+  // Since 0.22.0 the wrapper is the OPT-IN path: it is used only when a URL is
+  // configured. These tests opt in via the env var; the default (no URL) path
+  // is the native CLI, covered in its own block below.
+  beforeEach(() => {
+    process.env.WINDUP_CLAUDE_CODE_URL = "http://localhost:8000/v1";
+  });
+
   function stubFetch(payload: unknown): ReturnType<typeof vi.fn> {
     const mock = vi.fn(async () => ({
       ok: true,
@@ -264,5 +291,75 @@ describe("claude-code client (third-party local wrapper)", () => {
 
     await expect(createLlmClient().generate({ prompt: "p", maxOutputTokens: 10, temperature: 0.3 }))
       .rejects.toThrow(/could not reach the Claude Code wrapper at http:\/\/localhost:8000\/v1/);
+  });
+});
+
+describe("claude-code client (native CLI — the zero-setup default)", () => {
+  const envelope = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ result: '```json\n{"ok":true}\n```', is_error: false, subtype: "success", stop_reason: "end_turn", usage: { input_tokens: 12, output_tokens: 7 }, ...over });
+
+  it("with NO wrapper URL, spawns `claude -p ... --output-format json --model <m>` from a neutral cwd", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    vi.mocked(spawn).mockReturnValue(fakeChild({ stdout: envelope() }) as never);
+
+    const result = await createLlmClient().generate({ prompt: "plan", schema: { type: "object" }, maxOutputTokens: 8192, temperature: 0.3, seed: 5 });
+    // fenced reply un-fenced, real tokens; $-free is decided in metrics.ts, not here
+    expect(result).toEqual({ text: '{"ok":true}', tokens: { input: 12, output: 7 }, truncated: false });
+
+    const [cmd, args, opts] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[], { cwd: string }];
+    expect(cmd).toBe("claude");
+    expect(args).toEqual(["-p", expect.stringContaining("JSON Schema"), "--output-format", "json", "--model", "claude-sonnet-4-6"]);
+    expect(opts.cwd).toBe(tmpdir());
+  });
+
+  it("routing: no URL → CLI (spawn), never the wrapper (fetch)", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(spawn).mockReturnValue(fakeChild({ stdout: envelope() }) as never);
+
+    await createLlmClient().generate({ prompt: "p", schema: { type: "object" }, maxOutputTokens: 10, temperature: 0.3 });
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("a missing `claude` binary fails with an actionable install/login message", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    vi.mocked(spawn).mockReturnValue(fakeChild({ spawnError: Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" }) }) as never);
+
+    await expect(createLlmClient().generate({ prompt: "p", schema: { type: "object" }, maxOutputTokens: 10, temperature: 0.3 })).rejects.toThrow(
+      /@anthropic-ai\/claude-code/,
+    );
+  });
+
+  it("is_error in the envelope surfaces as an actionable error, not a bogus plan", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    vi.mocked(spawn).mockReturnValue(fakeChild({ stdout: JSON.stringify({ is_error: true, subtype: "error_during_execution", result: "not logged in" }) }) as never);
+
+    await expect(createLlmClient().generate({ prompt: "p", schema: { type: "object" }, maxOutputTokens: 10, temperature: 0.3 })).rejects.toThrow(
+      /claude CLI reported an error/,
+    );
+  });
+
+  it("stop_reason max_tokens marks the response truncated (planner's transient retry)", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    vi.mocked(spawn).mockReturnValue(fakeChild({ stdout: envelope({ result: "{", stop_reason: "max_tokens" }) }) as never);
+
+    const result = await createLlmClient().generate({ prompt: "p", schema: { type: "object" }, maxOutputTokens: 10, temperature: 0.3 });
+    expect(result.truncated).toBe(true);
+  });
+
+  it("WITHOUT a schema: prose passes through untouched (--summary/--suggest)", async () => {
+    withConfig(DEFAULT_CONFIG.llm);
+    process.env.WINDUP_LLM = "claude-code";
+    vi.mocked(spawn).mockReturnValue(fakeChild({ stdout: envelope({ result: "Logged in and reached {the dashboard}." }) }) as never);
+
+    const result = await createLlmClient().generate({ prompt: "p", maxOutputTokens: 10, temperature: 0.3 });
+    expect(result.text).toBe("Logged in and reached {the dashboard}.");
   });
 });

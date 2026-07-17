@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 import { getContext } from "./context.js";
 import { WindupError } from "./errors.js";
 
@@ -46,8 +48,9 @@ export interface LlmClient {
 export const PROVIDER_DEFAULTS: Record<ProviderName, { model: string; apiKeyEnv: string; apiKeyOptional?: boolean }> = {
   google: { model: "gemini-3.1-flash-lite", apiKeyEnv: "GOOGLE_GENERATIVE_AI_API_KEY" },
   openai: { model: "gpt-5-mini", apiKeyEnv: "OPENAI_API_KEY" },
-  // The wrapper's own auth is opt-in and off by default, so the key is optional.
-  // Model list is the wrapper's static one (its newest tier) — see claudeCodeClient.
+  // Default path is the native `claude` CLI (no server, no key). The key is
+  // only for the optional HTTP wrapper, whose own auth is off by default — so
+  // it is always optional here. See claudeCliClient / claudeCodeClient.
   "claude-code": { model: "claude-sonnet-4-6", apiKeyEnv: "CLAUDE_CODE_API_KEY", apiKeyOptional: true },
 };
 
@@ -97,7 +100,11 @@ export function createLlmClient(): LlmClient {
     throw new WindupError(`${apiKeyEnv} is not set (required for planning with ${provider}; cached replays do not use the LLM)`);
   }
   if (provider === "claude-code") {
-    return claudeCodeClient(model, apiKey, providerCfg?.baseUrl);
+    // Two ways to reach a Claude subscription, chosen automatically:
+    //   - baseUrl / WINDUP_CLAUDE_CODE_URL set → the (opt-in) HTTP wrapper;
+    //   - nothing set → the native `claude` CLI, spawned locally (zero setup).
+    const wrapperUrl = providerCfg?.baseUrl ?? process.env.WINDUP_CLAUDE_CODE_URL;
+    return wrapperUrl ? claudeCodeClient(model, apiKey, wrapperUrl) : claudeCliClient(model);
   }
   if (provider === "openai") {
     return openaiClient(model, apiKey!, providerCfg?.baseUrl ?? process.env.OPENAI_BASE_URL);
@@ -216,11 +223,90 @@ export function extractJson(text: string): string {
 }
 
 /**
- * Claude Code wrapper (claude-code-openai-wrapper) — a THIRD-PARTY, locally
- * run OpenAI-compatible proxy in front of the developer's own Claude Code
- * session, so someone with a Claude subscription can plan without an API key.
- * Opt-in only (`--llm claude-code`), never a default: it is not a hosted API,
- * and it is not operated by us or by Anthropic.
+ * Claude Code CLI (native) — the DEFAULT path for `--llm claude-code`, and the
+ * zero-setup one. The developer already has the `claude` CLI installed and
+ * logged into their Claude subscription; Windup spawns it in non-interactive
+ * print mode (`claude -p ... --output-format json`) and reads the plan from
+ * stdout. No wrapper, no Python, no local server.
+ *
+ * Run from a neutral temp cwd so Claude Code loads no project CLAUDE.md/context;
+ * in headless default permission mode it cannot perform side-effecting tool
+ * calls (no approver present → any tool needing permission is denied). Same
+ * contract as every client: the schema rides in the prompt (there is no JSON
+ * mode), the reply is un-fenced by extractJson(), tokens are real, and the
+ * DOLLARS are $0 by design (SUBSCRIPTION_PROVIDERS). `temperature`/`seed` have
+ * no CLI equivalent and are not sent (harmless — seed jitter is a flash quirk).
+ */
+function claudeCliClient(model: string): LlmClient {
+  return {
+    provider: "claude-code",
+    model,
+    generate(req) {
+      const content = req.schema
+        ? `${req.prompt}\n\nRespond ONLY with valid JSON matching this JSON Schema. No prose, no markdown fences:\n${JSON.stringify(req.schema)}`
+        : req.prompt;
+      return new Promise<LlmResponse>((resolve, reject) => {
+        const child = spawn("claude", ["-p", content, "--output-format", "json", "--model", model], {
+          cwd: tmpdir(),
+          // The CLI spawns the agent loop; give it the same 5 min the wrapper gets.
+          timeout: 300_000,
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (d) => (stdout += d));
+        child.stderr.on("data", (d) => (stderr += d));
+        child.on("error", (err) => reject(claudeCliError(err)));
+        child.on("close", (code, signal) => {
+          if (signal === "SIGTERM") {
+            reject(new WindupError(`the claude CLI timed out after 300s planning with ${model}`));
+            return;
+          }
+          if (code !== 0) {
+            reject(new WindupError(`the claude CLI exited with code ${code}${stderr ? `: ${stderr.trim().slice(0, 400)}` : ""}`));
+            return;
+          }
+          let env: { result?: string; is_error?: boolean; subtype?: string; stop_reason?: string; usage?: { input_tokens?: number; output_tokens?: number } };
+          try {
+            env = JSON.parse(stdout);
+          } catch {
+            reject(new Error(`the claude CLI returned non-JSON output: ${stdout.slice(0, 300)}`));
+            return;
+          }
+          if (env.is_error) {
+            reject(new WindupError(`the claude CLI reported an error (${env.subtype ?? "unknown"}): ${(env.result ?? "").slice(0, 400)}`));
+            return;
+          }
+          const raw = env.result ?? "";
+          resolve({
+            text: req.schema ? extractJson(raw) : raw,
+            tokens: { input: env.usage?.input_tokens ?? 0, output: env.usage?.output_tokens ?? 0 },
+            truncated: env.stop_reason === "max_tokens",
+          });
+        });
+      });
+    },
+  };
+}
+
+/** A spawn failure turned into an actionable message (the #1 case: CLI not installed / not on PATH). */
+function claudeCliError(err: unknown): WindupError {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/ENOENT/.test(msg)) {
+    return new WindupError(
+      `the "claude" CLI was not found on PATH. Install it (npm i -g @anthropic-ai/claude-code) and log in ` +
+        `(run "claude", then /login with your Claude plan), or run the claude-code-openai-wrapper and point ` +
+        `providers["claude-code"].baseUrl / WINDUP_CLAUDE_CODE_URL at it instead.`,
+    );
+  }
+  return new WindupError(`could not run the claude CLI: ${msg}`);
+}
+
+/**
+ * Claude Code wrapper (claude-code-openai-wrapper) — the OPT-IN alternative to
+ * the native CLI above, used only when a `baseUrl` / WINDUP_CLAUDE_CODE_URL
+ * points at it. A THIRD-PARTY, locally run OpenAI-compatible proxy in front of
+ * the developer's own Claude Code session. Never a default: it is not a hosted
+ * API, and it is not operated by us or by Anthropic.
  *
  * It implements only model/messages/stream. `response_format`, `temperature`,
  * `seed` and `max_tokens` are dropped on the floor, so this client does not

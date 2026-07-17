@@ -185,42 +185,24 @@ WINDUP_LLM=openai:gpt-5-mini npx windup run --all   # same thing via env (CI)
 
 ### Planning with your Claude subscription (`--llm claude-code`)
 
-If you already pay for a Claude plan (Pro/Max), you can plan with it instead of buying API tokens. Windup talks to [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) — a **third-party** server you run locally that puts an OpenAI-compatible face on your own Claude Code session.
+If you already pay for a Claude plan (Pro/Max), you can plan with it instead of buying API tokens — Windup drives the **`claude` CLI you already have**, no API key, no extra server.
 
-> **This is opt-in and community-maintained.** The wrapper is not built or supported by Windup or by Anthropic; it drives the Claude Code CLI and can break when either end changes. For reliability-sensitive work (CI, shared suites), prefer `--llm google` or `--llm openai`. Cached replays never call any LLM, so a plan generated this way replays at $0 with nothing running.
+> **Opt-in, never a default.** Using a subscription to plan programmatically is a gray area not endorsed by Anthropic, and Windup does not operate it. For reliability-sensitive work (CI, shared suites) prefer `--llm google` or `--llm openai`. Cached replays never call any LLM, so a plan made this way still replays at $0 with nothing running.
 
-#### First-time setup
+#### Setup — connect the CLI once
 
-**1. Connect the Claude Code CLI to your subscription** (one time). The wrapper authenticates *as you*, through the Claude Code CLI — so the CLI must be logged in with your Claude plan. The **desktop app and the CLI log in separately**; having the desktop app is not enough.
+The only prerequisite is the Claude Code CLI, logged in with your plan. The **desktop app and the CLI log in separately**; having the desktop app is not enough.
 
 ```bash
 # Install the CLI if you don't have it:
 npm install -g @anthropic-ai/claude-code
 # Log in with your Claude Pro/Max plan (opens a browser; pick "subscription", not an API key):
 claude
-#   → /login    (run this inside the CLI, then follow the browser flow)
-# Already logged in? Check with:
-claude          # if it starts a session without asking you to log in, you're connected
+#   → run /login inside the CLI, then follow the browser flow
+# Already logged in? If `claude` starts a session without asking you to log in, you're connected.
 ```
 
-**2. Install and start the wrapper** (a separate Python project — needs Python 3.11+ and [Poetry](https://python-poetry.org)):
-
-```bash
-git clone https://github.com/RichardAtCT/claude-code-openai-wrapper
-cd claude-code-openai-wrapper
-poetry install
-cp .env.example .env          # defaults are fine; no ANTHROPIC_API_KEY needed for subscription auth
-poetry run uvicorn src.main:app --port 8000
-```
-
-**3. Verify it's up** (in another terminal):
-
-```bash
-curl http://localhost:8000/health           # → ok
-curl http://localhost:8000/v1/models         # → lists claude-sonnet-4-6, claude-opus-4-6, ...
-```
-
-**4. Point Windup at it** and plan:
+That's it — no wrapper, no Python, no local server. Windup spawns `claude` in non-interactive mode for each plan (from an isolated temp dir, so it never picks up a project's `CLAUDE.md`).
 
 ```bash
 npx windup run checkout --llm claude-code                 # default model: claude-sonnet-4-6
@@ -232,21 +214,31 @@ Optionally pin it in config so plain `windup run` uses it:
 
 ```ts
 // windup.config.ts
-llm: {
-  provider: "claude-code",
-  model: "claude-sonnet-4-6",
-  providers: {
-    "claude-code": { baseUrl: "http://localhost:8000/v1" },  // change only if the wrapper isn't on :8000
-  },
-},
+llm: { provider: "claude-code", model: "claude-sonnet-4-6" },
 ```
 
-#### Notes & trade-offs
-
-- **No API key needed.** The wrapper's own client auth is off by default; set `CLAUDE_CODE_API_KEY` only if you enabled it on the wrapper. Move the endpoint with `baseUrl` (config) or `WINDUP_CLAUDE_CODE_URL` (env).
 - **Cost is reported as $0** in `windup costs` — the tokens are real and stay in the ledger, but they're covered by your subscription, so Windup does not invent a per-token price for them.
-- **If the wrapper isn't running**, `windup run --llm claude-code` fails fast with a message naming the URL (it does not hang on retries). Start the wrapper, then re-run.
-- **Under the hood**: the wrapper implements only `model`/`messages`/`stream`, so Windup carries the plan schema in the prompt and un-fences the reply mechanically (Ajv still validates every plan), and `temperature`/`seed` are not sent (harmless — the seed jitter exists for a Gemini-flash quirk). Without an `ANTHROPIC_API_KEY` on the wrapper's side its model list is static, topping out at `claude-sonnet-4-6` / `claude-opus-4-6`.
+- **If `claude` isn't installed or logged in**, the run fails fast with an actionable message (install / `/login`), not a stack trace.
+- **Slower to plan** than a hosted API (each plan spawns the CLI's agent — ~8–12s vs ~2–4s), but planning happens once and is cached; replays are $0 and instant regardless.
+- **Under the hood**: there's no JSON mode, so Windup carries the plan schema in the prompt and un-fences the reply mechanically (Ajv still validates every plan); `temperature`/`seed` have no CLI equivalent and aren't sent (harmless — seed jitter exists for a Gemini-flash quirk).
+
+<details>
+<summary><b>Alternative: route through the claude-code-openai-wrapper (HTTP)</b></summary>
+
+Instead of the CLI, you can point Windup at [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) — a **third-party**, community-maintained local proxy that exposes an OpenAI-compatible endpoint over your Claude Code session. Useful if you already run it, want an HTTP boundary, or reach Claude through Bedrock/Vertex behind it. Windup uses the wrapper (instead of spawning the CLI) **whenever a URL is configured**:
+
+```bash
+# start the wrapper (needs Python 3.11+ and Poetry), then:
+WINDUP_CLAUDE_CODE_URL=http://localhost:8000/v1 npx windup run checkout --llm claude-code
+```
+
+```ts
+// windup.config.ts — same effect, persisted
+llm: { provider: "claude-code", providers: { "claude-code": { baseUrl: "http://localhost:8000/v1" } } },
+```
+
+Its own client auth is off by default; set `CLAUDE_CODE_API_KEY` only if you enabled it. Same $0 cost, same un-fencing. A down wrapper fails fast with a message naming the URL.
+</details>
 
 ## CI/CD
 

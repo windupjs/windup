@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.22.0
+- **`--llm claude-code` needs no wrapper anymore** — it now drives the native `claude` CLI you already have (`claude -p … --output-format json`), spawned from an isolated temp dir. Zero setup: no Python, no Poetry, no local server — just the Claude Code CLI installed and logged into your plan. The [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) becomes the **opt-in** path, used only when a `baseUrl` / `WINDUP_CLAUDE_CODE_URL` is configured. Same $0 subscription cost, same mechanical un-fencing (Ajv still validates every plan). A missing/logged-out CLI fails fast with an actionable install/`/login` message. Verified end-to-end (plan → execute → verify) on the native path. Still opt-in, never a default.
+
 ## 0.21.0
 - **Plan with your Claude subscription** — new opt-in provider `--llm claude-code`, targeting the third-party [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) (a local proxy over your own Claude Code session). No API key required; cost is reported as **$0** in `windup costs` (tokens are real and stay in the ledger, but they're covered by your subscription — never priced at the fallback rate). Opt-in, never a default, and unsupported by us or Anthropic. The wrapper implements only `model`/`messages`/`stream`, so the schema rides in the prompt and the reply is un-fenced mechanically (Ajv still validates every plan); a down wrapper fails fast with an actionable error instead of retrying to `fetch failed`. Default model `claude-sonnet-4-6`; endpoint configurable via `baseUrl` / `WINDUP_CLAUDE_CODE_URL`.
 
