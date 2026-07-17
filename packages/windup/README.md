@@ -189,18 +189,14 @@ If you already pay for a Claude plan (Pro/Max), you can plan with it instead of 
 
 > **Opt-in, never a default.** Using a subscription to plan programmatically is a gray area not endorsed by Anthropic, and Windup does not operate it. For reliability-sensitive work (CI, shared suites) prefer `--llm google` or `--llm openai`. Cached replays never call any LLM, so a plan made this way still replays at $0 with nothing running.
 
-#### Setup — connect the CLI once
-
-The only prerequisite is the Claude Code CLI, logged in with your plan. The **desktop app and the CLI log in separately**; having the desktop app is not enough.
+#### Setup — one command
 
 ```bash
-# Install the CLI if you don't have it:
-npm install -g @anthropic-ai/claude-code
-# Log in with your Claude Pro/Max plan (opens a browser; pick "subscription", not an API key):
-claude
-#   → run /login inside the CLI, then follow the browser flow
-# Already logged in? If `claude` starts a session without asking you to log in, you're connected.
+npx windup claude login    # installs the claude CLI if missing, then signs it into your plan
+npx windup claude status   # anytime: "claude CLI: ready — you@example.com (max plan)"
 ```
+
+`windup claude login` installs the Claude Code CLI (with your confirmation — never a silent global install, never in CI) and launches Anthropic's own browser sign-in; you click *authorize* on your account. The **desktop app and the CLI sign in separately**, so having the desktop app is not enough. If you'd rather do it by hand: `npm install -g @anthropic-ai/claude-code`, then `claude` → `/login` (pick "subscription", not an API key).
 
 That's it — no wrapper, no Python, no local server. Windup spawns `claude` in non-interactive mode for each plan (from an isolated temp dir, so it never picks up a project's `CLAUDE.md`).
 
@@ -278,6 +274,8 @@ Example GitHub Actions step:
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |
+| `windup claude login` | Connect the `claude` CLI to your Claude subscription for `--llm claude-code` (installs it if missing, then signs in) |
+| `windup claude status` | Whether the `claude` CLI is installed and logged in (non-zero exit when not ready) |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |

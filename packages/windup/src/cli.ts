@@ -358,6 +358,18 @@ program
 
     const fragments = await loadFragments();
     console.log(`fragments: ${fragments.length}${fragments.length ? ` (${fragments.map((f) => f.fragment_id).join(", ")})` : ""}`);
+
+    // When claude-code is the active provider, surface whether its CLI is ready
+    // (best-effort — never let a status probe break `windup status`).
+    try {
+      const { resolveLlm } = await import("./llm.js");
+      if (resolveLlm().provider === "claude-code") {
+        const { checkClaudeReadiness, readinessLine } = await import("./claude-cli.js");
+        console.log(readinessLine(await checkClaudeReadiness()));
+      }
+    } catch {
+      // provider unresolved or probe failed — omit the line
+    }
   });
 
 const fragment = program.command("fragment").description("Manage trajectory fragments (reusable, tested action blocks)");
@@ -380,6 +392,74 @@ cache
   .action(async () => {
     await clearCache();
     console.log("trajectory cache cleared");
+  });
+
+const claude = program
+  .command("claude")
+  .description("Connect the `claude` CLI that --llm claude-code uses (plan with your Claude subscription)");
+claude
+  .command("status")
+  .description("Show whether the claude CLI is installed and logged into your Claude plan")
+  .action(async () => {
+    const { checkClaudeReadiness, readinessLine, isReady } = await import("./claude-cli.js");
+    const r = await checkClaudeReadiness();
+    console.log(readinessLine(r));
+    // Non-zero when not ready, so scripts/CI can gate on `windup claude status`.
+    if (!isReady(r)) process.exitCode = 1;
+  });
+claude
+  .command("login")
+  .description("Sign the claude CLI into your Claude subscription (installs it if missing, then runs claude auth login)")
+  .action(async () => {
+    const { checkClaudeReadiness, readinessLine, isReady, runInteractive, INSTALL_CMD } = await import("./claude-cli.js");
+    let r = await checkClaudeReadiness();
+
+    if (!r.installed) {
+      // Installing a global package modifies the system: confirm interactively,
+      // and never do it silently in CI — just print the command there.
+      if (!process.stdout.isTTY) {
+        console.error(`the claude CLI is not installed. Run:  ${INSTALL_CMD}`);
+        process.exitCode = 1;
+        return;
+      }
+      const { confirm, isCancel } = await import("@clack/prompts");
+      const ok = await confirm({ message: `The claude CLI isn't installed. Install it now?  (${INSTALL_CMD})` });
+      if (isCancel(ok) || !ok) {
+        console.log(`no problem — install it yourself, then re-run:  ${INSTALL_CMD}`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`installing ${INSTALL_CMD} ...`);
+      const code = await runInteractive("npm", ["i", "-g", "@anthropic-ai/claude-code"]);
+      if (code !== 0) {
+        console.error(`\ninstall failed (npm exited ${code}). Try it yourself — you may need elevated permissions:\n  ${INSTALL_CMD}`);
+        process.exitCode = 1;
+        return;
+      }
+      r = await checkClaudeReadiness();
+    }
+
+    if (isReady(r)) {
+      console.log(`already connected — ${readinessLine(r)}`);
+      console.log(`plan with it:  npx windup run <scenario> --llm claude-code`);
+      return;
+    }
+
+    console.log(`opening the Claude sign-in flow (claude auth login) — authorize in your browser...`);
+    const code = await runInteractive("claude", ["auth", "login", "--claudeai"]);
+    if (code !== 0) {
+      console.error(`sign-in did not complete (claude auth login exited ${code}). Retry, or run it directly:  claude auth login`);
+      process.exitCode = 1;
+      return;
+    }
+    r = await checkClaudeReadiness();
+    if (isReady(r)) {
+      console.log(readinessLine(r));
+      console.log(`you're set — plan with your subscription:  npx windup run <scenario> --llm claude-code`);
+    } else {
+      console.error(`still not logged in after the flow. Try again, or run:  claude auth login`);
+      process.exitCode = 1;
+    }
   });
 
 /**

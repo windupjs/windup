@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.23.0
+- **`windup claude login` / `windup claude status`** — one-command onboarding for `--llm claude-code`: `status` reports whether the `claude` CLI is installed and signed into your plan (machine-readable probe, no quota spent; non-zero exit when not ready); `login` installs the CLI if missing (interactive confirm — never a silent global install, and never in CI) and runs `claude auth login`. `windup status` also shows the readiness line when claude-code is the active provider.
+
 ## 0.22.0
 - **`--llm claude-code` needs no wrapper anymore** — it now drives the native `claude` CLI you already have (`claude -p … --output-format json`), spawned from an isolated temp dir. Zero setup: no Python, no Poetry, no local server — just the Claude Code CLI installed and logged into your plan. The [claude-code-openai-wrapper](https://github.com/RichardAtCT/claude-code-openai-wrapper) becomes the **opt-in** path, used only when a `baseUrl` / `WINDUP_CLAUDE_CODE_URL` is configured. Same $0 subscription cost, same mechanical un-fencing (Ajv still validates every plan). A missing/logged-out CLI fails fast with an actionable install/`/login` message. Verified end-to-end (plan → execute → verify) on the native path. Still opt-in, never a default.
 
