@@ -1,0 +1,1 @@
+{ "name": "tanstack-fixture", "dependencies": { "@tanstack/react-router": "^1.0.0", "@tanstack/react-start": "^1.0.0", "react": "^19.0.0" } }

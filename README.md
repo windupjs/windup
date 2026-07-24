@@ -59,7 +59,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 
 - **Plans are data, not code** — schema-validated JSON; no generated scripts, no conditionals, no flaky "agent improvisation" at run time.
 - **Cheap verification** — DOM/URL postconditions after every action. A failed verification invalidates the cached plan and triggers an automatic re-plan.
-- **Site map** — every execution feeds a graph of pages and transitions; `windup scan` seeds it straight from your source code (Next.js, react-router), so the planner uses your app's *real* selectors instead of guessing.
+- **Site map** — every execution feeds a graph of pages and transitions; `windup scan` seeds it straight from your source code (Next.js, react-router, TanStack Router), so the planner uses your app's *real* selectors instead of guessing.
 - **Fragments** — proven action blocks (e.g. login) the planner composes instead of regenerating.
 - **Environment-portable** — start URLs resolve per environment (`--base-url` / `WINDUP_BASE_URL`); the plan cache is keyed by path, so plans generated on `localhost` replay on staging and CI for free.
 - **CI-ready** — `windup run --all --reporter junit`, non-zero exit on failure, AI-spend ledger via `windup costs`.

@@ -49,6 +49,7 @@ npx windup init
 # 3. Index your app from source — before anything ever runs
 npx windup scan
 #    scan complete (full): framework=react-router routes=106 elements=1125
+#    (Next.js, react-router and TanStack Router file-based routing are indexed)
 #    The site map now knows your real routes and selectors; the planner
 #    will use them instead of guessing. Re-run after big changes
 #    (windup scan --update re-indexes only files changed since, via git).
@@ -392,7 +393,7 @@ A summary of the approaches that make natural-language tests deterministic and c
 - **Deterministic execution.** Plans run on Playwright with native actionability checks and trusted input events. Every action carries an explicit postcondition (`expect`: element visible / URL glob / input value) verified **LLM-free** — verification costs a DOM query, not tokens.
 - **Self-healing cache.** Trajectories are cached keyed by scenario + start-URL *path* (portable across dev/staging/CI hosts). A failed verification invalidates the plan, preserves the stale entry as evidence, and triggers a re-plan with the failure as context.
 - **Structural page signatures.** Pages are identified by a SHA-256 of their normalized interactive elements — no text, no data — so environment noise doesn't split identities, and start-page drift is detected (leniently) on replay.
-- **Layered site knowledge.** A site-map graph feeds the planner real routes and selectors, built from three sources with strict precedence — runtime observation (every execution is also collection) > static source scan (Next.js / react-router indexers, design-system-aware JSX parsing) > capped LLM-assist for files static analysis can't resolve. Knowledge is cache, not truth: anything stale degrades to runtime discovery.
+- **Layered site knowledge.** A site-map graph feeds the planner real routes and selectors, built from three sources with strict precedence — runtime observation (every execution is also collection) > static source scan (Next.js, react-router and TanStack Router indexers, design-system-aware JSX parsing) > capped LLM-assist for files static analysis can't resolve. Knowledge is cache, not truth: anything stale degrades to runtime discovery.
 - **Prompt budget discipline.** The planning prompt stays ≈ constant size (~32k chars): page tree, map slice, fragments catalog, and project manifest each have hard char budgets. Long prompts measurably degrade small models — budgets are a correctness feature, not an optimization.
 - **Mechanical normalization over prompt hope.** Model output is sanitized deterministically: empty fields dropped, ids renumbered, `wait_for`⇄`expect` normalized, fragment-echo actions deduped, credentials scrubbed from authored scenarios. Cross-provider A/B testing showed prompt instructions alone don't hold across models — code has the final word.
 - **Two-tier retry.** Semantic failures (invalid plan) get one short retry carrying the validation errors; transient API pathologies (token-loop degeneration, network) get re-calls with varied seeds. Full-prompt retries are avoided — they reliably re-trigger degeneration.

@@ -10,6 +10,7 @@ import { runAssist, selectCandidates, type AssistCaller } from "./assist.js";
 import { extractElements, formatElement } from "./extract.js";
 import { collectRouteSources, indexNextRoutes, type StaticRoute } from "./nextjs.js";
 import { indexReactRouterRoutes, sourceFiles } from "./react-router.js";
+import { indexTanstackRoutes } from "./tanstack-router.js";
 
 const exec = promisify(execFile);
 
@@ -47,8 +48,13 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
   let mode: "full" | "incremental" = "full";
   let assistSummary: ScanSummary["assist"] = null;
 
-  if (framework === "next" || framework === "react-router" || framework === "remix") {
-    let routes = framework === "next" ? await indexNextRoutes(root) : await indexReactRouterRoutes(root);
+  if (framework === "next" || framework === "react-router" || framework === "remix" || framework === "tanstack-router") {
+    let routes =
+      framework === "next"
+        ? await indexNextRoutes(root)
+        : framework === "tanstack-router"
+          ? await indexTanstackRoutes(root)
+          : await indexReactRouterRoutes(root);
 
     // Barrel/router anti-inheritance: a file shared by many routes (the
     // router file that imports every page) does NOT get its imports
@@ -139,9 +145,7 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;
   } else {
     console.log(
-      framework === "tanstack-router"
-        ? `scan: TanStack Router (file-based routing) isn't statically indexed yet — its site map is built from executions instead. If some routes actually use react-router, set framework: "react-router" in windup.config.ts.`
-        : `scan: no static indexer for ${framework ?? "this project"} yet (supported: Next.js, react-router, remix). If this is a react-router or remix app, set framework: "react-router" in windup.config.ts. Otherwise the site map will be fed by executions.`,
+      `scan: no static indexer for ${framework ?? "this project"} yet (supported: Next.js, react-router, remix, TanStack Router). If this is a react-router or remix app, set framework: "react-router" in windup.config.ts. Otherwise the site map will be fed by executions.`,
     );
   }
 

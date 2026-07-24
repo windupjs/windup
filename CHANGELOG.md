@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.26.0
+- **TanStack Router / TanStack Start indexer** (biggest ask from the beta report). `windup scan` now statically indexes TanStack's file-based routes under `src/routes/` (or `app/routes/`): dot-notation as path separators (`workspace.loja.aparencia.tsx` → `/workspace/loja/aparencia`), directory params (`loja/$companySlug/checkout/pagamento.tsx` → `/loja/:companySlug/checkout/pagamento`), pathless layout segments (`_authenticated/_company/manager.companies.tsx` → `/manager/companies`), splats, `index`/opt-out markers, and `__root` skipped. It trusts each route's `createFileRoute('/id')` string (TanStack's resolved id) and falls back to file-name conventions. `init` sets `framework: "tanstack-router"` automatically. On a real 118-route app this takes the map from ~7 routes to full coverage with real selectors.
+
 ## 0.25.0
 - **Self-heal reuses the provider that planned the scenario (fixes a real bug report).** When a cached plan fails verification and is re-planned, Windup now re-plans with the **same LLM provider that originally made the plan** (recorded in the plan), before falling back to the config default — so self-healing works even when the re-run didn't pass `--llm`. Precedence: `--llm`/`WINDUP_LLM` > the plan's recorded provider > `llm.provider` in config.
 - **Actionable "no key" errors** — a planning failure for a missing key now names the provider and lists the fixes (pass `--llm <provider>`, set the variable, or change `llm.provider`), instead of a bare "VAR is not set".
