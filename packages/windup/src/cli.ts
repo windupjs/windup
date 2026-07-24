@@ -239,6 +239,20 @@ secret
     console.log(`mapping in windup.credentials.json (commit it); reference the account by name in tasks: "the ${result.account} account"`);
   });
 secret
+  .command("remove <account>")
+  .alias("rm")
+  .description("Remove an account: drops the mapping, its .env.local values and clears it from the manifest")
+  .action(async (account: string) => {
+    const { removeCredentials } = await import("./secrets.js");
+    const removed = removeCredentials(account);
+    if (!removed) {
+      console.error(`no account "${account}" registered — see: windup secret list`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`account "${removed.account}" removed — ${removed.envs.length} value(s) dropped from .env.local and the mapping`);
+  });
+secret
   .command("list")
   .description("List registered accounts and whether their ENV values are set (never prints values)")
   .action(async () => {

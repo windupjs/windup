@@ -19,6 +19,8 @@ import { getContext } from "./context.js";
  */
 
 export const CREDENTIALS_FILE = "windup.credentials.json";
+const CREDENTIALS_COMMENT =
+  "windup account → ENV-name mapping. No secret values here — commit this file; values live in .env.local (gitignored) or CI secrets with these names.";
 
 export interface CredentialsFile {
   $comment?: string;
@@ -100,13 +102,53 @@ export function registerCredentials(account: string, fields: Record<string, stri
 
   const accounts = loadCredentialsFile(root);
   accounts[account] = { ...accounts[account], ...Object.fromEntries(Object.entries(envs).map(([f, n]) => [f, `ENV:${n}`])) };
-  const payload: CredentialsFile = {
-    $comment: "windup account → ENV-name mapping. No secret values here — commit this file; values live in .env.local (gitignored) or CI secrets with these names.",
-    accounts,
-  };
-  writeFileSync(credentialsFilePath(root), `${JSON.stringify(payload, null, 2)}\n`);
+  writeCredentialsFile(root, accounts);
 
   ctx.config.context = ctx.config.context ?? {};
   ctx.config.context.credentials = { ...ctx.config.context.credentials, [account]: accounts[account] };
   return { account, envs };
+}
+
+function writeCredentialsFile(root: string, accounts: Record<string, Record<string, string>>): void {
+  const payload: CredentialsFile = { $comment: CREDENTIALS_COMMENT, accounts };
+  writeFileSync(credentialsFilePath(root), `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+/** Removes ONLY the given ENV lines from .env.local, leaving every other variable intact. */
+function removeEnvLines(file: string, envNames: string[]): void {
+  if (!existsSync(file) || envNames.length === 0) return;
+  const drop = new Set(envNames);
+  const kept = readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => !drop.has(line.split("=")[0]?.trim()));
+  writeFileSync(file, kept.join("\n"));
+}
+
+export interface RemovedCredentials {
+  account: string;
+  /** ENV names dropped from .env.local and the mapping. */
+  envs: string[];
+}
+
+/**
+ * Removes an account: drops its mapping from windup.credentials.json, its
+ * value lines from .env.local (other variables untouched), and its entry from
+ * the live manifest. Returns null if the account is not registered.
+ */
+export function removeCredentials(account: string): RemovedCredentials | null {
+  const ctx = getContext();
+  const root = ctx.paths.root;
+  const accounts = loadCredentialsFile(root);
+  const fields = accounts[account];
+  if (!fields) return null;
+
+  const envNames = Object.values(fields).map((ref) => ref.replace(/^ENV:/, ""));
+  removeEnvLines(path.join(root, ".env.local"), envNames);
+  for (const name of envNames) delete process.env[name];
+
+  delete accounts[account];
+  writeCredentialsFile(root, accounts);
+  if (ctx.config.context?.credentials) delete ctx.config.context.credentials[account];
+
+  return { account, envs: envNames };
 }

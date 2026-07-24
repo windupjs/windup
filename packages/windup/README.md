@@ -134,14 +134,30 @@ npx windup new "log in and create a cost center named Marketing" --validate
 
 ## Test credentials
 
-Credentials never live in scenario files, plans, the cache or git — only **references**. Values stay in `.env.local` (gitignored) or CI secrets; the account → ENV-name mapping lives in `windup.credentials.json` (committed — it contains no values) and is merged into the project manifest automatically.
+A scenario says *"log in as the admin account"* — never the password. Credentials never live in scenario files, plans, the cache or git; only **references** do. Where things are stored:
+
+| What | Where | Committed? |
+|---|---|---|
+| The real values (users, passwords) | `.env.local` (created `600`) | **No** — gitignored automatically; in CI, the same variable names are secrets |
+| The account → variable-name mapping | `windup.credentials.json` | **Yes** — no values, only `ENV:` references |
+| The live wiring | merged into the manifest (`context.credentials`) at startup | — |
+
+A value is read **only by the executor, when it fills a field** — never by the planner, the plan, the cache or git. Variable names follow `WINDUP_<ACCOUNT>_<FIELD>` (e.g. `WINDUP_ADMIN_PASSWORD`).
 
 ```bash
-npx windup secret set admin        # hidden interactive prompts → .env.local + mapping
-npx windup secret list             # accounts + whether each ENV is set (never prints values)
+npx windup secret set admin        # hidden prompts → .env.local (values) + windup.credentials.json (mapping)
+npx windup secret list             # accounts + whether each value is [set] / [MISSING] — never prints values
+npx windup secret remove admin     # drop the account: mapping + its .env.local lines (alias: rm)
 ```
 
-Tasks then reference the account by name — *"log in with the admin account"* — and plans use `value_ref: "ENV:WINDUP_ADMIN_PASSWORD"`, resolved only at execution time. `windup new` does this automatically: credentials typed in the instruction are detected, registered, and scrubbed — the generated scenario mentions the account, never the values. In CI, define the same variable names as pipeline secrets.
+Then reference the account by name in the task:
+
+```json
+{ "scenario_id": "create-invoice",
+  "task": "Log in as the admin account, open Invoices, create one for ACME and verify it appears in the list." }
+```
+
+Windup tells the planner the `admin` account maps to `ENV:WINDUP_ADMIN_USER` / `ENV:WINDUP_ADMIN_PASSWORD`, so the plan fills those with `value_ref: "ENV:WINDUP_ADMIN_PASSWORD"`, resolved to the real value only at execution time. `windup new` does this automatically: credentials typed in the instruction are detected, registered and scrubbed — the scenario mentions the account, never the values. You can also declare the mapping directly under `context.credentials` in `windup.config.ts`. In CI, define the same variable names as pipeline secrets; `windup secret list` flags any that are missing before a run.
 
 ## Environments (dev / staging / CI)
 
@@ -274,6 +290,7 @@ Example GitHub Actions step:
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |
+| `windup secret remove <account>` | Remove an account: drops the mapping and its `.env.local` values (alias: `rm`) |
 | `windup claude login` | Connect the `claude` CLI to your Claude subscription for `--llm claude-code` (installs it if missing, then signs in) |
 | `windup claude status` | Whether the `claude` CLI is installed and logged in (non-zero exit when not ready) |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |

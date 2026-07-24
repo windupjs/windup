@@ -4,6 +4,10 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.24.0
+- **`windup secret remove <account>`** (alias `rm`) — completes credential management: drops the account from `windup.credentials.json` and its values from `.env.local` (other variables untouched), and clears it from the manifest.
+- **Credentials docs overhauled** — the package README and the docs site (en/es/pt/zh) now fully cover where values are stored, creating/listing/removing accounts, and referencing them by name in a scenario.
+
 ## 0.23.0
 - **`windup claude login` / `windup claude status`** — one-command onboarding for `--llm claude-code`: `status` reports whether the `claude` CLI is installed and signed into your plan (machine-readable probe, no quota spent; non-zero exit when not ready); `login` installs the CLI if missing (interactive confirm — never a silent global install, and never in CI) and runs `claude auth login`. `windup status` also shows the readiness line when claude-code is the active provider.
 
