@@ -104,6 +104,7 @@ async function detectFramework(cwd: string): Promise<string | null> {
     if (pkg.workspaces) console.log("warning: monorepo detected — per-app indexes are on the roadmap; proceeding with the repository root.");
     if (deps.next) return "next";
     if (deps["@remix-run/react"] || deps["@remix-run/node"]) return "remix";
+    if (deps["@tanstack/react-router"] || deps["@tanstack/react-start"]) return "tanstack-router";
     if (deps["react-router"] || deps["react-router-dom"]) return "react-router";
     if (deps.vue || deps.nuxt) return deps.nuxt ? "nuxt" : "vue";
     if (deps.svelte || deps["@sveltejs/kit"]) return "svelte";

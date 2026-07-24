@@ -161,11 +161,11 @@ export class LlmPlanner implements Planner {
     });
   }
 
-  async generate(scenario: Scenario, browser: Browser, failureContext?: string, opts: { skipGoto?: boolean } = {}): Promise<PlanGeneration> {
+  async generate(scenario: Scenario, browser: Browser, failureContext?: string, opts: { skipGoto?: boolean; preferredProvider?: string } = {}): Promise<PlanGeneration> {
     // Client created per generation, not in the constructor: cache replays never
     // plan (they must not require a key), and the --llm/--base-url flags have
     // already written to the envs by this point.
-    const client = createLlmClient();
+    const client = createLlmClient(opts.preferredProvider);
     // loadScenario resolves the start_url per environment; the fallback covers direct API calls.
     // skipGoto (depends_on without start_url): the snapshot is of the REAL page where the
     // last dependency ended — the planner no longer plans blind.

@@ -139,7 +139,9 @@ export async function runScan(opts: { update?: boolean; assist?: boolean; assist
     store.lastScanSha = (await gitHead(root)) ?? store.lastScanSha;
   } else {
     console.log(
-      `scan: no static indexer for ${framework ?? "this project"} yet (supported: Next.js, react-router, remix). Nothing was indexed — the site map will still be fed by executions.`,
+      framework === "tanstack-router"
+        ? `scan: TanStack Router (file-based routing) isn't statically indexed yet — its site map is built from executions instead. If some routes actually use react-router, set framework: "react-router" in windup.config.ts.`
+        : `scan: no static indexer for ${framework ?? "this project"} yet (supported: Next.js, react-router, remix). If this is a react-router or remix app, set framework: "react-router" in windup.config.ts. Otherwise the site map will be fed by executions.`,
     );
   }
 

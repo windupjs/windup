@@ -80,9 +80,20 @@ export function parseLlmSpec(spec: string): { provider: ProviderName; model: str
   return { provider: providerName, model: match ? match[2] : defaultModelFor(providerName) };
 }
 
-export function resolveLlm(): { provider: ProviderName; model: string } {
+export function resolveLlm(preferred?: string): { provider: ProviderName; model: string } {
   const spec = process.env.WINDUP_LLM?.trim();
   if (spec) return parseLlmSpec(spec);
+  // A re-plan (self-heal) reuses the provider that ORIGINALLY planned the
+  // scenario — recorded in the plan's generated_by — before falling back to
+  // the config default. So self-heal works even when this invocation didn't
+  // pass --llm (e.g. re-running a cached suite that must re-plan one step).
+  if (preferred?.trim()) {
+    try {
+      return parseLlmSpec(preferred.trim());
+    } catch {
+      // unknown recorded provider → ignore and fall back to config
+    }
+  }
   const config = getContext().config.llm;
   const provider = isProvider(config.provider) ? config.provider : "google";
   // Legacy (pre-multi-provider): LLM_MODEL swapped only the model.
@@ -91,13 +102,17 @@ export function resolveLlm(): { provider: ProviderName; model: string } {
   return { provider, model: config.model ?? defaultModelFor(provider) };
 }
 
-export function createLlmClient(): LlmClient {
-  const { provider, model } = resolveLlm();
+export function createLlmClient(preferred?: string): LlmClient {
+  const { provider, model } = resolveLlm(preferred);
   const providerCfg = getContext().config.llm.providers?.[provider];
   const apiKeyEnv = providerCfg?.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
   const apiKey = process.env[apiKeyEnv];
   if (!apiKey && !PROVIDER_DEFAULTS[provider].apiKeyOptional) {
-    throw new WindupError(`${apiKeyEnv} is not set (required for planning with ${provider}; cached replays do not use the LLM)`);
+    throw new WindupError(
+      `${apiKeyEnv} is not set — planning with "${provider}" needs it. ` +
+        `Fix any one: pass --llm <provider> to plan with another provider, set ${apiKeyEnv} (in .env.local or a CI secret), ` +
+        `or change llm.provider in windup.config.ts. Cached replays never need a key.`,
+    );
   }
   if (provider === "claude-code") {
     // Two ways to reach a Claude subscription, chosen automatically:

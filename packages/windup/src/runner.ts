@@ -26,7 +26,7 @@ export interface PlanGeneration {
 
 /** The only boundary with the LLM (implemented in planner.ts; faked in tests). */
 export interface Planner {
-  generate(scenario: Scenario, browser: Browser, failureContext?: string, opts?: { skipGoto?: boolean }): Promise<PlanGeneration>;
+  generate(scenario: Scenario, browser: Browser, failureContext?: string, opts?: { skipGoto?: boolean; preferredProvider?: string }): Promise<PlanGeneration>;
 }
 
 /** Scenario loader by id (injectable in tests; the real one is loadScenario). */
@@ -170,7 +170,7 @@ export async function runScenario(
         await invalidate(cached);
         metrics.cache = "invalidated";
         const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
-        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context, skipGoto);
+        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context, skipGoto, cached.plan.generated_by?.model);
         if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
         return metrics;
       }
@@ -207,7 +207,7 @@ export async function runScenario(
       await invalidate(cached);
       metrics.cache = "invalidated";
       const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
-      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto);
+      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;
     }
@@ -259,11 +259,12 @@ async function generateAndExecute(
   collector?: StepCollector,
   failureContext?: string,
   skipGoto = false,
+  preferredProvider?: string,
 ): Promise<{ ok: boolean; plan?: Plan; start_sig?: string }> {
   const planningStart = Date.now();
   let generation: PlanGeneration;
   try {
-    generation = await planner.generate(scenario, browser, failureContext, { skipGoto });
+    generation = await planner.generate(scenario, browser, failureContext, { skipGoto, preferredProvider });
   } catch (err) {
     metrics.duration_ms.planning += Date.now() - planningStart;
     if (err instanceof PlanGenerationError) {

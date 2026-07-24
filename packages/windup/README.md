@@ -110,6 +110,7 @@ Flows rarely start from zero — creating a bank account requires being logged i
 - Chains work (`login` → `select-company` → `create-account`), cycles are rejected, and a failing dependency fails the run with kind `dependency` before the scenario itself starts.
 - Each dependency keeps its own self-healing: if its cached plan breaks, it re-plans and re-caches — dependents benefit automatically.
 - Editing a scenario's `task` now invalidates its cached plan (a rewritten test is a different test).
+- **First-run warm-up:** a dependent scenario's cache key includes the state it inherits from its dependency, which only exists after the dependency runs once. So the first pass of a chain shows `cache=miss` (it plans), and it settles to `cache=hit` from the second run on — expected, not a cache failure.
 
 `windup new` handles dependencies both ways: `--depends-on login` declares them explicitly, and **the author LLM also suggests them on its own** — it sees every existing scenario (id + task) and, when the instruction presupposes a state one of them produces ("already logged in…"), emits `depends_on` automatically (mechanically filtered against real scenario ids — never invented). Either way the task is written from the dependency's final state, without repeating its steps.
 
@@ -197,6 +198,7 @@ WINDUP_LLM=openai:gpt-5-mini npx windup run --all   # same thing via env (CI)
 - API keys: `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` by default; override the env-var name with `apiKeyEnv`.
 - `baseUrl` (OpenAI only) points at any OpenAI-compatible endpoint — Azure, a proxy, or a local model server.
 - Switching providers never invalidates the plan cache: plans are data, replays are LLM-free regardless of who planned them.
+- **Self-heal keeps your provider:** when a cached plan fails and re-plans, Windup reuses the provider that originally made it (recorded in the plan) before the config default — so a scenario planned with `--llm claude-code` re-plans with claude-code even if the later run didn't pass the flag. Explicit `--llm` always wins.
 - `windup costs` breaks spend down **by provider and by model**, so alternating between LLMs keeps per-vendor spend visible.
 
 ### Planning with your Claude subscription (`--llm claude-code`)

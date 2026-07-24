@@ -4,6 +4,11 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.25.0
+- **Self-heal reuses the provider that planned the scenario (fixes a real bug report).** When a cached plan fails verification and is re-planned, Windup now re-plans with the **same LLM provider that originally made the plan** (recorded in the plan), before falling back to the config default — so self-healing works even when the re-run didn't pass `--llm`. Precedence: `--llm`/`WINDUP_LLM` > the plan's recorded provider > `llm.provider` in config.
+- **Actionable "no key" errors** — a planning failure for a missing key now names the provider and lists the fixes (pass `--llm <provider>`, set the variable, or change `llm.provider`), instead of a bare "VAR is not set".
+- **TanStack Router detected** — `init` recognizes `@tanstack/react-router` / `@tanstack/react-start` (framework `tanstack-router`), and `scan` explains that TanStack file-based routing isn't statically indexed yet (the map is built from executions) and how to opt into the react-router indexer. The generic "no indexer" message now points at `framework: "react-router"`.
+
 ## 0.24.0
 - **`windup secret remove <account>`** (alias `rm`) — completes credential management: drops the account from `windup.credentials.json` and its values from `.env.local` (other variables untouched), and clears it from the manifest.
 - **Credentials docs overhauled** — the package README and the docs site (en/es/pt/zh) now fully cover where values are stored, creating/listing/removing accounts, and referencing them by name in a scenario.
