@@ -1,11 +1,10 @@
 import "../env.js";
-import { readdir } from "node:fs/promises";
 import { afterAll, describe, it } from "vitest";
 import { shutdownBrowserEngine } from "../browser.js";
 import { createContextFromConfig, getContext, setContext } from "../context.js";
 import { GeminiPlanner } from "../planner.js";
 import { runScenario } from "../runner.js";
-import { loadScenario } from "../scenario.js";
+import { discoverScenarioIds, loadScenario } from "../scenario.js";
 import type { RunMetrics } from "../types.js";
 
 /**
@@ -36,11 +35,7 @@ export async function windupSuite(opts: WindupSuiteOptions = {}): Promise<void> 
   const dir = getContext().paths.scenariosDir;
   let ids: string[] = [];
   try {
-    ids = (await readdir(dir))
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.replace(/\.json$/, ""))
-      .filter(opts.filter ?? (() => true))
-      .sort();
+    ids = (await discoverScenarioIds()).filter(opts.filter ?? (() => true));
   } catch {
     // no scenarios dir → empty suite below explains itself
   }

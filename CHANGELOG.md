@@ -4,6 +4,10 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.27.0
+- **Scenarios can be organized in subfolders** (from a beta report). `run --all`, the vitest suite and `depends_on` now discover scenarios **recursively** under the scenarios directory — group them by module (`e2e/scenarios/contacts/…`, `…/auth/…`). The `scenario_id` field stays the identity (resolution is by id, not file path; duplicate ids are reported). `loadScenario` keeps the `<dir>/<id>.json` fast path and falls back to a recursive search by `scenario_id`.
+- Note: `windup init` has detected TanStack Router since 0.25.0 (writes `framework: "tanstack-router"`) — re-run `windup init` on a project scaffolded by an older version to pick it up.
+
 ## 0.26.0
 - **TanStack Router / TanStack Start indexer** (biggest ask from the beta report). `windup scan` now statically indexes TanStack's file-based routes under `src/routes/` (or `app/routes/`): dot-notation as path separators (`workspace.loja.aparencia.tsx` → `/workspace/loja/aparencia`), directory params (`loja/$companySlug/checkout/pagamento.tsx` → `/loja/:companySlug/checkout/pagamento`), pathless layout segments (`_authenticated/_company/manager.companies.tsx` → `/manager/companies`), splats, `index`/opt-out markers, and `__root` skipped. It trusts each route's `createFileRoute('/id')` string (TanStack's resolved id) and falls back to file-name conventions. `init` sets `framework: "tanstack-router"` automatically. On a real 118-route app this takes the map from ~7 routes to full coverage with real selectors.
 

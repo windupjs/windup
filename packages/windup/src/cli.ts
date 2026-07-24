@@ -72,12 +72,8 @@ program
 
     let ids: string[];
     if (opts.all) {
-      const { readdir } = await import("node:fs/promises");
-      const { getContext } = await import("./context.js");
-      ids = (await readdir(getContext().paths.scenariosDir))
-        .filter((f) => f.endsWith(".json"))
-        .map((f) => f.replace(/\.json$/, ""))
-        .sort();
+      const { discoverScenarioIds } = await import("./scenario.js");
+      ids = await discoverScenarioIds();
       if (ids.length === 0) {
         console.error("no scenarios found — write one first (npx windup init creates an example)");
         process.exitCode = 2;

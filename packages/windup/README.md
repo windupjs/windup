@@ -93,6 +93,7 @@ A scenario is a JSON file in your scenarios directory (default `e2e/scenarios/`)
 - `start_url` is **optional** (defaults to `/`) and should stay environment-free: a path, resolved against the effective base URL.
 - End the task with **what to verify** — that becomes the plan's final postcondition.
 - Never put secrets in tasks. Reference accounts from the project manifest (below); the plan will use `value_ref: "ENV:VAR"` and the real value is resolved only at runtime, never cached.
+- **Organize by folder.** Scenarios are discovered recursively, so you can group them in subfolders (`e2e/scenarios/contacts/list.json`, `e2e/scenarios/auth/login.json`). The **`scenario_id` is the identity** — `run --all`, the vitest suite and `depends_on` all resolve by it, independent of the file path (duplicate ids are reported).
 
 ### Scenario dependencies (`depends_on`)
 
