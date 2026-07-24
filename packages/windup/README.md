@@ -301,7 +301,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--browser chromium|firefox|webkit` · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--browser chromium|firefox|webkit` · `--verbose` (planning/execution heartbeat) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
 
 ### AI debrief (`--summary`)
 
@@ -314,6 +314,21 @@ npx windup run checkout --summary --reporter html
 ```
 
 Off by default on purpose — cached replays stay at zero LLM calls and $0. The debrief cost (~$0.0005 on the default model) is tracked separately in the run metrics and included in `estimated_cost_usd`.
+
+### Verbose progress (`--verbose`)
+
+Planning with a slow provider (e.g. `--llm claude-code`, ~1–3 min/plan) prints nothing until the result, so a run can look frozen. `--verbose` emits milestones to stderr as planning and execution advance — each line prefixed with the scenario id and elapsed time:
+
+```
+contacts-columns  planning… (llm: claude-code/claude-sonnet-4-6)  (+0.0s)
+contacts-columns  calling claude-code (attempt 1.1)…  (+0.2s)
+contacts-columns  plan received: 4 actions, validating…  (+48.9s)
+contacts-columns  a1 goto /workspace/contacts ✓  (+49.1s)
+contacts-columns  a2 click … ✗ verification failed  (+51.0s)
+contacts-columns  verification failed at a2 → self-heal re-planning  (+51.0s)
+```
+
+It never changes results and is off by default. Best read at `--concurrency 1` (parallel runs interleave, though each line is scenario-prefixed).
 
 ### Fix suggestions on failure (`--suggest`)
 

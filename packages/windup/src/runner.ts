@@ -7,6 +7,7 @@ import { expandPlan, loadFragments } from "./fragments.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
+import { progress } from "./progress.js";
 
 export interface PlanGeneration {
   plan: Plan;
@@ -207,6 +208,7 @@ export async function runScenario(
       await invalidate(cached);
       metrics.cache = "invalidated";
       const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
+      progress(scenario.scenario_id, `verification failed at ${result.failure?.action_id ?? "?"} → self-heal re-planning`);
       const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;

@@ -1,5 +1,6 @@
 import type { Browser } from "./browser.js";
 import { createLlmClient, type LlmClient } from "./llm.js";
+import { progress, progressStart } from "./progress.js";
 import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
 import type { Action, Fragment, Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
@@ -166,6 +167,8 @@ export class LlmPlanner implements Planner {
     // plan (they must not require a key), and the --llm/--base-url flags have
     // already written to the envs by this point.
     const client = createLlmClient(opts.preferredProvider);
+    progressStart(scenario.scenario_id);
+    progress(scenario.scenario_id, `planning… (llm: ${client.provider}/${client.model}${failureContext ? ", re-plan" : ""})`);
     // loadScenario resolves the start_url per environment; the fallback covers direct API calls.
     // skipGoto (depends_on without start_url): the snapshot is of the REAL page where the
     // last dependency ended — the planner no longer plans blind.
@@ -213,6 +216,7 @@ export class LlmPlanner implements Planner {
       for (let apiTry = 1; apiTry <= 3 && !plan; apiTry++) {
         let response;
         try {
+          progress(scenario.scenario_id, `calling ${client.provider} (attempt ${attempt}.${apiTry})…`);
           response = await this.call(client, prompt, attempt * 10 + apiTry);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -239,6 +243,7 @@ export class LlmPlanner implements Planner {
         try {
           rawText = response.text;
           plan = normalizeActions(sanitizePlan(JSON.parse(rawText))) as Plan;
+          progress(scenario.scenario_id, `plan received: ${plan.actions?.length ?? 0} actions, validating…`);
           if (plan?.actions && fragments.length) plan = dropFragmentEchoes(plan, fragments);
         } catch {
           lastErrors = ["response was not valid JSON — transient API failure"];
@@ -268,6 +273,7 @@ export class LlmPlanner implements Planner {
           }
           plan.task = scenario.task;
           plan.generated_by = { model: `${client.provider}/${client.model}`, at: new Date().toISOString() };
+          progress(scenario.scenario_id, `plan valid ✓ (${llmCalls} llm call(s), ${plan.actions.length} actions)`);
           return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
         }
         lastErrors = validation.errors;

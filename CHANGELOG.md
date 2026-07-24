@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.28.0
+- **`run --verbose` — a heartbeat during planning** (from a beta report: planning with `--llm claude-code` takes 1–3 min with no output, so a run looks frozen). Verbose mode emits milestones to stderr as planning and execution advance — `planning… (llm: …)`, `calling <provider> (attempt N)…`, `plan received: N actions`, per-action `✓/✗`, and `→ self-heal re-planning` — each prefixed with the scenario id and elapsed time. Off by default; never affects results.
+
 ## 0.27.0
 - **Scenarios can be organized in subfolders** (from a beta report). `run --all`, the vitest suite and `depends_on` now discover scenarios **recursively** under the scenarios directory — group them by module (`e2e/scenarios/contacts/…`, `…/auth/…`). The `scenario_id` field stays the identity (resolution is by id, not file path; duplicate ids are reported). `loadScenario` keeps the `<dir>/<id>.json` fast path and falls back to a recursive search by `scenario_id`.
 - Note: `windup init` has detected TanStack Router since 0.25.0 (writes `framework: "tanstack-router"`) — re-run `windup init` on a project scaffolded by an older version to pick it up.

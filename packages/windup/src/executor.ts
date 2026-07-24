@@ -2,6 +2,7 @@ import type { Browser } from "./browser.js";
 import type { Action, ActionMetrics, FailureKind, Plan } from "./types.js";
 import { DEFAULT_TIMEOUT_MS } from "./types.js";
 import { verify } from "./verifier.js";
+import { progress } from "./progress.js";
 
 export interface ExecutionFailure {
   kind: FailureKind;
@@ -146,6 +147,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
       await performAction(browser, action, timeoutMs);
     } catch (err) {
       const duration = Date.now() - started;
+      progress(plan.scenario_id, `${action.id} ${action.type} ✗ ${err instanceof Error ? err.message.split("\n")[0] : ""}`);
       metrics.push({ id: action.id, duration_ms: duration, verify_ms: 0, status: "failed" });
       return {
         ok: false,
@@ -169,6 +171,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     });
 
     if (!result.ok) {
+      progress(plan.scenario_id, `${action.id} ${action.type} ✗ verification failed`);
       return {
         ok: false,
         actions: metrics,
@@ -180,6 +183,8 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
         start_sig: startSig,
       };
     }
+
+    progress(plan.scenario_id, `${action.id} ${action.type} ${action.target?.selector ?? action.url ?? ""} ✓`);
 
     if (collector) {
       try {
