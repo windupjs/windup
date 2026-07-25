@@ -1,6 +1,6 @@
 import type { Browser } from "./browser.js";
 import { createLlmClient, type LlmClient } from "./llm.js";
-import { progress, progressStart } from "./progress.js";
+import { progress, progressStart, streamEvent } from "./progress.js";
 import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
 import type { Action, Fragment, Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
@@ -169,6 +169,7 @@ export class LlmPlanner implements Planner {
     const client = createLlmClient(opts.preferredProvider);
     progressStart(scenario.scenario_id);
     progress(scenario.scenario_id, `planning… (llm: ${client.provider}/${client.model}${failureContext ? ", re-plan" : ""})`);
+    streamEvent(scenario.scenario_id, "planning", { llm: `${client.provider}/${client.model}`, replan: Boolean(failureContext) });
     // loadScenario resolves the start_url per environment; the fallback covers direct API calls.
     // skipGoto (depends_on without start_url): the snapshot is of the REAL page where the
     // last dependency ended — the planner no longer plans blind.
@@ -274,6 +275,7 @@ export class LlmPlanner implements Planner {
           plan.task = scenario.task;
           plan.generated_by = { model: `${client.provider}/${client.model}`, at: new Date().toISOString() };
           progress(scenario.scenario_id, `plan valid ✓ (${llmCalls} llm call(s), ${plan.actions.length} actions)`);
+          streamEvent(scenario.scenario_id, "plan", { actions: plan.actions.length, llm_calls: llmCalls });
           return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
         }
         lastErrors = validation.errors;

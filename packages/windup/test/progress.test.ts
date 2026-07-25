@@ -23,3 +23,27 @@ describe("verbose progress", () => {
     expect(line).toMatch(/\(\+\d+\.\d+s\)/);
   });
 });
+
+import { streamEnabled, streamEvent } from "../src/progress.js";
+
+describe("NDJSON stream events (--stream)", () => {
+  afterEach(() => { delete process.env.WINDUP_STREAM; });
+  it("is a no-op unless WINDUP_STREAM=1", () => {
+    const spy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    expect(streamEnabled()).toBe(false);
+    streamEvent("login", "run:start");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+  it("emits one valid JSON line per event with scenario + event + data", () => {
+    process.env.WINDUP_STREAM = "1";
+    const spy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    streamEvent("login", "action", { id: "a1", status: "passed" });
+    expect(spy).toHaveBeenCalledTimes(1);
+    const line = spy.mock.calls[0][0] as string;
+    expect(line.endsWith("\n")).toBe(true);
+    const obj = JSON.parse(line);
+    expect(obj).toMatchObject({ event: "action", scenario: "login", id: "a1", status: "passed" });
+    spy.mockRestore();
+  });
+});

@@ -323,7 +323,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--browser chromium|firefox|webkit` · `--verbose` (planning/execution heartbeat) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--browser chromium|firefox|webkit` · `--verbose` (planning/execution heartbeat) · `--stream` (NDJSON events) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>`
 
 ### AI debrief (`--summary`)
 

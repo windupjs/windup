@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.31.0
+- **`run --stream` — NDJSON event stream** (the machine-readable half of the beta report's #9). Emits one JSON line per milestone to stdout (`run:start`, `planning`, `plan`, `action`, `replan`, `run:end`, each with the scenario, elapsed time and relevant data), so CI or a dashboard can follow a run in real time. Human progress (`--verbose`) stays on stderr, keeping stdout pure NDJSON.
+
 ## 0.30.0
 - **Guided self-heal (#10, from a beta report).** When a cached plan fails verification and Windup re-plans, the re-plan context now names the **exact selector that failed** with a "do not reuse it" instruction, re-emphasizes the scenario hints, and — under `--suggest` — feeds the same expert diagnosis you'd read straight back into the planner, so it corrects instead of re-proposing a refuted semantic selector. A **loop-breaker** warns when a scenario keeps re-planning without stabilizing (the app likely lacks a stable selector — an accessibility gap — or has a race), instead of churning LLM calls silently.
 

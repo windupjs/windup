@@ -2,7 +2,7 @@ import type { Browser } from "./browser.js";
 import type { Action, ActionMetrics, FailureKind, Plan } from "./types.js";
 import { DEFAULT_TIMEOUT_MS } from "./types.js";
 import { verify } from "./verifier.js";
-import { progress } from "./progress.js";
+import { progress, streamEvent } from "./progress.js";
 
 export interface ExecutionFailure {
   kind: FailureKind;
@@ -172,6 +172,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
 
     if (!result.ok) {
       progress(plan.scenario_id, `${action.id} ${action.type} ✗ verification failed`);
+      streamEvent(plan.scenario_id, "action", { id: action.id, type: action.type, status: "failed", reason: "verification" });
       return {
         ok: false,
         actions: metrics,
@@ -185,6 +186,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     }
 
     progress(plan.scenario_id, `${action.id} ${action.type} ${action.target?.selector ?? action.url ?? ""} ✓`);
+    streamEvent(plan.scenario_id, "action", { id: action.id, type: action.type, status: "passed" });
 
     if (collector) {
       try {

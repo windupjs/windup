@@ -16,7 +16,7 @@ export function verboseEnabled(): boolean {
 
 /** (Re)start the elapsed clock for a scenario — called when its run begins. */
 export function progressStart(scenarioId: string): void {
-  if (verboseEnabled()) startedAt.set(scenarioId, Date.now());
+  if (verboseEnabled() || streamEnabled()) startedAt.set(scenarioId, Date.now());
 }
 
 /** Emit one milestone line for a scenario (no-op unless verbose). */
@@ -28,4 +28,27 @@ export function progress(scenarioId: string, message: string): void {
   }
   const elapsed = ((Date.now() - (start ?? Date.now())) / 1000).toFixed(1);
   process.stderr.write(`  ${scenarioId}  ${message}  (+${elapsed}s)\n`);
+}
+
+/** true when NDJSON event streaming is on (env WINDUP_STREAM=1 / run --stream). */
+export function streamEnabled(): boolean {
+  return process.env.WINDUP_STREAM === "1";
+}
+
+/**
+ * Emit one NDJSON event to stdout (no-op unless streaming). One JSON object per
+ * line, machine-readable for CI/dashboards: `{ "event": "planning",
+ * "scenario": "login", "t": 0.2, "llm": "claude-code/…" }`. Human progress
+ * (--verbose) goes to stderr, so --stream keeps stdout pure NDJSON.
+ */
+export function streamEvent(scenarioId: string | null, event: string, data: Record<string, unknown> = {}): void {
+  if (!streamEnabled()) return;
+  const payload: Record<string, unknown> = { event };
+  if (scenarioId) {
+    payload.scenario = scenarioId;
+    const start = startedAt.get(scenarioId);
+    if (start !== undefined) payload.t = Number(((Date.now() - start) / 1000).toFixed(1));
+  }
+  Object.assign(payload, data);
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
 }

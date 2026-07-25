@@ -7,7 +7,7 @@ import { expandPlan, loadFragments } from "./fragments.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
-import { progress } from "./progress.js";
+import { progress, streamEvent } from "./progress.js";
 import { runHooks } from "./hooks.js";
 
 export interface PlanGeneration {
@@ -218,6 +218,7 @@ export async function runScenario(
       await invalidate(cached);
       metrics.cache = "invalidated";
       progress(scenario.scenario_id, `verification failed at ${result.failure?.action_id ?? "?"} → self-heal re-planning`);
+      streamEvent(scenario.scenario_id, "replan", { at: result.failure?.action_id ?? null, reason: "verification" });
       // Loop-breaker signal (#10): repeated re-plans that keep failing usually
       // mean the app lacks a stable selector (an a11y gap) or has a race — not
       // something more LLM calls will fix. Warn loudly instead of churning silently.
