@@ -54,6 +54,13 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
       throw new WindupError(`scenario "${id}": "like.set" must be a map of string → string (source value → value to use here)`);
     }
   }
+  if (scenario.seed !== undefined) {
+    const seed = scenario.seed as { localStorage?: unknown; sessionStorage?: unknown; origin?: unknown };
+    const okMap = (v: unknown) => v === undefined || (typeof v === "object" && v !== null && Object.values(v).every((x) => typeof x === "string"));
+    if (typeof seed !== "object" || seed === null || !okMap(seed.localStorage) || !okMap(seed.sessionStorage) || (seed.origin !== undefined && typeof seed.origin !== "string")) {
+      throw new WindupError(`scenario "${id}": "seed" must be { localStorage?: {string→string}, sessionStorage?: {string→string}, origin?: string }`);
+    }
+  }
   const continueFromDependency = !scenario.start_url && (scenario.depends_on?.length ?? 0) > 0;
   scenario.start_url = resolveStartUrl(scenario.start_url);
   return Object.assign(scenario, { continue_from_dependency: continueFromDependency }) as ResolvedScenario;

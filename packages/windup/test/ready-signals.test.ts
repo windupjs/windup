@@ -29,6 +29,7 @@ class FakeBrowser implements Browser {
   async pageSignature(): Promise<string> { return "sig"; }
   async title(): Promise<string> { return ""; }
   async storageState(): Promise<unknown> { return { cookies: [], origins: [] }; }
+  async seedStorage(): Promise<void> {}
   async close(): Promise<void> {}
 }
 

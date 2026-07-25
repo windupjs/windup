@@ -43,6 +43,8 @@ export interface Browser {
   title(): Promise<string>;
   /** Playwright storageState (cookies + localStorage) of the current context — a session snapshot for dependents. */
   storageState(): Promise<unknown>;
+  /** Seed localStorage/sessionStorage for an origin BEFORE the plan runs (client-side fixtures). Each key is set only if absent. */
+  seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -165,6 +167,26 @@ class PlaywrightSession implements Browser {
 
   async storageState(): Promise<unknown> {
     return this.context.storageState();
+  }
+
+  async seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void> {
+    // addInitScript runs before the page's own scripts on every navigation, so
+    // the app sees the seeded values on load. The "only if absent" guard means
+    // it seeds on first visit but never overwrites the app's later mutations
+    // (e.g. a cart the scenario then edits through the UI). Storage is
+    // origin-scoped by the browser; `origin` further restricts which pages seed.
+    await this.context.addInitScript(
+      (data: { ls: Record<string, string>; ss: Record<string, string>; origin?: string }) => {
+        if (data.origin && location.origin !== data.origin) return;
+        try {
+          for (const [k, v] of Object.entries(data.ls)) if (localStorage.getItem(k) === null) localStorage.setItem(k, v);
+          for (const [k, v] of Object.entries(data.ss)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, v);
+        } catch {
+          // storage can be unavailable (sandboxed/opaque origin) — seeding is best-effort
+        }
+      },
+      { ls: seed.localStorage ?? {}, ss: seed.sessionStorage ?? {}, origin: seed.origin },
+    );
   }
 
   async close(): Promise<void> {

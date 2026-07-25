@@ -92,6 +92,20 @@ export interface Scenario {
     /** Optional fill-value overrides: source literal value → value to use here. */
     set?: Record<string, string>;
   };
+  /**
+   * #5 — deterministic browser-storage fixtures, applied BEFORE the plan runs
+   * (no server call). Seed `localStorage` (e.g. a pre-built cart) and/or
+   * `sessionStorage` (e.g. a POS device selection) so a scenario can reach a
+   * client-side state directly, instead of building it through the UI. Seeded
+   * per origin; each key is set only if absent, so the app's own mutations
+   * (a cart the test then edits) are never clobbered on later navigations.
+   */
+  seed?: {
+    localStorage?: Record<string, string>;
+    sessionStorage?: Record<string, string>;
+    /** Origin to seed (default: the scenario's start_url origin). */
+    origin?: string;
+  };
 }
 
 export type CacheStatus = "active" | "stale";

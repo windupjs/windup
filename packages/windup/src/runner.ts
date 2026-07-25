@@ -264,6 +264,14 @@ export async function runScenario(
       }
     }
 
+    // #5 client-side fixtures: seed localStorage/sessionStorage before any
+    // navigation so the app loads with the seeded state (cart, POS device, …).
+    if (scenario.seed) {
+      let origin = scenario.seed.origin;
+      if (!origin && scenario.start_url) { try { origin = new URL(scenario.start_url).origin; } catch { /* relative/None — seed any origin */ } }
+      await browser.seedStorage({ ...scenario.seed, origin });
+    }
+
     if (snapshot) {
       // FAST PATH: restore the anchor dependency's session, skip the chain.
       const restoreStart = Date.now();

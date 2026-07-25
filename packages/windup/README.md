@@ -141,6 +141,27 @@ At scale, many scenarios are the **same flow on a different route/entity** — c
 
 Reuse whole plans with `like`; reuse an **action block** across otherwise-different flows with a [fragment](#what-lives-where) (`windup fragment extract`). Both keep the deterministic, verified guarantee.
 
+### Client-side fixtures (`seed`)
+
+Some state lives entirely in the browser — a shopping cart in `localStorage`, a selected POS device in `sessionStorage`. Building it through the UI every time is slow and couples the test to that flow. `seed` injects that state **before the plan runs**, deterministically and with no server call:
+
+```json
+{
+  "scenario_id": "cart-updates-quantity",
+  "start_url": "/checkout/cart",
+  "task": "Increase the first item's quantity to 3 and verify the total updates.",
+  "seed": {
+    "localStorage": { "cart": "[{\"id\":\"tkt-1\",\"qty\":2,\"price\":50}]" },
+    "sessionStorage": { "pos_device": "reader-7" }
+  }
+}
+```
+
+- Seeded per **origin** (default: the `start_url` origin; override with `seed.origin`) via a Playwright init script that runs before the app's scripts, so the page loads already in that state.
+- **Each key is set only if absent** — the app's own mutations (a cart the test then edits) are never clobbered on later navigations.
+- It's **not** part of the cached plan: it's applied on every run (including `$0` replays), so seeded scenarios stay deterministic.
+- CI-safe by construction: you reach a client-side state directly instead of driving a flow that might hit the server. Great for cart/checkout and POS scenarios.
+
 ### Authoring with `windup new`
 
 > **The task and its final verification are the LLM's best guess** from your instruction and the site map — an LLM can pick a plausible-but-wrong destination. `windup new` now steers the verification toward the instruction's actual goal (a visible element/text over a guessed route), and recommends confirming with **`windup new "..." --validate`** (generate → run → self-refine until green) or a first `windup run`.
@@ -320,6 +341,18 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 - Exit code is non-zero when any scenario fails.
 - `--reporter junit` emits JUnit XML (GitHub Actions, GitLab and Jenkins consume it natively); `--reporter json` emits a machine-readable summary; `--reporter html` emits a self-contained human-friendly page (zero JS/deps — upload it as a CI artifact or open locally). Default output: `.windup/reports/`.
 - `windup costs --json` reports AI spend for pipeline tracking.
+
+### Non-destructive testing — stay at the side-effect boundary
+
+A suite that runs on **every push** must never charge a card, send an email/OTP, create an account, or mutate persistent state. The reliable rule: **test up to the boundary of a side effect, and stop there.** In practice almost every screen is coverable this way — the valuable checks fire *before* the network call:
+
+- **Client-side validation** — invalid email/CPF/card, required fields, out-of-range values. The message ("CPF inválido", "Preencha os dados do cartão") appears *before* any request, so asserting it is safe.
+- **Navigation & read screens** — lists, filters, tabs, detail views, empty states.
+- **Client-side state via [`seed`](#client-side-fixtures-seed)** — cart quantities/removal/limits (localStorage), a POS device (sessionStorage) — reached without a server round-trip.
+- **Error states from bogus tokens/slugs** — `/order/BOGUS` → "not found", an invalid share link → "expired". Fully deterministic, no seed data needed.
+- **Confirmation dialogs — open and *cancel*.** Assert the "Delete?" dialog appears, then dismiss it (a native `confirm` via `"dialog": "dismiss"`; a modal by clicking Cancel). You verify the guard UI without performing the destructive action.
+
+Keep out of CI: real payment, OTP/email/WhatsApp sends, account/company creation, saving config that persists (**watch single-click toggles that save with no confirm step**), a check-in that consumes a voucher, and — most dangerous of all — **changing the test account's password**. Windup won't stop you from authoring such a step, so the discipline lives in the scenarios: every one stops before the irreversible action. `setup`/`teardown` (and `suite.setup`/`teardown`) exist for the writes you genuinely must exercise — do them against a disposable fixture, never production data.
 
 Example GitHub Actions step:
 
