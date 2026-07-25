@@ -154,7 +154,22 @@ program
       }
     }
     const failures = results.filter((m) => m.result !== "passed").length;
-    if (results.length > 1) console.log(`${results.length - failures}/${results.length} runs passed`);
+
+    // Attach each result's module (its folder) for the suite report + grouping.
+    try {
+      const { scenarioModuleById } = await import("./scenario.js");
+      const modules = await scenarioModuleById();
+      for (const m of results) m.module = modules.get(m.scenario_id) ?? "(root)";
+    } catch {
+      // best-effort — grouping falls back to "(root)"
+    }
+
+    if (results.length > 1) {
+      const { buildSuiteSummary, printSuiteSummary } = await import("./suite.js");
+      const summary = buildSuiteSummary(results);
+      if (opts.stream) streamEvent(null, "suite", { ...summary });
+      else printSuiteSummary(summary);
+    }
 
     if (opts.reporter) {
       const { writeReport } = await import("./reporters.js");

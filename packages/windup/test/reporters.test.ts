@@ -35,8 +35,11 @@ describe("CI/CD reporters", () => {
       metric({ llm_calls: 1, estimated_cost_usd: 0.002 }),
       metric({ scenario_id: "b", result: "failed", failure: { kind: "network", action_id: null, message: "x" } }),
     ]));
-    expect(out.summary).toEqual({ total: 2, passed: 1, failed: 1, llm_calls: 1, est_cost_usd: 0.002, duration_ms: 3000 });
+    expect(out.summary).toMatchObject({ total: 2, passed: 1, failed: 1, llm_calls: 1, est_cost_usd: 0.002, duration_ms: 3000, pass_rate: 0.5 });
+    expect(out.summary.by_module).toBeInstanceOf(Array);
+    expect(out.summary).toHaveProperty("cache_hit_rate");
     expect(out.cases[1].failure.kind).toBe("network");
+    expect(out.cases[0]).toHaveProperty("module");
   });
 
   it("html: self-contained document with summary, badges, escaped failure and action detail", () => {

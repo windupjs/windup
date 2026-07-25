@@ -109,3 +109,20 @@ export async function discoverScenarioIds(): Promise<string[]> {
   }
   return [...byId.keys()].sort();
 }
+
+/** Map scenario_id → module (the folder of its file relative to the scenarios dir; "(root)" for top-level). */
+export async function scenarioModuleById(): Promise<Map<string, string>> {
+  const dir = getContext().paths.scenariosDir;
+  const map = new Map<string, string>();
+  for (const file of await listScenarioFiles(dir)) {
+    try {
+      const id = (JSON.parse(await readFile(file, "utf8")) as Scenario).scenario_id;
+      if (!id) continue;
+      const rel = path.relative(dir, path.dirname(file));
+      map.set(id, rel || "(root)");
+    } catch {
+      // unreadable/invalid — skip
+    }
+  }
+  return map;
+}

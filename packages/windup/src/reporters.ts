@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getContext } from "./context.js";
 import type { RunMetrics } from "./types.js";
+import { buildSuiteSummary } from "./suite.js";
 
 /**
  * CI/CD reporters. JUnit XML is the lingua franca (GitHub/GitLab/Jenkins
@@ -13,42 +14,49 @@ export type ReporterFormat = "junit" | "json" | "html";
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+function groupByModule(results: RunMetrics[]): Array<[string, RunMetrics[]]> {
+  const byModule = new Map<string, RunMetrics[]>();
+  for (const r of results) {
+    const m = r.module ?? "(root)";
+    if (!byModule.has(m)) byModule.set(m, []);
+    byModule.get(m)!.push(r);
+  }
+  return [...byModule.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function junitCase(r: RunMetrics): string {
+  const t = (r.duration_ms.total / 1000).toFixed(3);
+  const open = `    <testcase classname="${esc(r.module ?? "windup")}" name="${esc(r.scenario_id)}" time="${t}"`;
+  if (r.result === "passed") return `${open}/>`;
+  const f = r.failure;
+  const message = esc(f ? `[${f.kind}] action=${f.action_id ?? "-"}: ${f.message}` : "failed");
+  const detail = esc(`cache=${r.cache} llm_calls=${r.llm_calls} cost=$${r.estimated_cost_usd} duration=${r.duration_ms.total}ms`);
+  return `${open}>\n      <failure message="${message}" type="${esc(f?.kind ?? "failure")}">${detail}</failure>\n    </testcase>`;
+}
+
 export function junitReport(results: RunMetrics[]): string {
   const failures = results.filter((r) => r.result !== "passed").length;
   const timeSec = (results.reduce((a, r) => a + r.duration_ms.total, 0) / 1000).toFixed(3);
-  const cases = results
-    .map((r) => {
-      const t = (r.duration_ms.total / 1000).toFixed(3);
-      const open = `    <testcase classname="windup" name="${esc(r.scenario_id)}" time="${t}"`;
-      if (r.result === "passed") return `${open}/>`;
-      const f = r.failure;
-      const message = esc(f ? `[${f.kind}] action=${f.action_id ?? "-"}: ${f.message}` : "failed");
-      const detail = esc(
-        `cache=${r.cache} llm_calls=${r.llm_calls} cost=$${r.estimated_cost_usd} duration=${r.duration_ms.total}ms`,
-      );
-      return `${open}>\n      <failure message="${message}" type="${esc(f?.kind ?? "failure")}">${detail}</failure>\n    </testcase>`;
+  // One <testsuite> per module (the natural JUnit grouping for a multi-module suite).
+  const suites = groupByModule(results)
+    .map(([mod, rs]) => {
+      const f = rs.filter((r) => r.result !== "passed").length;
+      const t = (rs.reduce((a, r) => a + r.duration_ms.total, 0) / 1000).toFixed(3);
+      return `  <testsuite name="${esc(mod)}" tests="${rs.length}" failures="${f}" time="${t}">\n${rs.map(junitCase).join("\n")}\n  </testsuite>`;
     })
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <testsuites name="windup" tests="${results.length}" failures="${failures}" time="${timeSec}">
-  <testsuite name="windup" tests="${results.length}" failures="${failures}" time="${timeSec}">
-${cases}
-  </testsuite>
+${suites}
 </testsuites>
 `;
 }
 
 export function jsonReport(results: RunMetrics[]): string {
-  const summary = {
-    total: results.length,
-    passed: results.filter((r) => r.result === "passed").length,
-    failed: results.filter((r) => r.result !== "passed").length,
-    llm_calls: results.reduce((a, r) => a + r.llm_calls, 0),
-    est_cost_usd: Number(results.reduce((a, r) => a + r.estimated_cost_usd, 0).toFixed(6)),
-    duration_ms: results.reduce((a, r) => a + r.duration_ms.total, 0),
-  };
+  const summary = buildSuiteSummary(results);
   const cases = results.map((r) => ({
     scenario: r.scenario_id,
+    module: r.module ?? "(root)",
     result: r.result,
     cache: r.cache,
     llm_calls: r.llm_calls,
@@ -75,9 +83,11 @@ export function htmlReport(results: RunMetrics[]): string {
   const durationSec = (results.reduce((a, r) => a + r.duration_ms.total, 0) / 1000).toFixed(1);
   const freeReplays = results.filter((r) => r.llm_calls === 0).length;
   const generatedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const suite = buildSuiteSummary(results);
+  const groups = groupByModule(results);
+  const showModules = groups.length > 1;
 
-  const rows = results
-    .map((r) => {
+  const renderRow = (r: RunMetrics): string => {
       const ok = r.result === "passed";
       const llm = r.llm_model ? `${r.llm_provider ? `${r.llm_provider}/` : ""}${r.llm_model}` : "—";
       // Closed by default: with many cases, prose paragraphs would dominate the
@@ -114,8 +124,21 @@ ${r.actions
 <td class="n">${r.duration_ms.total} ms</td>
 <td class="n">$${r.estimated_cost_usd}</td>
 </tr>`;
-    })
-    .join("\n");
+  };
+
+  const rows = showModules
+    ? groups
+        .map(([mod, rs]) => {
+          const f = rs.filter((r) => r.result !== "passed").length;
+          const label = `${esc(mod)} — ${rs.length - f}/${rs.length}${f ? ` · ${f} failed` : ""}`;
+          return `<tr class="module-row"><td colspan="7">${label}</td></tr>\n${rs.map(renderRow).join("\n")}`;
+        })
+        .join("\n")
+    : results.map(renderRow).join("\n");
+
+  const flakyBanner = suite.flaky.length
+    ? `<div class="flaky-note"><b>Flaky (from --repeat):</b> ${suite.flaky.map((x) => `${esc(x.scenario_id)} ${x.passed}/${x.total}`).join(" · ")}</div>`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -148,6 +171,8 @@ td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:no
 .scenario { font-family:ui-monospace,Menlo,monospace; font-size:13px; }
 .model { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--muted); white-space:nowrap; }
 .row-failed td { background:color-mix(in srgb, var(--fail-bg) 35%, transparent); }
+tr.module-row td { background:color-mix(in srgb, var(--accent) 9%, transparent); font:600 11px/1 ui-monospace,Menlo,monospace; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); padding:8px 12px; }
+.flaky-note { background:color-mix(in srgb, var(--fail) 8%, transparent); border:1px solid var(--line); border-left:2px solid var(--fail); border-radius:0 3px 3px 0; padding:8px 12px; margin:0 0 16px; font:12.5px/1.5 ui-monospace,Menlo,monospace; }
 .failure { margin-top:6px; font-size:12.5px; color:var(--fail); font-family:ui-monospace,Menlo,monospace; white-space:pre-wrap; }
 .failure .kind { font-weight:700; }
 .deps { margin-top:5px; font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); }
@@ -172,11 +197,14 @@ footer { color:var(--muted); font-size:11.5px; margin-top:18px; }
 <div class="stat"><b>${results.length}</b><span>scenarios</span></div>
 <div class="stat p"><b>${passed}</b><span>passed</span></div>
 <div class="stat f"><b>${failed}</b><span>failed</span></div>
+<div class="stat"><b>${Math.round(suite.cache_hit_rate * 100)}%</b><span>cache-hit</span></div>
+<div class="stat"><b>${suite.replans}</b><span>re-plans</span></div>
 <div class="stat"><b>${freeReplays}</b><span>zero-LLM runs</span></div>
 <div class="stat"><b>${llmCalls}</b><span>llm calls</span></div>
 <div class="stat"><b>$${cost}</b><span>est. cost</span></div>
 <div class="stat"><b>${durationSec}s</b><span>duration</span></div>
 </div>
+${flakyBanner}
 <div class="table-wrap">
 <table>
 <tr><th></th><th>Scenario</th><th>Cache</th><th class="n">LLM calls</th><th>Model</th><th class="n">Duration</th><th class="n">Cost</th></tr>

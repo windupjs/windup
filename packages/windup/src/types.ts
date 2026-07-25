@@ -115,6 +115,8 @@ export interface ActionMetrics {
 
 export interface RunMetrics {
   scenario_id: string;
+  /** Folder of the scenario file relative to the scenarios dir ("(root)" for top-level) — used to group the suite report. */
+  module?: string;
   started_at: string;
   cache: CacheOutcome;
   llm_calls: number;
