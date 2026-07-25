@@ -1,4 +1,4 @@
-import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserType, type Page } from "playwright-core";
+import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserContextOptions, type BrowserType, type Page } from "playwright-core";
 import { getContext } from "./context.js";
 import { WindupError } from "./errors.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
@@ -41,6 +41,8 @@ export interface Browser {
   pageSignature(): Promise<string>;
   /** Current page title (site-map metadata). */
   title(): Promise<string>;
+  /** Playwright storageState (cookies + localStorage) of the current context — a session snapshot for dependents. */
+  storageState(): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -161,6 +163,10 @@ class PlaywrightSession implements Browser {
     return this.page.title();
   }
 
+  async storageState(): Promise<unknown> {
+    return this.context.storageState();
+  }
+
   async close(): Promise<void> {
     // Closes only the session (context); the engine stays warm for the next
     // run in this process (E5).
@@ -217,10 +223,18 @@ function getEngine(): Promise<PWBrowser> {
   return engine;
 }
 
-/** New isolated session (fresh context+page) on the warm engine. */
-export async function launchBrowser(): Promise<Browser> {
+/**
+ * New isolated session (fresh context+page) on the warm engine. Pass
+ * `storageState` (a prior session snapshot) to seed cookies/localStorage into
+ * the fresh context — restoring auth without re-running the login flow.
+ */
+export async function launchBrowser(opts: { storageState?: unknown } = {}): Promise<Browser> {
   const browser = await getEngine();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    // Playwright accepts the storageState object directly; typed loosely at our boundary.
+    ...(opts.storageState ? { storageState: opts.storageState as BrowserContextOptions["storageState"] } : {}),
+  });
   const page = await context.newPage();
   return new PlaywrightSession(context, page);
 }

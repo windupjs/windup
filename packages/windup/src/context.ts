@@ -17,6 +17,8 @@ export interface WindupPaths {
   runsDir: string;
   /** Site map graph (gitignored). */
   mapFile: string;
+  /** Per-scenario session snapshots — storageState + final URL (gitignored; contains auth cookies/tokens, NEVER committed). */
+  stateDir: string;
 }
 
 export interface WindupContext {
@@ -56,6 +58,7 @@ export function createContext(
         : path.join(dataDir, "cache", "trajetorias"),
       runsDir: path.join(dataDir, "runs"),
       mapFile: path.join(dataDir, "map", "site-map.json"),
+      stateDir: path.join(dataDir, "state"),
     },
   };
 }

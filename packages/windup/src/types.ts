@@ -135,6 +135,8 @@ export interface RunMetrics {
   cache: CacheOutcome;
   /** #1 — set to the source scenario_id when this run reused another scenario's plan (isomorphic reuse, no LLM); absent otherwise. */
   reused_from?: string | null;
+  /** #4 — set to the dependency scenario_id whose session snapshot was restored (skipping the depends_on chain replay); absent otherwise. */
+  reused_session_from?: string | null;
   llm_calls: number;
   llm_model: string | null;
   /** Model provider ("google", "openai"); null in replays, absent in pre-0.10 records. */

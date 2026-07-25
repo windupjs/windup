@@ -5,6 +5,7 @@ import { getContext } from "./context.js";
 import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
 import { expandPlan, loadFragments } from "./fragments.js";
 import { instantiatePlan } from "./isomorph.js";
+import { dropSnapshot, getSnapshot, saveSnapshot } from "./session-cache.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
@@ -41,6 +42,19 @@ const MAX_DEPENDENCY_DEPTH = 5;
  * Resolves the depends_on chain in execution order (post-order, dedupe),
  * with cycle detection and a depth cap. Exported for testing.
  */
+/** Clear per-attempt state so a run can be retried (snapshot fast-path → full-chain fallback). */
+function resetForFallback(m: RunMetrics): void {
+  m.result = "failed";
+  m.failure = null;
+  m.actions = [];
+  m.cache = "miss";
+  m.plan = undefined;
+  m.reused_session_from = null;
+  m.sig_mismatch = null;
+  m.duration_ms.execution = 0;
+  m.duration_ms.dependencies = 0;
+}
+
 export async function resolveDependencyChain(scenario: Scenario, load: ScenarioLoader): Promise<Array<Scenario & { start_url: string }>> {
   const chain: Array<Scenario & { start_url: string }> = [];
   const seen = new Set<string>([scenario.scenario_id]);
@@ -124,9 +138,122 @@ export async function runScenario(
     onTransition: (from, action, to) => mapStore.recordTransition(from, action, to),
   };
 
+  // Resolve the dependency chain and decide the fast path BEFORE launching, so a
+  // cached replay whose dependency has a session snapshot can start the context
+  // pre-authenticated and skip re-running the whole chain (feedback #4). The fast
+  // path is only for REPLAYS (a first run plans anyway); a snapshot holds the
+  // dependency's storageState + final URL.
+  const skipGoto = (scenario as { continue_from_dependency?: boolean }).continue_from_dependency === true;
+  const depChain = scenario.depends_on?.length ? await resolveDependencyChain(scenario, loadScenario) : [];
+  const anchorId = depChain.length ? depChain[depChain.length - 1].scenario_id : null;
+  const ownCached = opts.useCache ? await getCached(scenario) : null;
+  const snapshot = anchorId && ownCached ? await getSnapshot(anchorId) : null;
+
   const launchStart = Date.now();
-  const browser = await launchBrowser();
+  let browser = await launchBrowser(snapshot ? { storageState: snapshot.storage_state } : {});
   metrics.duration_ms.setup = Date.now() - launchStart;
+
+  // Runs the scenario's OWN plan (cached replay / isomorphic reuse / generate),
+  // mutating metrics. `deferReplan` (snapshot attempt): a failed cached replay
+  // does NOT invalidate/re-plan — it just returns failed so the caller can fall
+  // back to a full-chain run (the failure was likely a stale restored session).
+  const runOwnPlan = async (b: Browser, deferReplan: boolean): Promise<void> => {
+    const cached = opts.useCache ? await getCached(scenario) : null;
+    if (cached) {
+      metrics.cache = "hit";
+      metrics.plan = cached.plan;
+      // E3: the cache stores the plan WITH { use } references; expansion runs every time.
+      let expandedPlan;
+      try {
+        expandedPlan = expandPlan({ ...cached.plan, start_url: scenario.start_url ?? cached.plan.start_url }, await loadFragments());
+      } catch (err) {
+        await invalidate(cached);
+        metrics.cache = "invalidated";
+        const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
+        const replanned = await generateAndExecute(scenario, planner, b, metrics, collector, context, skipGoto, cached.plan.generated_by?.model);
+        if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
+        return;
+      }
+      const execStart = Date.now();
+      const result = await executePlan(b, expandedPlan, collector, { skipInitialGoto: skipGoto });
+      metrics.duration_ms.execution = Date.now() - execStart;
+      metrics.actions = result.actions;
+      // E1, lenient policy: a diverging sig is a signal, not a blocker.
+      if (result.start_sig && cached.key.start_sig) {
+        metrics.sig_mismatch = result.start_sig !== cached.key.start_sig;
+        if (metrics.sig_mismatch) {
+          console.warn(`warning: start-page signature changed (${cached.key.start_sig} -> ${result.start_sig}) — replaying anyway (lenient mode)`);
+        }
+      }
+      if (result.ok) {
+        await recordReplay(cached);
+        metrics.result = "passed";
+        return;
+      }
+      if (deferReplan) {
+        // Snapshot attempt failed — do NOT invalidate; let the caller rebuild state and retry.
+        metrics.failure = result.failure ?? { kind: "verification", action_id: null, message: "restored-session replay failed" };
+        metrics.result = "failed";
+        return;
+      }
+      if (result.failure?.kind === "network") {
+        // A network failure says nothing about the plan: do not invalidate (doc 05).
+        metrics.failure = result.failure;
+        return;
+      }
+      // Replay failed on verification: invalidate → re-plan the whole flow (doc 03).
+      const churn = await recentStaleCount(scenario.scenario_id);
+      await invalidate(cached);
+      metrics.cache = "invalidated";
+      progress(scenario.scenario_id, `verification failed at ${result.failure?.action_id ?? "?"} → self-heal re-planning`);
+      streamEvent(scenario.scenario_id, "replan", { at: result.failure?.action_id ?? null, reason: "verification" });
+      if (churn >= 2) {
+        console.warn(`warning: "${scenario.scenario_id}" has re-planned ${churn + 1} times without stabilizing — the app may lack a stable selector for action ${result.failure?.action_id ?? "?"} (an accessibility gap) or have a race. Run with --suggest for a precise diagnosis, or pin a selector via hints.`);
+      }
+      const failureContext = await buildReplanContext(scenario, cached.plan, result.failure, metrics, b, opts.suggest === true);
+      const replanned = await generateAndExecute(scenario, planner, b, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
+      if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
+      return;
+    }
+    // Cache miss: isomorphic reuse (#1) before spending an LLM call, else plan.
+    if (scenario.like && opts.useCache) {
+      const reused = await tryIsomorphicReuse(scenario, b, metrics, collector, skipGoto);
+      if (reused) return;
+    }
+    const generated = await generateAndExecute(scenario, planner, b, metrics, collector, undefined, skipGoto);
+    if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
+  };
+
+  // Runs the depends_on chain in `b`, capturing each dependency's exit snapshot
+  // (storageState + URL) so a later dependent can restore it. false on failure.
+  const runDepsChain = async (b: Browser): Promise<boolean> => {
+    metrics.dependencies = [];
+    for (const dep of depChain) {
+      const depStart = Date.now();
+      const outcome = await runDependency(dep, planner, b, metrics, collector, opts.useCache);
+      metrics.dependencies.push({
+        scenario_id: dep.scenario_id,
+        cache: outcome.cache,
+        llm_calls: outcome.llm_calls,
+        result: outcome.ok ? "passed" : "failed",
+        duration_ms: Date.now() - depStart,
+      });
+      if (!outcome.ok) {
+        metrics.failure = {
+          kind: "dependency",
+          action_id: outcome.failure?.action_id ?? null,
+          message: `dependency "${dep.scenario_id}" failed: ${outcome.failure?.message ?? "unknown"}`,
+        };
+        return false;
+      }
+      if (opts.useCache) {
+        try { await saveSnapshot(dep.scenario_id, await b.storageState(), b.url()); } catch { /* best-effort */ }
+      }
+    }
+    metrics.duration_ms.dependencies = metrics.dependencies.reduce((s, d) => s + d.duration_ms, 0);
+    return true;
+  };
+
   try {
     // Setup hook runs OUTSIDE the plan/cache, before anything (fixtures, DB reset).
     if (scenario.setup) {
@@ -136,121 +263,39 @@ export async function runScenario(
         return metrics;
       }
     }
-    // Dependencies (depends_on): each one runs IN THE SAME session, with its
-    // own cache/replay and self-healing. Their final state is this
-    // scenario's starting point.
-    if (scenario.depends_on?.length) {
-      metrics.dependencies = [];
-      const chain = await resolveDependencyChain(scenario, loadScenario);
-      for (const dep of chain) {
-        const depStart = Date.now();
-        const outcome = await runDependency(dep, planner, browser, metrics, collector, opts.useCache);
-        metrics.dependencies.push({
-          scenario_id: dep.scenario_id,
-          cache: outcome.cache,
-          llm_calls: outcome.llm_calls,
-          result: outcome.ok ? "passed" : "failed",
-          duration_ms: Date.now() - depStart,
-        });
-        if (!outcome.ok) {
-          metrics.failure = {
-            kind: "dependency",
-            action_id: outcome.failure?.action_id ?? null,
-            message: `dependency "${dep.scenario_id}" failed: ${outcome.failure?.message ?? "unknown"}`,
-          };
-          return metrics;
-        }
+
+    if (snapshot) {
+      // FAST PATH: restore the anchor dependency's session, skip the chain.
+      const restoreStart = Date.now();
+      if (skipGoto) await browser.goto(snapshot.url); // continue where the anchor ended
+      metrics.dependencies = [{ scenario_id: anchorId!, cache: "hit", llm_calls: 0, result: "passed", duration_ms: Date.now() - restoreStart }];
+      metrics.duration_ms.dependencies = metrics.dependencies[0].duration_ms;
+      metrics.reused_session_from = anchorId;
+      progress(scenario.scenario_id, `restored session from "${anchorId}" (skipped depends_on chain)`);
+      await runOwnPlan(browser, /* deferReplan */ true);
+      if (metrics.result === "failed") {
+        // The restored session was insufficient (expired / needs in-memory state)
+        // → drop it and fall back to a full-chain run in a fresh context.
+        progress(scenario.scenario_id, `restored session did not verify → re-running the depends_on chain`);
+        streamEvent(scenario.scenario_id, "replan", { at: null, reason: "session-snapshot-miss" });
+        await dropSnapshot(anchorId!);
+        await browser.close();
+        resetForFallback(metrics);
+        const relaunch = Date.now();
+        browser = await launchBrowser();
+        metrics.duration_ms.setup += Date.now() - relaunch;
+        if (await runDepsChain(browser)) await runOwnPlan(browser, false);
       }
-      metrics.duration_ms.dependencies = metrics.dependencies.reduce((s, d) => s + d.duration_ms, 0);
+    } else if (depChain.length) {
+      if (await runDepsChain(browser)) await runOwnPlan(browser, false);
+    } else {
+      await runOwnPlan(browser, false);
     }
 
-    const skipGoto = (scenario as { continue_from_dependency?: boolean }).continue_from_dependency === true;
-    const cached = opts.useCache ? await getCached(scenario) : null;
-
-    if (cached) {
-      metrics.cache = "hit";
-      metrics.plan = cached.plan;
-
-      // E3: the cache stores the plan WITH { use } references (an updated
-      // fragment propagates); expansion happens on every run.
-      let expandedPlan;
-      try {
-        // The cached plan runs in the CURRENT environment: the start_url origin is
-        // the one resolved now (today's port/host), the actions are the usual ones.
-        expandedPlan = expandPlan({ ...cached.plan, start_url: scenario.start_url ?? cached.plan.start_url }, await loadFragments());
-      } catch (err) {
-        // Fragment removed/renamed: the cached plan became orphaned →
-        // invalidate and re-plan, as in a verification failure.
-        await invalidate(cached);
-        metrics.cache = "invalidated";
-        const context = `The cached plan is no longer valid: ${err instanceof Error ? err.message : err}`;
-        const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, context, skipGoto, cached.plan.generated_by?.model);
-        if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
-        return metrics;
-      }
-
-      const execStart = Date.now();
-      const result = await executePlan(browser, expandedPlan, collector, { skipInitialGoto: skipGoto });
-      metrics.duration_ms.execution = Date.now() - execStart;
-      metrics.actions = result.actions;
-
-      // E1, lenient policy: a diverging sig is a signal, not a blocker — the
-      // replay proceeds; if verification fails, normal invalidation kicks in.
-      if (result.start_sig && cached.key.start_sig) {
-        metrics.sig_mismatch = result.start_sig !== cached.key.start_sig;
-        if (metrics.sig_mismatch) {
-          console.warn(
-            `warning: start-page signature changed (${cached.key.start_sig} -> ${result.start_sig}) — replaying anyway (lenient mode)`,
-          );
-        }
-      }
-
-      if (result.ok) {
-        await recordReplay(cached);
-        metrics.result = "passed";
-        return metrics;
-      }
-
-      if (result.failure?.kind === "network") {
-        // A network failure says nothing about the plan: do not invalidate (doc 05).
-        metrics.failure = result.failure;
-        return metrics;
-      }
-
-      // Replay failed on verification: invalidate → re-plan the whole flow (doc 03).
-      const churn = await recentStaleCount(scenario.scenario_id);
-      await invalidate(cached);
-      metrics.cache = "invalidated";
-      progress(scenario.scenario_id, `verification failed at ${result.failure?.action_id ?? "?"} → self-heal re-planning`);
-      streamEvent(scenario.scenario_id, "replan", { at: result.failure?.action_id ?? null, reason: "verification" });
-      // Loop-breaker signal (#10): repeated re-plans that keep failing usually
-      // mean the app lacks a stable selector (an a11y gap) or has a race — not
-      // something more LLM calls will fix. Warn loudly instead of churning silently.
-      if (churn >= 2) {
-        console.warn(
-          `warning: "${scenario.scenario_id}" has re-planned ${churn + 1} times without stabilizing — the app may lack a stable selector for action ${result.failure?.action_id ?? "?"} (an accessibility gap) or have a race. Run with --suggest for a precise diagnosis, or pin a selector via hints.`,
-        );
-      }
-      // Guided self-heal (#10): enrich the re-plan with the failed selector
-      // ("don't reuse it"), the hints, and — under --suggest — the same expert
-      // diagnosis the human sees, so the planner corrects instead of repeating.
-      const failureContext = await buildReplanContext(scenario, cached.plan, result.failure, metrics, browser, opts.suggest === true);
-      const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
-      if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
-      return metrics;
+    // Capture this scenario's own exit state so its dependents can restore it.
+    if (metrics.result === "passed" && opts.useCache) {
+      try { await saveSnapshot(scenario.scenario_id, await browser.storageState(), browser.url()); } catch { /* best-effort */ }
     }
-
-    // #1 isomorphic reuse: before spending an LLM call, if this scenario is
-    // declared `like` another, try that scenario's PROVEN plan — instantiated
-    // deterministically and trusted ONLY after the normal execute+verify.
-    if (scenario.like && opts.useCache) {
-      const reused = await tryIsomorphicReuse(scenario, browser, metrics, collector, skipGoto);
-      if (reused) return metrics; // verified + cached B's own plan, no LLM
-      // otherwise fall through to LLM planning (safety net)
-    }
-
-    const generated = await generateAndExecute(scenario, planner, browser, metrics, collector, undefined, skipGoto);
-    if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
   } finally {
     if (metrics.result === "failed" && metrics.failure) {

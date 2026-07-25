@@ -28,6 +28,7 @@ class FakeBrowser implements Browser {
   async interactiveElementsRaw(): Promise<RawPageElement[]> { return [{ tag: "button" } as RawPageElement]; }
   async pageSignature(): Promise<string> { return "sig"; }
   async title(): Promise<string> { return ""; }
+  async storageState(): Promise<unknown> { return { cookies: [], origins: [] }; }
   async close(): Promise<void> {}
 }
 
