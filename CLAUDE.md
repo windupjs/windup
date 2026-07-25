@@ -7,6 +7,7 @@ Every change that ships — new feature, new command, new flag, behavior change,
 1. `packages/windup/README.md` — the npm-facing user docs (commands table, flags, config reference, relevant sections).
 2. `docs/specs/SPEC.md` — the living specification (architecture, data formats, principles, limitations).
 3. Root `README.md` — only when the pitch/feature list or status changes.
+4. **The docs site** — the separate `windupjs/site` repo (Astro). ANY user-facing change (new flag, command, scenario field, behavior) MUST also land on the site, in **all four languages** (`en`, then `es`/`pt`/`zh` — translate the prose, keep code/flags/tokens verbatim). Pages: `commands.md` (flags table), `ci-cd.md`, `scenarios.md`, `configuration.md`, `credentials.md`, `architecture.md`. Do not let the site fall behind releases — mirror it in the same round as the repo docs.
 
 ALL repository content is written in **English** — documentation, code comments, LLM prompt templates, test names and commit messages. Functional Portuguese stays only where it is data: regexes matching user input (e.g. `senha|password`) and tokenizer stopword lists. A feature without updated docs is not done. Remember the npm README only updates when a new version is published.
 
