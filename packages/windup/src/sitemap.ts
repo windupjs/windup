@@ -253,6 +253,22 @@ export class SiteMapStore {
     );
   }
 
+  /**
+   * Distinct indexed routes (one per url_pattern), keeping the most confident
+   * source (execution > crawl > static > llm). For `windup coverage`.
+   */
+  allRoutes(): Array<{ url_pattern: string; source: string }> {
+    const rank: Record<string, number> = { execution: 3, crawl: 2, static: 1, llm: 0 };
+    const best = new Map<string, string>();
+    for (const p of Object.values(this.map.pages)) {
+      const cur = best.get(p.url_pattern);
+      if (cur === undefined || (rank[p.source] ?? -1) > (rank[cur] ?? -1)) best.set(p.url_pattern, p.source);
+    }
+    return [...best.entries()]
+      .map(([url_pattern, source]) => ({ url_pattern, source }))
+      .sort((a, b) => a.url_pattern.localeCompare(b.url_pattern));
+  }
+
   /** AI-inferred nodes, with their sources (for hash-based invalidation in the scan). */
   llmPages(): Array<{ sig: string; url_pattern: string; files: string[]; elements: number }> {
     return Object.entries(this.map.pages)

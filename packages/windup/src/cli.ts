@@ -462,6 +462,17 @@ program
     }
   });
 
+program
+  .command("coverage")
+  .description("Cross-reference indexed routes (from windup scan) with your scenarios: which routes have a scenario and which have none")
+  .option("--json", "emit the coverage report as JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const { computeCoverage, printCoverage } = await import("./coverage.js");
+    const report = await computeCoverage();
+    if (opts.json) console.log(JSON.stringify(report, null, 2));
+    else printCoverage(report);
+  });
+
 const fragment = program.command("fragment").description("Manage trajectory fragments (reusable, tested action blocks)");
 fragment
   .command("extract <scenario> <range>")

@@ -341,6 +341,7 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 - Exit code is non-zero when any scenario fails.
 - `--reporter junit` emits JUnit XML (GitHub Actions, GitLab and Jenkins consume it natively); `--reporter json` emits a machine-readable summary; `--reporter html` emits a self-contained human-friendly page (zero JS/deps — upload it as a CI artifact or open locally). Default output: `.windup/reports/`.
 - `windup costs --json` reports AI spend for pipeline tracking.
+- `windup coverage` finds **coverage gaps**: it cross-references the routes `windup scan` indexed with your scenarios' start URLs (and cached plans) and lists the routes that have **no scenario yet** — the "what am I missing" report, generated from data Windup already has (no LLM). `--json` for pipelines; a gate could fail the build when critical routes are uncovered.
 
 ### Non-destructive testing — stay at the side-effect boundary
 
@@ -378,6 +379,7 @@ Example GitHub Actions step:
 | `windup scan [--update] [--no-assist]` | Statically index routes and interactive elements into the site map; `--update` re-indexes only files changed since the last scan (git diff); `--no-assist` skips the LLM layer (zero cost) |
 | `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
+| `windup coverage [--json]` | Cross-reference indexed routes (`windup scan`) with your scenarios — which routes have a scenario and which have none (finds coverage gaps automatically) |
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |

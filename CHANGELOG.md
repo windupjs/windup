@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.43.0
+- **`windup coverage` — find coverage gaps automatically.** Cross-references the routes `windup scan` indexed with your scenarios: it reports how many indexed routes have at least one scenario and **lists the routes that have none** — the "what am I missing" audit, generated from data Windup already has (the site map + scenarios + cached plans), with no LLM and no network. A scenario covers a route when its `start_url` (or any URL in its cached plan) matches the route's url_pattern. `--json` for pipelines (a CI gate can fail when critical routes are uncovered). New `coverage.ts`, `SiteMapStore.allRoutes()`.
+
 ## 0.42.0
 - **Report time transparency — reconcile where the wall-clock goes (feedback).** Two report fixes, no performance change:
   - **Per-scenario duration breakdown.** A cached run that reads as "a 113 ms action took 3.6 s" now shows why: the HTML report splits each scenario's total into a reconciling bar — `setup` (context launch) · `deps` (the `depends_on` chain) · `plan` (LLM) · **`nav`** · `actions` · `other` — where **`nav`** is the goto + page load/hydration BEFORE the first action, now isolated from `execution` (it's usually the real time sink in an SPA). JSON carries a per-case `duration_breakdown`; a new `duration_ms.navigation` metric backs it.
