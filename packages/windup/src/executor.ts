@@ -86,6 +86,9 @@ async function waitForVisible(browser: Browser, selector: string, timeoutMs: num
 }
 
 async function performAction(browser: Browser, action: Action, timeoutMs: number): Promise<void> {
+  // Arm the native-dialog handler BEFORE the action that opens it: the click
+  // that triggers window.confirm blocks until the dialog is handled.
+  if (action.dialog) browser.armDialog(action.dialog);
   switch (action.type) {
     case "goto":
       await browser.goto(action.url!);

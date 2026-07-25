@@ -113,6 +113,15 @@ and/or "selector" of the destination page. The LAST action of the plan MUST have
 proving the task was fulfilled — the final verification is the LAST action's "expect", \
 NOT an extra wait_for action.
 - timeout_ms: 5000 for simple actions, 10000 for navigations.
+- NATIVE DIALOGS: if an action opens a native browser dialog (window.confirm / \
+alert / prompt — e.g. a "delete", "archive" or "cancel" confirmation), add \
+"dialog": "accept" to that same action to confirm it (or "dialog": "dismiss" to \
+cancel). Without it the dialog is auto-dismissed and the action silently does \
+nothing. NEVER invent a fragment/use to handle a dialog — it is a field on the action.
+- VERIFY A PERSISTENT SIGNAL, NOT A TOAST: for the final "expect", prefer a \
+stable, lasting signal — a row that appears/disappears from a list, a button \
+whose label changes, a heading or a URL — over transient toast/notification/snackbar \
+messages, which vanish after a few seconds and make the verification a race.
 - Do NOT include fields that do not apply to the action — never use an empty string as a value. \
 click has no value/value_ref/url. The action's "url" field exists ONLY on goto (navigation destination). \
 The URL expected after the action goes in expect.url (accepts glob).

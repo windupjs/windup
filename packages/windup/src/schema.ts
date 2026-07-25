@@ -38,6 +38,7 @@ export const PLAN_JSON_SCHEMA = {
           },
           value: { type: "string" },
           value_ref: { type: "string", pattern: "^ENV:[A-Z0-9_]+$" },
+          dialog: { type: "string", enum: ["accept", "dismiss"] },
           url: { type: "string", format: "uri" },
           use: { type: "string" },
           expect: {
@@ -93,6 +94,7 @@ export const PLAN_GEMINI_SCHEMA = {
           },
           value: { type: "string" },
           value_ref: { type: "string" },
+          dialog: { type: "string", enum: ["accept", "dismiss"] },
           url: { type: "string" },
           use: { type: "string" },
           expect: {

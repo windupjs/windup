@@ -26,6 +26,8 @@ export interface Action {
   /** type=use: id of the fragment to expand inline (E3). */
   use?: string;
   expect?: Expect;
+  /** Handle a native browser dialog (window.confirm/alert/prompt) that THIS action opens: accept or dismiss it. */
+  dialog?: "accept" | "dismiss";
   timeout_ms?: number;
 }
 

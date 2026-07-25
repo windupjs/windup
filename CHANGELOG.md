@@ -4,6 +4,10 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.33.0
+- **Native dialogs — `window.confirm`/`alert`/`prompt` (fixes a beta-report blocker, #12).** Playwright auto-dismisses dialogs unless a handler is registered, so a click behind a `confirm()` (archive/delete/cancel) silently did nothing. Actions now take `"dialog": "accept"` (or `"dismiss"`), and the executor arms a one-time handler before the triggering action; the planner emits it for confirm/alert/prompt steps instead of inventing a fragment. Deterministically verified (accept runs the mutation, dismiss cancels) and live-verified that the planner emits it (via `--llm claude-code`).
+- **Verify persistent signals, not toasts (#12).** The planner now prefers a lasting postcondition (a row that appears/disappears, a changed label, a URL) over transient toast/snackbar messages that vanish in seconds and make verification a race.
+
 ## 0.32.0
 - **`windup new` steers the verification toward the instruction (#5, from a beta report).** The authoring prompt now derives the final verification from what the instruction actually asks — preferring a visible element/text over a plausible-but-unasked destination route from the site map (a common LLM mistake when the map lists many routes). `windup new` also flags that the task/verification is the LLM's best guess and recommends confirming with `--validate` (generate → run → self-refine) or a first run. Revalidated live via `--llm claude-code`.
 

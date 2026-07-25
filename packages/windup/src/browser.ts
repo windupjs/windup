@@ -23,6 +23,8 @@ export interface RawPageElement extends RawElement {
 export interface Browser {
   goto(url: string): Promise<void>;
   click(selector: string): Promise<void>;
+  /** Arm a one-time handler for the next native dialog (window.confirm/alert/prompt), to fire on the action that opens it. */
+  armDialog(action: "accept" | "dismiss"): void;
   fill(selector: string, value: string): Promise<void>;
   isVisible(selector: string): Promise<boolean>;
   /** Wait until the selector is visible (frame-safe). false on timeout. */
@@ -63,6 +65,15 @@ class PlaywrightSession implements Browser {
 
   async goto(url: string): Promise<void> {
     await this.page.goto(url, { waitUntil: "load" });
+  }
+
+  armDialog(action: "accept" | "dismiss"): void {
+    // One-time: applies to the next dialog only (the one this action opens).
+    // Without a handler Playwright auto-dismisses dialogs, so a confirm()-gated
+    // mutation never runs — this lets a scenario accept (or cancel) it.
+    this.page.once("dialog", (d) => {
+      void (action === "accept" ? d.accept() : d.dismiss()).catch(() => {});
+    });
   }
 
   async click(selector: string): Promise<void> {
