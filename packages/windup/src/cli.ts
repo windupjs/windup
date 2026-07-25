@@ -46,6 +46,8 @@ program
   .command("run [scenario]")
   .description("Run one scenario, or every scenario with --all (replays from cache; plans via LLM on miss)")
   .option("--all", "run every scenario in the scenarios directory (CI mode)")
+  .option("--changed", "with --all: run only scenarios affected by uncommitted changes (vs HEAD) — see --since")
+  .option("--since <ref>", "with --all: run only scenarios affected by changes since a git ref (e.g. main, HEAD~1) — incremental CI")
   .option("--no-cache", "bypass the trajectory cache (always plan; nothing is cached)")
   .option("--no-map", "exclude site-map knowledge from the planner prompt")
   .option("--repeat <n>", "run N times in sequence", "1")
@@ -61,7 +63,7 @@ program
   .option("--suggest", "on a FAILED run, an LLM proposes a concrete fix to the scenario (task/hints) from the real final page and the site map (1 extra LLM call, only on failure)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -84,6 +86,22 @@ program
         process.exitCode = 2;
         return;
       }
+      // Incremental selection: run only what a code/scenario change affects.
+      const ref = opts.since ?? (opts.changed ? "HEAD" : null);
+      if (ref !== null) {
+        const { selectAffected } = await import("./changed.js");
+        const sel = await selectAffected(ids, ref);
+        if (!opts.stream) console.log(`incremental: ${sel.reason}`);
+        ids = sel.run;
+        if (ids.length === 0) {
+          if (!opts.stream) console.log("nothing to run — all scenarios unaffected. ✓");
+          return; // exit 0: an empty affected set is a pass in CI
+        }
+      }
+    } else if (opts.changed || opts.since) {
+      console.error("--changed/--since select from the suite — use them with --all");
+      process.exitCode = 2;
+      return;
     } else if (scenarioId) {
       ids = [scenarioId];
     } else {

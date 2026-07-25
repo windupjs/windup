@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.35.0
+- **Incremental runs — `run --all --changed` / `--since <ref>` (feedback #3, 145-scenario suites).** Run only the scenarios a change affects instead of the whole suite. `--changed` diffs the working tree against `HEAD`; `--since main` (or any git ref) diffs against that ref. A scenario is selected when its own file changed, when it has no cached plan, or when its cached plan visits a route whose **indexed source** changed (the site map's file→route attribution + picomatch). Sound-but-coarse and **never a silent false green**: if the diff touches files the map can't attribute to a route (shared code, config), or there's no git / site map with source info, it runs the full suite and prints why. An empty affected set exits 0. New module `changed.ts`; `SiteMapStore.affectedPatternsByFiles`/`indexedSourceFiles`; `scenarioFileById`.
+
 ## 0.34.0
 - **Suite report: module grouping + suite stats (feedback #3 — 145 scenarios, 17 modules).** `run --all` prints a suite summary — pass rate, cache-hit rate, re-plans, LLM calls, cost, total time — with a per-module (folder) breakdown. HTML groups by module with cache-hit / re-plan tiles; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`by_module`, `flaky`) and a `module` per case; under `--stream` it's a `suite` event.
 - **Flake score.** `--repeat <n>` is aggregated per scenario — one passing some-but-not-all of its runs is flagged flaky (`passed X/N`) in the summary and reports.

@@ -110,6 +110,21 @@ export async function discoverScenarioIds(): Promise<string[]> {
   return [...byId.keys()].sort();
 }
 
+/** Map scenario_id → absolute path of its file (for change-impact selection). */
+export async function scenarioFileById(): Promise<Map<string, string>> {
+  const dir = getContext().paths.scenariosDir;
+  const map = new Map<string, string>();
+  for (const file of await listScenarioFiles(dir)) {
+    try {
+      const id = (JSON.parse(await readFile(file, "utf8")) as Scenario).scenario_id;
+      if (id && !map.has(id)) map.set(id, path.resolve(file));
+    } catch {
+      // unreadable/invalid — skip
+    }
+  }
+  return map;
+}
+
 /** Map scenario_id → module (the folder of its file relative to the scenarios dir; "(root)" for top-level). */
 export async function scenarioModuleById(): Promise<Map<string, string>> {
   const dir = getContext().paths.scenariosDir;

@@ -192,6 +192,31 @@ export class SiteMapStore {
     return marked;
   }
 
+  /**
+   * Non-mutating: url_patterns whose indexed source files intersect the changed
+   * set (execution nodes share the static node's url_pattern, so matching a
+   * plan URL against these patterns covers both). For `--changed` selection.
+   */
+  affectedPatternsByFiles(changedFiles: string[]): Set<string> {
+    const changed = new Set(changedFiles.map((f) => path.resolve(f)));
+    const patterns = new Set<string>();
+    for (const page of Object.values(this.map.pages)) {
+      if (page.source === "static" && page.files?.some((f) => changed.has(path.resolve(f)))) {
+        patterns.add(page.url_pattern);
+      }
+    }
+    return patterns;
+  }
+
+  /** Every indexed source file the map attributes to a route (for deciding whether a diff is fully "understood"). */
+  indexedSourceFiles(): Set<string> {
+    const files = new Set<string>();
+    for (const page of Object.values(this.map.pages)) {
+      if (page.source === "static" && page.files) for (const f of page.files) files.add(path.resolve(f));
+    }
+    return files;
+  }
+
   /** Has the assist already analyzed this content? (same hash = skip, zero cost) */
   assistAlreadySeen(file: string, contentHash: string): boolean {
     return this.map.assist_seen?.[file] === contentHash;

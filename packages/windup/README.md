@@ -292,6 +292,7 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 - **Suite summary & module grouping.** `--all` (or a multi-scenario run) prints a suite line — pass rate, cache-hit rate, re-plans, LLM calls, cost, total time — plus a per-**module** (folder) breakdown. The HTML report groups by module with those stats; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`by_module`, `flaky`) and a `module` per case.
 - **Flake score.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), so data-dependent flakiness surfaces before you commit a green.
 - `--concurrency <n>` runs scenarios in parallel (one shared browser, isolated contexts) — measured ~2× faster on a mixed 11-scenario suite at `--concurrency 4`, more on suites with planning or long flows.
+- **Incremental runs (`--changed` / `--since <ref>`).** With `--all`, run only the scenarios a change affects: `--changed` diffs the working tree against `HEAD`, `--since main` (or any git ref) diffs against that ref. A scenario is selected when its own file changed, when it has no cached plan, or when its plan visits a route whose **indexed source** changed (the site map's file→route attribution). Selection is sound-but-coarse and **never a silent false green**: if the diff touches files the map can't attribute to a route (shared code, config), or there's no git/site map, Windup runs the whole suite and prints why. Re-scan (`windup scan`) keeps the attribution current; use plain `--all` for a full pre-merge/nightly gate.
 - Exit code is non-zero when any scenario fails.
 - `--reporter junit` emits JUnit XML (GitHub Actions, GitLab and Jenkins consume it natively); `--reporter json` emits a machine-readable summary; `--reporter html` emits a self-contained human-friendly page (zero JS/deps — upload it as a CI artifact or open locally). Default output: `.windup/reports/`.
 - `windup costs --json` reports AI spend for pipeline tracking.
@@ -316,6 +317,7 @@ Example GitHub Actions step:
 | `windup new "<instruction>" [--id x] [--force] [--depends-on ids] [--validate]` | Generate a scenario from a rough instruction; `--validate` runs and refines it until it passes (≤3 attempts) |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |
 | `windup run --all` | Run every scenario — CI mode |
+| `windup run --all --changed` / `--since <ref>` | Incremental CI: run only scenarios a change affects (working tree vs `HEAD`, or vs a git ref). Falls back to the full suite when impact can't be proven — never a silent false green |
 | `windup scan [--update] [--no-assist]` | Statically index routes and interactive elements into the site map; `--update` re-indexes only files changed since the last scan (git diff); `--no-assist` skips the LLM layer (zero cost) |
 | `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
