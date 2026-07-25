@@ -174,7 +174,7 @@ export interface RunMetrics {
    * browser context launch. The point of the cache is `$0` (no LLM) — wall-clock
    * is still Playwright actions + dependencies, which `dependencies`/`setup` make visible.
    */
-  duration_ms: { total: number; planning: number; execution: number; dependencies?: number; setup?: number };
+  duration_ms: { total: number; planning: number; execution: number; dependencies?: number; setup?: number; navigation?: number };
   actions: ActionMetrics[];
   result: "passed" | "failed";
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;

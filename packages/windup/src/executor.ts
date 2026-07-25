@@ -18,6 +18,8 @@ export interface ExecutionResult {
   failure: ExecutionFailure | null;
   /** Signature of the start page after the goto (E1); null if it could not be computed. */
   start_sig: string | null;
+  /** ms to navigate to start_url and reach a ready page BEFORE the first action (goto + load/hydration) — where the time actually goes in an SPA. */
+  nav_ms: number;
 }
 
 /**
@@ -161,6 +163,7 @@ export interface ExecuteOptions {
 
 export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector, opts: ExecuteOptions = {}): Promise<ExecutionResult> {
   const metrics: ActionMetrics[] = [];
+  const navStart = Date.now();
 
   if (!opts.skipInitialGoto) {
     try {
@@ -171,6 +174,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
         actions: metrics,
         failure: { kind: "network", action_id: null, message: `goto ${plan.start_url}: ${err instanceof Error ? err.message : err}` },
         start_sig: null,
+        nav_ms: Date.now() - navStart,
       };
     }
   }
@@ -184,6 +188,9 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
   const startSig = await initialSignature(browser);
   if (collector && startSig) await observePage(browser, startSig, collector);
   let currentSig = startSig;
+  // Everything up to here is "navigation": goto + readiness + load/hydration
+  // (the signature wait blocks until interactive elements appear) + first observe.
+  const navMs = Date.now() - navStart;
 
   for (const action of plan.actions) {
     // A prior action may have navigated to a new route — ready it before acting.
@@ -212,6 +219,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
           message: err instanceof Error ? err.message : String(err),
         },
         start_sig: startSig,
+        nav_ms: navMs,
       };
     }
 
@@ -236,6 +244,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
           message: `postcondition failed: ${result.failed_condition}`,
         },
         start_sig: startSig,
+        nav_ms: navMs,
       };
     }
 
@@ -264,5 +273,5 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     if (SLOWMO_MS() > 0) await new Promise((r) => setTimeout(r, SLOWMO_MS()));
   }
 
-  return { ok: true, actions: metrics, failure: null, start_sig: startSig };
+  return { ok: true, actions: metrics, failure: null, start_sig: startSig, nav_ms: navMs };
 }

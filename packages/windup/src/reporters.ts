@@ -52,8 +52,8 @@ ${suites}
 `;
 }
 
-export function jsonReport(results: RunMetrics[]): string {
-  const summary = buildSuiteSummary(results);
+export function jsonReport(results: RunMetrics[], opts: { wall_ms?: number; concurrency?: number } = {}): string {
+  const summary = buildSuiteSummary(results, opts);
   const cases = results.map((r) => ({
     scenario: r.scenario_id,
     module: r.module ?? "(root)",
@@ -61,6 +61,14 @@ export function jsonReport(results: RunMetrics[]): string {
     cache: r.cache,
     llm_calls: r.llm_calls,
     duration_ms: r.duration_ms.total,
+    // Wall-clock breakdown so the total reconciles (feedback: "where did the time go").
+    duration_breakdown: {
+      setup: r.duration_ms.setup ?? 0,
+      dependencies: r.duration_ms.dependencies ?? 0,
+      planning: r.duration_ms.planning,
+      navigation: r.duration_ms.navigation ?? 0,
+      actions: r.actions.reduce((s, a) => s + a.duration_ms + a.verify_ms, 0),
+    },
     est_cost_usd: r.estimated_cost_usd,
     failure: r.failure,
     ...(r.dependencies?.length ? { dependencies: r.dependencies } : {}),
@@ -75,15 +83,20 @@ export function jsonReport(results: RunMetrics[]): string {
  * for humans — CI artifact pages, a link in the PR, or opening locally.
  * Expandable failure/action detail uses native <details>, no script.
  */
-export function htmlReport(results: RunMetrics[]): string {
+export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; concurrency?: number } = {}): string {
   const passed = results.filter((r) => r.result === "passed").length;
   const failed = results.length - passed;
   const llmCalls = results.reduce((a, r) => a + r.llm_calls, 0);
   const cost = results.reduce((a, r) => a + r.estimated_cost_usd, 0).toFixed(4);
-  const durationSec = (results.reduce((a, r) => a + r.duration_ms.total, 0) / 1000).toFixed(1);
+  const sumSec = (results.reduce((a, r) => a + r.duration_ms.total, 0) / 1000).toFixed(1);
   const freeReplays = results.filter((r) => r.llm_calls === 0).length;
   const generatedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
-  const suite = buildSuiteSummary(results);
+  const suite = buildSuiteSummary(results, opts);
+  // Wall-clock (real elapsed) is the honest headline; the sum inflates ~N× under
+  // --concurrency N. Show wall as the big stat and the sum as its subtitle.
+  const durationStat = suite.wall_ms !== undefined
+    ? `<div class="stat"><b>${(suite.wall_ms / 1000).toFixed(1)}s</b><span>wall-clock${suite.concurrency ? ` · sum ${sumSec}s ·×${suite.concurrency}` : ""}</span></div>`
+    : `<div class="stat"><b>${sumSec}s</b><span>duration</span></div>`;
   const groups = groupByModule(results);
   const showModules = groups.length > 1;
 
@@ -115,9 +128,26 @@ ${r.actions
   .join("\n")}
 </table></details>`
         : "";
+      // Reconcile the DURATION: split total into where the time actually went —
+      // setup (context launch) · deps (depends_on chain) · plan (LLM) · nav
+      // (goto + load/hydration before a1) · actions (sum of act+verify) · other.
+      const actionsMs = r.actions.reduce((s, a) => s + a.duration_ms + a.verify_ms, 0);
+      const segs = [
+        { k: "setup", v: r.duration_ms.setup ?? 0 },
+        { k: "deps", v: r.duration_ms.dependencies ?? 0 },
+        { k: "plan", v: r.duration_ms.planning },
+        { k: "nav", v: r.duration_ms.navigation ?? 0 },
+        { k: "actions", v: actionsMs },
+      ].filter((s) => s.v > 0);
+      const other = Math.max(0, r.duration_ms.total - segs.reduce((s, x) => s + x.v, 0));
+      if (other > 0) segs.push({ k: "other", v: other });
+      const totalMs = r.duration_ms.total || 1;
+      const bar = segs.map((s) => `<span class="seg seg-${s.k}" style="width:${((s.v / totalMs) * 100).toFixed(1)}%" title="${s.k} ${s.v} ms"></span>`).join("");
+      const legend = segs.map((s) => `${s.k} ${s.v}`).join(" · ");
+      const breakdown = `<details class="breakdown"><summary>${r.duration_ms.total} ms — where it went</summary><div class="bar">${bar}</div><div class="bkleg">${r.duration_ms.total} ms = ${legend}</div></details>`;
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${suggestion}${summary}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${suggestion}${summary}${breakdown}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>
@@ -186,6 +216,13 @@ summary { cursor:pointer; font-size:12px; color:var(--muted); }
 table.actions { margin-top:6px; font-size:12px; }
 table.actions th, table.actions td { padding:4px 10px; }
 td.ok { color:var(--pass); } td.bad { color:var(--fail); }
+details.breakdown { margin-top:5px; }
+details.breakdown summary { font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); cursor:pointer; }
+.bar { display:flex; height:8px; border-radius:2px; overflow:hidden; margin:6px 0 4px; max-width:520px; background:var(--line); }
+.bar .seg { height:100%; }
+.seg-setup { background:#9aa0a6; } .seg-deps { background:#c78b3b; } .seg-plan { background:#7c5cc4; }
+.seg-nav { background:#3b82c7; } .seg-actions { background:var(--pass); } .seg-other { background:var(--line); }
+.bkleg { font:11px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); }
 footer { color:var(--muted); font-size:11.5px; margin-top:18px; }
 </style>
 </head>
@@ -202,7 +239,7 @@ footer { color:var(--muted); font-size:11.5px; margin-top:18px; }
 <div class="stat"><b>${freeReplays}</b><span>zero-LLM runs</span></div>
 <div class="stat"><b>${llmCalls}</b><span>llm calls</span></div>
 <div class="stat"><b>$${cost}</b><span>est. cost</span></div>
-<div class="stat"><b>${durationSec}s</b><span>duration</span></div>
+${durationStat}
 </div>
 ${flakyBanner}
 <div class="table-wrap">
@@ -225,12 +262,12 @@ const REPORT_FILES: Record<ReporterFormat, string> = {
 };
 
 /** Write the report; returns the absolute file path. */
-export async function writeReport(results: RunMetrics[], format: ReporterFormat, file?: string): Promise<string> {
+export async function writeReport(results: RunMetrics[], format: ReporterFormat, file?: string, opts: { wall_ms?: number; concurrency?: number } = {}): Promise<string> {
   const target = path.resolve(
     file ?? path.join(getContext().paths.root, ".windup", "reports", REPORT_FILES[format]),
   );
   await mkdir(path.dirname(target), { recursive: true });
-  const content = format === "junit" ? junitReport(results) : format === "json" ? jsonReport(results) : htmlReport(results);
+  const content = format === "junit" ? junitReport(results) : format === "json" ? jsonReport(results, opts) : htmlReport(results, opts);
   await writeFile(target, content);
   return target;
 }

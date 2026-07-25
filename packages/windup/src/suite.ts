@@ -30,7 +30,12 @@ export interface SuiteSummary {
   replans: number;
   llm_calls: number;
   est_cost_usd: number;
+  /** SUM of every scenario's total (inflates ~N× under --concurrency N). */
   duration_ms: number;
+  /** Real elapsed time of the whole run (what CI actually spends) — set when the caller measures it. */
+  wall_ms?: number;
+  /** --concurrency the run used (context for reading wall vs sum). */
+  concurrency?: number;
   by_module: ModuleStat[];
   flaky: FlakyScenario[];
 }
@@ -38,7 +43,7 @@ export interface SuiteSummary {
 const moduleOf = (m: RunMetrics): string => m.module ?? "(root)";
 const rate = (n: number, d: number): number => (d ? Number((n / d).toFixed(3)) : 0);
 
-export function buildSuiteSummary(results: RunMetrics[]): SuiteSummary {
+export function buildSuiteSummary(results: RunMetrics[], opts: { wall_ms?: number; concurrency?: number } = {}): SuiteSummary {
   const passed = results.filter((m) => m.result === "passed").length;
   const cacheHits = results.filter((m) => m.cache === "hit").length;
 
@@ -79,6 +84,8 @@ export function buildSuiteSummary(results: RunMetrics[]): SuiteSummary {
     llm_calls: results.reduce((n, m) => n + m.llm_calls, 0),
     est_cost_usd: Number(results.reduce((n, m) => n + m.estimated_cost_usd, 0).toFixed(4)),
     duration_ms: results.reduce((n, m) => n + m.duration_ms.total, 0),
+    ...(opts.wall_ms !== undefined ? { wall_ms: opts.wall_ms } : {}),
+    ...(opts.concurrency && opts.concurrency > 1 ? { concurrency: opts.concurrency } : {}),
     by_module,
     flaky,
   };
@@ -86,11 +93,16 @@ export function buildSuiteSummary(results: RunMetrics[]): SuiteSummary {
 
 /** Human-readable suite summary block for the terminal. */
 export function printSuiteSummary(s: SuiteSummary): void {
+  // Wall-clock is what CI actually spends; the sum inflates ~N× under
+  // --concurrency N, so lead with wall and label the sum when they differ.
+  const time = s.wall_ms !== undefined
+    ? `wall ${(s.wall_ms / 1000).toFixed(1)}s` + (s.concurrency ? ` (sum ${(s.duration_ms / 1000).toFixed(1)}s · concurrency ${s.concurrency})` : "")
+    : `${(s.duration_ms / 1000).toFixed(1)}s`;
   console.log("");
   console.log(
     `suite: ${s.passed}/${s.total} passed (${Math.round(s.pass_rate * 100)}%)  ·  ` +
       `cache-hit ${Math.round(s.cache_hit_rate * 100)}%  ·  re-plans ${s.replans}  ·  ` +
-      `llm_calls ${s.llm_calls}  ·  $${s.est_cost_usd}  ·  ${(s.duration_ms / 1000).toFixed(1)}s`,
+      `llm_calls ${s.llm_calls}  ·  $${s.est_cost_usd}  ·  ${time}`,
   );
   if (s.by_module.length > 1) {
     console.log("by module:");

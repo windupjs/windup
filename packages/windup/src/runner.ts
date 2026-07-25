@@ -53,6 +53,7 @@ function resetForFallback(m: RunMetrics): void {
   m.sig_mismatch = null;
   m.duration_ms.execution = 0;
   m.duration_ms.dependencies = 0;
+  m.duration_ms.navigation = 0;
 }
 
 export async function resolveDependencyChain(scenario: Scenario, load: ScenarioLoader): Promise<Array<Scenario & { start_url: string }>> {
@@ -177,6 +178,7 @@ export async function runScenario(
       const execStart = Date.now();
       const result = await executePlan(b, expandedPlan, collector, { skipInitialGoto: skipGoto });
       metrics.duration_ms.execution = Date.now() - execStart;
+      metrics.duration_ms.navigation = result.nav_ms;
       metrics.actions = result.actions;
       // E1, lenient policy: a diverging sig is a signal, not a blocker.
       if (result.start_sig && cached.key.start_sig) {
@@ -397,6 +399,7 @@ async function tryIsomorphicReuse(
   const execStart = Date.now();
   const result = await executePlan(browser, expanded, collector, { skipInitialGoto: skipGoto });
   metrics.duration_ms.execution = Date.now() - execStart;
+  metrics.duration_ms.navigation = result.nav_ms;
   metrics.actions = result.actions;
 
   if (result.ok) {
@@ -465,6 +468,7 @@ async function generateAndExecute(
   const execStart = Date.now();
   const result: ExecutionResult = await executePlan(browser, expandedPlan, collector, { skipInitialGoto: skipGoto });
   metrics.duration_ms.execution += Date.now() - execStart;
+  metrics.duration_ms.navigation = result.nav_ms;
   metrics.actions = result.actions;
 
   if (!result.ok) {

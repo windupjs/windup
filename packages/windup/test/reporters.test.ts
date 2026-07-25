@@ -42,6 +42,20 @@ describe("CI/CD reporters", () => {
     expect(out.cases[0]).toHaveProperty("module");
   });
 
+  it("json: per-case duration_breakdown reconciles, and the summary carries wall_ms/concurrency", () => {
+    const out = JSON.parse(jsonReport([
+      metric({
+        duration_ms: { total: 3652, planning: 0, execution: 2858, setup: 766, navigation: 2606 },
+        actions: [{ id: "a1", duration_ms: 113, verify_ms: 139, status: "passed" }],
+      }),
+    ], { wall_ms: 130000, concurrency: 4 }));
+    expect(out.cases[0].duration_breakdown).toEqual({ setup: 766, dependencies: 0, planning: 0, navigation: 2606, actions: 252 });
+    // setup 766 + nav 2606 + actions 252 = 3624 ≈ total 3652 (small overhead)
+    expect(out.summary.wall_ms).toBe(130000);
+    expect(out.summary.concurrency).toBe(4);
+    expect(out.summary.duration_ms).toBe(3652); // the sum stays available, just not the headline
+  });
+
   it("html: self-contained document with summary, badges, escaped failure and action detail", () => {
     const html = htmlReport([
       metric({
@@ -74,5 +88,18 @@ describe("CI/CD reporters", () => {
     expect(html).toContain("&lt;b&gt;#pay&lt;/b&gt;"); // failure message escaped
     expect(html).not.toContain("<b>#pay</b>");
     expect(html).not.toContain("<script"); // zero JS: opens in any CI artifact viewer
+  });
+
+  it("html: wall-clock headline + per-case duration breakdown", () => {
+    const html = htmlReport([
+      metric({ scenario_id: "a", duration_ms: { total: 3652, planning: 0, execution: 2858, setup: 766, navigation: 2606 }, actions: [{ id: "a1", duration_ms: 113, verify_ms: 139, status: "passed" }] }),
+      metric({ scenario_id: "b" }),
+    ], { wall_ms: 130000, concurrency: 4 });
+    expect(html).toContain("wall-clock"); // headline stat is real elapsed, not the sum
+    expect(html).toContain("130.0s");
+    expect(html).toContain("×4"); // concurrency shown so the sum makes sense
+    expect(html).toContain("where it went"); // the reconciling breakdown
+    expect(html).toContain("seg-nav"); // nav segment present (the SPA time sink)
+    expect(html).toContain("nav 2606");
   });
 });

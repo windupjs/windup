@@ -162,6 +162,7 @@ program
     const scenarios = await Promise.all(ids.map((id) => loadScenario(id)));
     const jobs = scenarios.flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
 
+    const wallStart = Date.now(); // real elapsed time of the whole run (≠ the sum of per-scenario totals under concurrency)
     let results: RunMetrics[];
     if (concurrency > 1 && jobs.length > 1) {
       // Parallel: one shared site map (saved once at the end); results print as
@@ -206,16 +207,18 @@ program
       // best-effort — grouping falls back to "(root)"
     }
 
+    const wall_ms = Date.now() - wallStart;
+    const suiteOpts = { wall_ms, concurrency };
     if (results.length > 1) {
       const { buildSuiteSummary, printSuiteSummary } = await import("./suite.js");
-      const summary = buildSuiteSummary(results);
+      const summary = buildSuiteSummary(results, suiteOpts);
       if (opts.stream) streamEvent(null, "suite", { ...summary });
       else printSuiteSummary(summary);
     }
 
     if (opts.reporter) {
       const { writeReport } = await import("./reporters.js");
-      const file = await writeReport(results, opts.reporter as "junit" | "json" | "html", opts.reportFile);
+      const file = await writeReport(results, opts.reporter as "junit" | "json" | "html", opts.reportFile, suiteOpts);
       console.log(`report (${opts.reporter}): ${file}`);
     }
     process.exitCode = failures === 0 ? 0 : 1;
