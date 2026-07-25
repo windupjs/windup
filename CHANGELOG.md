@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.37.0
+- **Suite-level fixtures — `config.suite.setup` / `config.suite.teardown` (feedback #3).** Shell command(s) run ONCE around a `run --all`: setup before the first scenario, teardown after the last (always, even on failure) — the `beforeAll`/`afterAll` analogue for a shared fixture database or an external stub. Per-scenario `setup`/`teardown` (in the scenario JSON) still handle per-test state. A failing `suite.setup` aborts the suite before any scenario runs (exit 2); a failing `suite.teardown` is a warning. Only fires with `--all`, not for a single-scenario run. Validated live: setup → scenarios → teardown ordering, abort-on-setup-failure, and the `--all` gate. New `config.suite` field (reuses `hooks.ts`).
+
 ## 0.36.0
 - **Reusable readiness signals per route glob — `config.readySignals` (feedback #3).** Map a route glob (e.g. `"**/workspace/**"`) to the CSS selector(s) that must be visible before the executor runs the first action on a matching page. Applied deterministically at run time (no LLM, $0, not part of the cached plan) whenever a run enters a matching route — so a hydration/loading wait is defined once per route instead of repeated as a hint in every scenario. Closes the load-time race where an element is present but its handlers aren't attached yet (Playwright's per-element wait can't see it). Best-effort: a signal that never shows within the timeout warns and continues. Validated live via `--llm claude-code`: the same generated plan **fails** without the signal (click races hydration, form never appears) and **passes** with it. New `executor.ts` readiness gate + `readySignals` config field.
 

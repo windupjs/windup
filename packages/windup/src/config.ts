@@ -68,6 +68,19 @@ export interface WindupConfig {
    * signal that never appears within the timeout is a warning, not a failure.
    */
   readySignals?: Record<string, string | string[]>;
+  /**
+   * Suite-level fixtures for `run --all`: shell command(s) run ONCE before the
+   * whole suite (`setup`) and ONCE after it (`teardown`, always — even on
+   * failure), outside every cached plan. Use for seeding/tearing down a shared
+   * fixture database or starting an external stub. Per-scenario `setup`/
+   * `teardown` (in the scenario JSON) still handle per-test state. If `setup`
+   * fails the suite aborts before running any scenario; a `teardown` failure is
+   * a warning. They are the team's own trusted commands, run in the project root.
+   */
+  suite?: {
+    setup?: string | string[];
+    teardown?: string | string[];
+  };
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

@@ -134,6 +134,27 @@ program
       printExtras(m);
     };
 
+    // Suite-level fixtures (run --all): setup once before the suite, teardown
+    // once after (always). Per-scenario setup/teardown still run per test.
+    const { getContext: getCtx } = await import("./context.js");
+    const suiteHooks = opts.all ? getCtx().config.suite : undefined;
+    if (suiteHooks?.setup) {
+      const { runHooks } = await import("./hooks.js");
+      const r = await runHooks("setup", suiteHooks.setup, "(suite)");
+      if (!r.ok) {
+        console.error(`suite setup failed — no scenarios were run:\n${r.error}`);
+        process.exitCode = 2;
+        return;
+      }
+    }
+    const runSuiteTeardown = async (): Promise<void> => {
+      if (!suiteHooks?.teardown) return;
+      const { runHooks } = await import("./hooks.js");
+      const r = await runHooks("teardown", suiteHooks.teardown, "(suite)");
+      if (!r.ok) console.warn(`warning: ${r.error}`);
+    };
+
+    try {
     // Build the flat task list (each id × repeat). Scenarios are loaded up front.
     const scenarios = await Promise.all(ids.map((id) => loadScenario(id)));
     const jobs = scenarios.flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
@@ -195,6 +216,9 @@ program
       console.log(`report (${opts.reporter}): ${file}`);
     }
     process.exitCode = failures === 0 ? 0 : 1;
+    } finally {
+      await runSuiteTeardown(); // always — even if a scenario/reporter threw
+    }
   });
 
 program

@@ -188,6 +188,8 @@ Two ways to cover writes:
 
 `setup` runs before the scenario (and before its dependencies); `teardown` runs after, **always** — pass or fail. They are your own trusted commands (like a test's `beforeEach`/`afterEach`), run in the project root with the process env, and never enter the plan or cache. A failing `teardown` is surfaced as a warning; a failing `setup` fails the run before planning.
 
+**Suite-level fixtures.** For state shared by the whole suite — seed a fixture database once, start an external stub — use `suite.setup` / `suite.teardown` in `windup.config.ts` (see [Configuration](#configuration-windupconfigts)). They run **once** around a `run --all` (setup before the first scenario, teardown after the last — always), the suite analogue of `beforeAll`/`afterAll`. A failing `suite.setup` aborts the suite before any scenario runs; a failing `suite.teardown` is a warning.
+
 ## Environments (dev / staging / CI)
 
 The start URL origin comes from, in precedence order: `--base-url` flag → `WINDUP_BASE_URL` env → `baseUrl` in `windup.config.ts` → an absolute `start_url` in the scenario. An explicit override rebases even absolute scenario URLs (path and query are preserved).
@@ -417,11 +419,17 @@ export default defineConfig({
     "**/workspace/**": "#app-ready",              // wait for this before acting on any /workspace/* page
     "**/reports/**": ["#grid", "[data-loaded]"],  // one or more selectors
   },
+  // Suite-level fixtures: run once around `run --all` (beforeAll / afterAll).
+  suite: {
+    setup:    "npm run db:seed",
+    teardown: "npm run db:reset",
+  },
 });
 ```
 
 - **`context.credentials`** maps account names to ENV references. When a task mentions the account, the plan uses `value_ref` — manifest credentials take precedence even if the page displays values, and the planner is forbidden from inventing ENV names.
 - **`readySignals`** maps a route glob to the CSS selector(s) that must be **visible before the executor runs the first action** on a matching page. It's applied deterministically at run time (no LLM, $0, not part of the cached plan) — so a hydration/loading wait is defined once per route instead of repeated as a hint in every scenario. It closes the load-time race where an element is present but its handlers aren't attached yet (which Playwright's per-element wait can't see). Best-effort: a signal that never appears within the timeout logs a warning and continues (it never hard-fails the suite), and it applies again whenever a run enters a matching route.
+- **`suite.setup` / `suite.teardown`** are shell command(s) run **once** around a `run --all` — setup before the first scenario, teardown after the last (always, even on failure) — for suite-wide fixtures (seed/reset a shared database, start a stub). Per-scenario `setup`/`teardown` (in the scenario JSON) still handle per-test state. A failing `suite.setup` aborts the suite before any scenario runs; a failing `suite.teardown` is a warning.
 - **LLM-assist** (scan layer 3) reads files the static layers couldn't resolve (dynamically built routes, indirect components), capped by `maxCalls`. Results are remembered per file hash — unchanged files never cost again. Costs are recorded in the ledger and shown by `windup costs`.
 
 ## Programmatic API & test runners
