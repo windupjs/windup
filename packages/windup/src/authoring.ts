@@ -96,7 +96,7 @@ ${knowledgeSection}${manifestSection}${credsSection}${existingSection}
   - refer to screens, menus and buttons by their REAL names from the site knowledge when they exist;
   - for form filling, specify CONCRETE fictional values (names, emails, amounts);
   - if the instruction mentions an account that exists in the Project manifest (including the account indicated in the "Registered credentials" section, if any), refer to the account by NAME (e.g. "the admin account") — NEVER write literal email/username/password in the task;
-  - the task MUST end by saying WHAT TO VERIFY: an observable condition that proves success (message displayed, item in the list, URL of the destination screen);
+  - the task MUST end by saying WHAT TO VERIFY: an observable condition that proves the INSTRUCTION's actual goal (a message displayed, an item in the list, a heading or element on the destination screen). Derive the verification from what the instruction asks for — do NOT verify a destination route just because it looks plausible in the site knowledge (it lists many routes; picking a plausible-but-unasked one is a common mistake). When the instruction does not name a specific destination URL, verify a visible element or text on the resulting screen instead of guessing a URL;
   - write the task in the SAME language as the author's instruction.
 - "hints": OPTIONAL — at most 3 selector/screen hints taken from the site knowledge that help the planner; omit if they add nothing.
 

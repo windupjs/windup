@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.32.0
+- **`windup new` steers the verification toward the instruction (#5, from a beta report).** The authoring prompt now derives the final verification from what the instruction actually asks — preferring a visible element/text over a plausible-but-unasked destination route from the site map (a common LLM mistake when the map lists many routes). `windup new` also flags that the task/verification is the LLM's best guess and recommends confirming with `--validate` (generate → run → self-refine) or a first run. Revalidated live via `--llm claude-code`.
+
 ## 0.31.0
 - **`run --stream` — NDJSON event stream** (the machine-readable half of the beta report's #9). Emits one JSON line per milestone to stdout (`run:start`, `planning`, `plan`, `action`, `replan`, `run:end`, each with the scenario, elapsed time and relevant data), so CI or a dashboard can follow a run in real time. Human progress (`--verbose`) stays on stderr, keeping stdout pure NDJSON.
 

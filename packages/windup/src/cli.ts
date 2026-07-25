@@ -214,7 +214,8 @@ program
       console.log(`  mapping  → windup.credentials.json (commit it — contains only ENV names, no secrets)`);
       console.log("");
     }
-    console.log(`review the file (it is your test — edit freely), then: npx windup run ${result.scenario.scenario_id}`);
+    console.log(`review the file (it is your test — edit freely). The task and its FINAL VERIFICATION are the LLM's best guess from your instruction and the site map — double-check the verification matches what you actually meant (an LLM can pick a plausible-but-wrong destination).`);
+    console.log(`then confirm it against the app:  npx windup new "..." --validate   (generates + runs + self-refines until green), or just: npx windup run ${result.scenario.scenario_id}`);
   });
 
 const secret = program.command("secret").description("Manage test credentials — values in .env.local, mapping in windup.credentials.json, never in scenarios or git");

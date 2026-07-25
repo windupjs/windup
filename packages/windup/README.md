@@ -120,6 +120,9 @@ Flows rarely start from zero — creating a bank account requires being logged i
 
 ### Authoring with `windup new`
 
+> **The task and its final verification are the LLM's best guess** from your instruction and the site map — an LLM can pick a plausible-but-wrong destination. `windup new` now steers the verification toward the instruction's actual goal (a visible element/text over a guessed route), and recommends confirming with **`windup new "..." --validate`** (generate → run → self-refine until green) or a first `windup run`.
+
+
 You don't have to write detailed tasks by hand. Give `windup new` a rough instruction and the LLM acts as a test author — it rewrites it into a precise, verifiable scenario using the **site map** (real screens, menus and elements from `windup scan` and past runs) and the **project manifest** (accounts referenced by name, never literal credentials):
 
 ```bash
