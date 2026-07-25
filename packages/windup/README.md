@@ -289,6 +289,8 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 ```
 
 - `--all` runs every scenario in the directory (one warm browser for the whole suite).
+- **Suite summary & module grouping.** `--all` (or a multi-scenario run) prints a suite line — pass rate, cache-hit rate, re-plans, LLM calls, cost, total time — plus a per-**module** (folder) breakdown. The HTML report groups by module with those stats; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`by_module`, `flaky`) and a `module` per case.
+- **Flake score.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), so data-dependent flakiness surfaces before you commit a green.
 - `--concurrency <n>` runs scenarios in parallel (one shared browser, isolated contexts) — measured ~2× faster on a mixed 11-scenario suite at `--concurrency 4`, more on suites with planning or long flows.
 - Exit code is non-zero when any scenario fails.
 - `--reporter junit` emits JUnit XML (GitHub Actions, GitLab and Jenkins consume it natively); `--reporter json` emits a machine-readable summary; `--reporter html` emits a self-contained human-friendly page (zero JS/deps — upload it as a CI artifact or open locally). Default output: `.windup/reports/`.

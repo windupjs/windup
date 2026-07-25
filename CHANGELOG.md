@@ -4,6 +4,10 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.34.0
+- **Suite report: module grouping + suite stats (feedback #3 — 145 scenarios, 17 modules).** `run --all` prints a suite summary — pass rate, cache-hit rate, re-plans, LLM calls, cost, total time — with a per-module (folder) breakdown. HTML groups by module with cache-hit / re-plan tiles; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`by_module`, `flaky`) and a `module` per case; under `--stream` it's a `suite` event.
+- **Flake score.** `--repeat <n>` is aggregated per scenario — one passing some-but-not-all of its runs is flagged flaky (`passed X/N`) in the summary and reports.
+
 ## 0.33.0
 - **Native dialogs — `window.confirm`/`alert`/`prompt` (fixes a beta-report blocker, #12).** Playwright auto-dismisses dialogs unless a handler is registered, so a click behind a `confirm()` (archive/delete/cancel) silently did nothing. Actions now take `"dialog": "accept"` (or `"dismiss"`), and the executor arms a one-time handler before the triggering action; the planner emits it for confirm/alert/prompt steps instead of inventing a fragment. Deterministically verified (accept runs the mutation, dismiss cancels) and live-verified that the planner emits it (via `--llm claude-code`).
 - **Verify persistent signals, not toasts (#12).** The planner now prefers a lasting postcondition (a row that appears/disappears, a changed label, a URL) over transient toast/snackbar messages that vanish in seconds and make verification a race.
