@@ -58,6 +58,16 @@ export interface WindupConfig {
     credentials?: Record<string, Record<string, string>>;
     vocabulary?: Record<string, string>;
   };
+  /**
+   * Reusable readiness signals per route glob (anti-flake). Keyed by a route
+   * glob (e.g. "**\/workspace/**"), each value is a CSS selector (or list of
+   * selectors) that must be VISIBLE before the executor runs the first action
+   * on a matching page. Applied deterministically at run time (no LLM, $0, not
+   * part of the cached plan) whenever the page URL matches — so a hydration/
+   * loading wait isn't repeated as a hint in every scenario. Best-effort: a
+   * signal that never appears within the timeout is a warning, not a failure.
+   */
+  readySignals?: Record<string, string | string[]>;
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

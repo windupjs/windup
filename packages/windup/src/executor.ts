@@ -1,6 +1,8 @@
+import picomatch from "picomatch";
 import type { Browser } from "./browser.js";
 import type { Action, ActionMetrics, FailureKind, Plan } from "./types.js";
 import { DEFAULT_TIMEOUT_MS } from "./types.js";
+import { getContext } from "./context.js";
 import { verify } from "./verifier.js";
 import { progress, streamEvent } from "./progress.js";
 
@@ -85,6 +87,44 @@ async function waitForVisible(browser: Browser, selector: string, timeoutMs: num
   }
 }
 
+const READINESS_TIMEOUT_MS = 8000;
+
+/** CSS selectors from config.readySignals whose route glob matches this URL's path. Exported for tests. */
+export function readySelectorsFor(url: string): string[] {
+  const signals = getContext().config.readySignals;
+  if (!signals) return [];
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  for (const [glob, sig] of Object.entries(signals)) {
+    if (picomatch(glob)(pathname) || picomatch(glob)(pathname.replace(/^\//, ""))) {
+      for (const s of Array.isArray(sig) ? sig : [sig]) out.push(s);
+    }
+  }
+  return out;
+}
+
+/**
+ * #4 — reusable readiness gate. Before the first action on a page whose URL
+ * matches a `config.readySignals` glob, wait for the configured selector(s) to
+ * be visible. Deterministic, LLM-free, NOT part of the cached plan. Best-effort:
+ * a signal that never shows within the timeout warns and proceeds (the action's
+ * own actionability wait then applies), so a stale/wrong signal never hard-fails
+ * a whole suite. Closes the load-time hydration race that Playwright's per-
+ * element wait can't see (element present but handlers not yet attached).
+ */
+async function awaitReadiness(browser: Browser, scenarioId: string): Promise<void> {
+  for (const sel of readySelectorsFor(browser.url())) {
+    if (!(await browser.waitForVisible(sel, READINESS_TIMEOUT_MS))) {
+      progress(scenarioId, `readiness signal "${sel}" not visible in ${READINESS_TIMEOUT_MS}ms — continuing`);
+    }
+  }
+}
+
 async function performAction(browser: Browser, action: Action, timeoutMs: number): Promise<void> {
   // Arm the native-dialog handler BEFORE the action that opens it: the click
   // that triggers window.confirm blocks until the dialog is handled.
@@ -135,11 +175,22 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     }
   }
 
+  // #4 readiness gate: wait for the start page's configured signal(s) before we
+  // even sample the signature or run a1 (closes the on-load hydration race).
+  let readiedUrl: string | null = null;
+  await awaitReadiness(browser, plan.scenario_id);
+  readiedUrl = browser.url();
+
   const startSig = await initialSignature(browser);
   if (collector && startSig) await observePage(browser, startSig, collector);
   let currentSig = startSig;
 
   for (const action of plan.actions) {
+    // A prior action may have navigated to a new route — ready it before acting.
+    if (browser.url() !== readiedUrl) {
+      await awaitReadiness(browser, plan.scenario_id);
+      readiedUrl = browser.url();
+    }
     const timeoutMs = action.timeout_ms ?? DEFAULT_TIMEOUT_MS;
     const started = Date.now();
     if (process.env.LOG_LEVEL === "debug") {
