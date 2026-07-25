@@ -78,6 +78,20 @@ export interface Scenario {
    * dependency ended (and the planner sees that real page).
    */
   depends_on?: string[];
+  /**
+   * #1 — isomorphic plan reuse (opt-in). This scenario reuses another scenario's
+   * PROVEN cached plan instead of asking the LLM: same flow, different route
+   * (this scenario's start_url) and, optionally, different fill values (`set`
+   * maps a literal value in the source plan → the value to use here). The reused
+   * plan is still executed and verified before it is trusted/cached; any
+   * mismatch falls back to normal LLM planning. Never bypasses the verify gate.
+   */
+  like?: {
+    /** scenario_id whose active cached plan is the template. */
+    scenario: string;
+    /** Optional fill-value overrides: source literal value → value to use here. */
+    set?: Record<string, string>;
+  };
 }
 
 export type CacheStatus = "active" | "stale";
@@ -119,6 +133,8 @@ export interface RunMetrics {
   module?: string;
   started_at: string;
   cache: CacheOutcome;
+  /** #1 — set to the source scenario_id when this run reused another scenario's plan (isomorphic reuse, no LLM); absent otherwise. */
+  reused_from?: string | null;
   llm_calls: number;
   llm_model: string | null;
   /** Model provider ("google", "openai"); null in replays, absent in pre-0.10 records. */

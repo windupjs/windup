@@ -119,6 +119,26 @@ Flows rarely start from zero — creating a bank account requires being logged i
 
 `windup new` handles dependencies both ways: `--depends-on login` declares them explicitly, and **the author LLM also suggests them on its own** — it sees every existing scenario (id + task) and, when the instruction presupposes a state one of them produces ("already logged in…"), emits `depends_on` automatically (mechanically filtered against real scenario ids — never invented). Either way the task is written from the dependency's final state, without repeating its steps.
 
+### Isomorphic plan reuse (`like`)
+
+At scale, many scenarios are the **same flow on a different route/entity** — create a contact, create a deal, create a company all drive the same form. Instead of paying an LLM planning call for each, a scenario can reuse another's **already-proven** plan:
+
+```json
+{
+  "scenario_id": "deals-create",
+  "start_url": "/deals/new",
+  "task": "Type 'Big Deal' into the Name field and click Save; verify a new row appears.",
+  "like": { "scenario": "contacts-create", "set": { "Alice": "Big Deal" } }
+}
+```
+
+- `like.scenario` names the scenario whose active cached plan is the template. Windup instantiates it for this scenario — **this** `start_url`, and `like.set` swaps any differing fill values (`"source literal" → "value to use here"`, applied to `value` fields only; selectors and `value_ref` secrets are untouched).
+- The reused plan is **still executed and verified** before it's trusted and cached — exactly the gate every plan passes. If the pages aren't actually isomorphic (a selector doesn't match, verification fails), Windup **falls back to normal LLM planning**. It never bypasses verification, so it can't produce a silent false green.
+- When it verifies, the run cost **zero LLM calls** (`llm_calls=0`, shown as reused) and the scenario now has its own cached plan; subsequent runs are ordinary `$0` replays.
+- The source must have been planned once first (its plan is the template). In a suite where the source runs later, the `like` scenario simply plans with the LLM that round and reuses on the next — no error, just a missed optimization.
+
+Reuse whole plans with `like`; reuse an **action block** across otherwise-different flows with a [fragment](#what-lives-where) (`windup fragment extract`). Both keep the deterministic, verified guarantee.
+
 ### Authoring with `windup new`
 
 > **The task and its final verification are the LLM's best guess** from your instruction and the site map — an LLM can pick a plausible-but-wrong destination. `windup new` now steers the verification toward the instruction's actual goal (a visible element/text over a guessed route), and recommends confirming with **`windup new "..." --validate`** (generate → run → self-refine until green) or a first `windup run`.

@@ -4,6 +4,7 @@ import { loadScenario } from "./scenario.js";
 import { getContext } from "./context.js";
 import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
 import { expandPlan, loadFragments } from "./fragments.js";
+import { instantiatePlan } from "./isomorph.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
@@ -236,6 +237,15 @@ export async function runScenario(
       return metrics;
     }
 
+    // #1 isomorphic reuse: before spending an LLM call, if this scenario is
+    // declared `like` another, try that scenario's PROVEN plan — instantiated
+    // deterministically and trusted ONLY after the normal execute+verify.
+    if (scenario.like && opts.useCache) {
+      const reused = await tryIsomorphicReuse(scenario, browser, metrics, collector, skipGoto);
+      if (reused) return metrics; // verified + cached B's own plan, no LLM
+      // otherwise fall through to LLM planning (safety net)
+    }
+
     const generated = await generateAndExecute(scenario, planner, browser, metrics, collector, undefined, skipGoto);
     if (generated.ok && opts.useCache) await saveCached(scenario, generated.plan!, generated.start_sig);
     return metrics;
@@ -279,6 +289,70 @@ export async function runScenario(
     if (!opts.sharedMap) await mapStore.save();
     await writeRunMetrics(metrics);
   }
+}
+
+/**
+ * #1 — try to reuse another scenario's PROVEN cached plan for an isomorphic
+ * scenario (no LLM): instantiate the source plan for this scenario's route/
+ * values, execute + verify, and cache it as this scenario's own plan on
+ * success. Returns false (→ fall back to LLM) when the source has no active
+ * plan or the instantiated plan does not verify. Never invalidates anything and
+ * never bypasses the verify gate.
+ */
+async function tryIsomorphicReuse(
+  scenario: Scenario,
+  browser: Browser,
+  metrics: RunMetrics,
+  collector?: StepCollector,
+  skipGoto = false,
+): Promise<boolean> {
+  const like = scenario.like!;
+  if (like.scenario === scenario.scenario_id) {
+    console.warn(`warning: "${scenario.scenario_id}" declares like itself — ignoring`);
+    return false;
+  }
+  let source: Scenario;
+  try {
+    source = await loadScenario(like.scenario);
+  } catch {
+    console.warn(`warning: "${scenario.scenario_id}" is like "${like.scenario}", which was not found — planning with the LLM`);
+    return false;
+  }
+  const srcCached = await getCached(source);
+  if (!srcCached) {
+    progress(scenario.scenario_id, `like "${like.scenario}": no proven plan yet → planning with the LLM`);
+    return false;
+  }
+
+  const startUrl = scenario.start_url ?? srcCached.plan.start_url;
+  const { plan, unmatched } = instantiatePlan(srcCached.plan, { ...scenario, start_url: startUrl }, like.set);
+  if (unmatched.length) {
+    console.warn(`warning: "${scenario.scenario_id}" like "${like.scenario}": set value(s) not found in the source plan: ${unmatched.map((v) => JSON.stringify(v)).join(", ")}`);
+  }
+  progress(scenario.scenario_id, `reusing plan from "${like.scenario}" (isomorphic, no LLM)`);
+
+  let expanded: Plan;
+  try {
+    expanded = expandPlan({ ...plan, start_url: startUrl }, await loadFragments());
+  } catch {
+    return false; // orphaned fragment in the source plan → let the LLM plan fresh
+  }
+
+  const execStart = Date.now();
+  const result = await executePlan(browser, expanded, collector, { skipInitialGoto: skipGoto });
+  metrics.duration_ms.execution = Date.now() - execStart;
+  metrics.actions = result.actions;
+
+  if (result.ok) {
+    await saveCached(scenario, plan, result.start_sig ?? undefined);
+    metrics.cache = "hit";
+    metrics.reused_from = like.scenario;
+    metrics.result = "passed";
+    return true;
+  }
+  progress(scenario.scenario_id, `reused plan from "${like.scenario}" did not verify (at ${result.failure?.action_id ?? "?"}) → planning with the LLM`);
+  streamEvent(scenario.scenario_id, "replan", { at: result.failure?.action_id ?? null, reason: "isomorphic-mismatch" });
+  return false;
 }
 
 async function generateAndExecute(

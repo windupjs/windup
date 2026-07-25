@@ -45,6 +45,15 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.depends_on !== undefined && (!Array.isArray(scenario.depends_on) || scenario.depends_on.some((d: unknown) => typeof d !== "string"))) {
     throw new WindupError(`scenario "${id}": "depends_on" must be a list of scenario ids`);
   }
+  if (scenario.like !== undefined) {
+    const like = scenario.like as { scenario?: unknown; set?: unknown };
+    if (typeof like !== "object" || like === null || typeof like.scenario !== "string" || !like.scenario) {
+      throw new WindupError(`scenario "${id}": "like" must be an object with a "scenario" id (the scenario to reuse the plan from)`);
+    }
+    if (like.set !== undefined && (typeof like.set !== "object" || like.set === null || Object.values(like.set).some((v) => typeof v !== "string"))) {
+      throw new WindupError(`scenario "${id}": "like.set" must be a map of string → string (source value → value to use here)`);
+    }
+  }
   const continueFromDependency = !scenario.start_url && (scenario.depends_on?.length ?? 0) > 0;
   scenario.start_url = resolveStartUrl(scenario.start_url);
   return Object.assign(scenario, { continue_from_dependency: continueFromDependency }) as ResolvedScenario;
