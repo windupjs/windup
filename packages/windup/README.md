@@ -112,6 +112,7 @@ Flows rarely start from zero — creating a bank account requires being logged i
 - Chains work (`login` → `select-company` → `create-account`), cycles are rejected, and a failing dependency fails the run with kind `dependency` before the scenario itself starts.
 - Each dependency keeps its own self-healing: if its cached plan breaks, it re-plans and re-caches — dependents benefit automatically.
 - Editing a scenario's `task` now invalidates its cached plan (a rewritten test is a different test).
+- **Flakiness becomes signal.** Fast deterministic replay + strict postconditions + dependency re-execution is a sharp detector of hydration/redirect races in SPAs: a plan that stops replaying deterministically (`cache=miss llm_calls=1` on every run, alternating PASS/FAIL) is telling you the *app* is non-deterministic, not the test.
 - **First-run warm-up:** a dependent scenario's cache key includes the state it inherits from its dependency, which only exists after the dependency runs once. So the first pass of a chain shows `cache=miss` (it plans), and it settles to `cache=hit` from the second run on — expected, not a cache failure.
 
 `windup new` handles dependencies both ways: `--depends-on login` declares them explicitly, and **the author LLM also suggests them on its own** — it sees every existing scenario (id + task) and, when the instruction presupposes a state one of them produces ("already logged in…"), emits `depends_on` automatically (mechanically filtered against real scenario ids — never invented). Either way the task is written from the dependency's final state, without repeating its steps.
@@ -161,6 +162,26 @@ Then reference the account by name in the task:
 ```
 
 Windup tells the planner the `admin` account maps to `ENV:WINDUP_ADMIN_USER` / `ENV:WINDUP_ADMIN_PASSWORD`, so the plan fills those with `value_ref: "ENV:WINDUP_ADMIN_PASSWORD"`, resolved to the real value only at execution time. `windup new` does this automatically: credentials typed in the instruction are detected, registered and scrubbed — the scenario mentions the account, never the values. You can also declare the mapping directly under `context.credentials` in `windup.config.ts`. In CI, define the same variable names as pipeline secrets; `windup secret list` flags any that are missing before a run.
+
+### Idempotency, setup & teardown
+
+A replay re-runs the **same cached plan with the same values**. That is ideal for **idempotent** flows — edit a fixed record to a fixed value, toggle something and check the final state, read/list/filter. It does **not** fit a pure **CREATE** whose resource has a non-reusable unique key: the first run creates it, every replay violates the constraint.
+
+Two ways to cover writes:
+
+1. **Prefer idempotent scenarios** — e.g. edit a known test record instead of creating a new one; the replay is `$0` and leaves no residue.
+2. **`setup` / `teardown` hooks** — shell commands that run **outside** the cached plan (so they run on every replay), for fixtures or cleanup (hard-delete what the test created, reset via SQL/HTTP):
+
+```json
+{
+  "scenario_id": "create-contact",
+  "task": "Open Contacts, create a contact named 'QA Tester' with CPF 111.111.111-11 and verify it appears in the list.",
+  "setup":    "psql \"$DATABASE_URL\" -c \"delete from contacts where national_id = '11111111111'\"",
+  "teardown": "psql \"$DATABASE_URL\" -c \"delete from contacts where national_id = '11111111111'\""
+}
+```
+
+`setup` runs before the scenario (and before its dependencies); `teardown` runs after, **always** — pass or fail. They are your own trusted commands (like a test's `beforeEach`/`afterEach`), run in the project root with the process env, and never enter the plan or cache. A failing `teardown` is surfaced as a warning; a failing `setup` fails the run before planning.
 
 ## Environments (dev / staging / CI)
 

@@ -4,6 +4,10 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.29.0
+- **Per-scenario `setup` / `teardown` hooks** (from a beta report on non-idempotent CREATE). Shell commands that run **outside** the cached plan — so they run on every replay — for fixtures or cleanup (hard-delete what a test created, reset via SQL/HTTP). `setup` runs before the scenario and its dependencies (a failure fails the run, kind `setup`); `teardown` runs always, even on failure (a failure is a warning). They never enter the plan or cache.
+- **Docs: idempotency principle** — prefer idempotent scenarios (edit-to-fixed-value, toggle-and-check); a pure CREATE with a non-reusable unique key needs a teardown hook. Plus a "flakiness becomes signal" note: a plan that stops replaying deterministically is exposing an app race, not a flaky test.
+
 ## 0.28.0
 - **`run --verbose` — a heartbeat during planning** (from a beta report: planning with `--llm claude-code` takes 1–3 min with no output, so a run looks frozen). Verbose mode emits milestones to stderr as planning and execution advance — `planning… (llm: …)`, `calling <provider> (attempt N)…`, `plan received: N actions`, per-action `✓/✗`, and `→ self-heal re-planning` — each prefixed with the scenario id and elapsed time. Off by default; never affects results.
 

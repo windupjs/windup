@@ -65,6 +65,10 @@ export interface Scenario {
   task: string;
   /** Site-specific knowledge provided by the scenario AUTHOR (doc 07: no hardcoded site knowledge in the engine). */
   hints?: string[];
+  /** Shell command(s) run BEFORE the scenario, outside the cached plan (fixtures / DB reset). */
+  setup?: string | string[];
+  /** Shell command(s) run AFTER the scenario — always, even on failure — outside the cached plan (cleanup for non-idempotent CREATE). */
+  teardown?: string | string[];
   /**
    * Prerequisite scenarios (e.g. ["login"]), executed IN THE SAME browser
    * session before this one — each with its own cache/replay. Without an
@@ -96,7 +100,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 

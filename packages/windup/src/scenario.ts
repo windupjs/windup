@@ -34,6 +34,12 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.hints !== undefined && (!Array.isArray(scenario.hints) || scenario.hints.some((h) => typeof h !== "string"))) {
     throw new WindupError(`scenario "${id}" is invalid: "hints" must be a list of strings`);
   }
+  for (const hook of ["setup", "teardown"] as const) {
+    const v = (scenario as unknown as Record<string, unknown>)[hook];
+    if (v !== undefined && typeof v !== "string" && !(Array.isArray(v) && v.every((c) => typeof c === "string"))) {
+      throw new WindupError(`scenario "${id}" is invalid: "${hook}" must be a shell command string or a list of strings`);
+    }
+  }
   // Per-environment resolution: --base-url/WINDUP_BASE_URL > config.baseUrl >
   // the scenario's absolute URL. Environments change port/host; the test does not.
   if (scenario.depends_on !== undefined && (!Array.isArray(scenario.depends_on) || scenario.depends_on.some((d: unknown) => typeof d !== "string"))) {

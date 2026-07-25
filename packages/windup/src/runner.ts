@@ -8,6 +8,7 @@ import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { Plan, RunMetrics, Scenario } from "./types.js";
 import { progress } from "./progress.js";
+import { runHooks } from "./hooks.js";
 
 export interface PlanGeneration {
   plan: Plan;
@@ -124,6 +125,14 @@ export async function runScenario(
 
   const browser = await launchBrowser();
   try {
+    // Setup hook runs OUTSIDE the plan/cache, before anything (fixtures, DB reset).
+    if (scenario.setup) {
+      const setup = await runHooks("setup", scenario.setup, scenario.scenario_id);
+      if (!setup.ok) {
+        metrics.failure = { kind: "setup", action_id: null, message: setup.error ?? "setup failed" };
+        return metrics;
+      }
+    }
     // Dependencies (depends_on): each one runs IN THE SAME session, with its
     // own cache/replay and self-healing. Their final state is this
     // scenario's starting point.
@@ -248,6 +257,12 @@ export async function runScenario(
       }
     }
     await browser.close();
+    // Teardown runs ALWAYS (pass or fail), outside the plan — cleanup for
+    // non-idempotent scenarios. A failure is surfaced but never flips the result.
+    if (scenario.teardown) {
+      const teardown = await runHooks("teardown", scenario.teardown, scenario.scenario_id);
+      if (!teardown.ok) console.warn(`warning: ${teardown.error}`);
+    }
     if (!opts.sharedMap) await mapStore.save();
     await writeRunMetrics(metrics);
   }
