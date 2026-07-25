@@ -130,7 +130,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 

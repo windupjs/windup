@@ -81,6 +81,20 @@ export interface WindupConfig {
     setup?: string | string[];
     teardown?: string | string[];
   };
+  /**
+   * Safety denylist — controls a plan must NEVER touch (a CI guardrail against
+   * irreversible side effects: changing the test account's password, deleting
+   * data, saving persistent config). If any action targets a forbidden selector
+   * (substring match on the plan's CSS selector) or the run navigates to a
+   * forbidden URL (glob on the path), the run ABORTS with a `forbidden` failure.
+   * Author-declared (never inferred) — the engine keeps zero site knowledge.
+   */
+  forbid?: {
+    /** Substrings; an action whose selector CONTAINS one is blocked (e.g. "#change-password", "[data-danger]"). */
+    selectors?: string[];
+    /** URL-path globs the run must never reach (e.g. "**\/account/password", "**\/admin/**"). */
+    urls?: string[];
+  };
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

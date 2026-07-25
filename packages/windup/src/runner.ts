@@ -198,8 +198,9 @@ export async function runScenario(
         metrics.result = "failed";
         return;
       }
-      if (result.failure?.kind === "network") {
-        // A network failure says nothing about the plan: do not invalidate (doc 05).
+      if (result.failure?.kind === "network" || result.failure?.kind === "forbidden") {
+        // Neither says anything about the plan's correctness: a network blip, or
+        // a deliberate config.forbid block. Do NOT invalidate or re-plan — just fail.
         metrics.failure = result.failure;
         return;
       }

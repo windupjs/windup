@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.44.0
+- **Safety denylist — `config.forbid` (CI guardrail against irreversible side effects).** Declare selectors and URLs a plan must never touch: `forbid: { selectors: ["#change-password"], urls: ["**/account/password"] }`. Before each action (and on the landing page) the executor aborts with a `forbidden` failure if the action's CSS selector CONTAINS a forbidden substring or the current/goto URL matches a forbidden path glob — so even if a re-plan wanders toward "Change password", it's stopped before the click. You declare the danger list; the engine never infers it (zero site knowledge). The machine-enforced backstop to the non-destructive authoring discipline. New `config.forbid`, `forbidden` failure kind, `executor.forbiddenViolation()`.
+
 ## 0.43.0
 - **`windup coverage` — find coverage gaps automatically.** Cross-references the routes `windup scan` indexed with your scenarios: it reports how many indexed routes have at least one scenario and **lists the routes that have none** — the "what am I missing" audit, generated from data Windup already has (the site map + scenarios + cached plans), with no LLM and no network. A scenario covers a route when its `start_url` (or any URL in its cached plan) matches the route's url_pattern. `--json` for pipelines (a CI gate can fail when critical routes are uncovered). New `coverage.ts`, `SiteMapStore.allRoutes()`.
 

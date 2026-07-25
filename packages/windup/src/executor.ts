@@ -127,6 +127,33 @@ async function awaitReadiness(browser: Browser, scenarioId: string): Promise<voi
   }
 }
 
+/**
+ * #2 — safety denylist check. Returns a human reason if this action would touch
+ * a forbidden selector (substring of the plan's CSS selector) or reach a
+ * forbidden URL (glob on the path), else null. Author-declared via config.forbid;
+ * the engine keeps zero site knowledge. Exported for tests.
+ */
+export function forbiddenViolation(action: Action, currentUrl: string): string | null {
+  const forbid = getContext().config.forbid;
+  if (!forbid) return null;
+  const urls = [currentUrl, action.type === "goto" ? action.url : undefined].filter((u): u is string => !!u);
+  for (const glob of forbid.urls ?? []) {
+    const isMatch = picomatch(glob);
+    for (const u of urls) {
+      let p: string;
+      try {
+        p = new URL(u).pathname;
+      } catch {
+        p = u;
+      }
+      if (isMatch(p) || isMatch(p.replace(/^\//, "")) || isMatch(u)) return `would reach forbidden URL "${u}" (matches "${glob}")`;
+    }
+  }
+  const sel = action.target?.selector;
+  if (sel) for (const bad of forbid.selectors ?? []) if (sel.includes(bad)) return `targets forbidden selector "${sel}" (contains "${bad}")`;
+  return null;
+}
+
 async function performAction(browser: Browser, action: Action, timeoutMs: number): Promise<void> {
   // Arm the native-dialog handler BEFORE the action that opens it: the click
   // that triggers window.confirm blocks until the dialog is handled.
@@ -192,11 +219,26 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
   // (the signature wait blocks until interactive elements appear) + first observe.
   const navMs = Date.now() - navStart;
 
+  // Guard the landing page itself (covers a plan with no actions).
+  const landing = forbiddenViolation({ id: "start", type: "goto" } as Action, browser.url());
+  if (landing) {
+    return { ok: false, actions: metrics, failure: { kind: "forbidden", action_id: null, message: `blocked by config.forbid — ${landing}` }, start_sig: startSig, nav_ms: navMs };
+  }
+
   for (const action of plan.actions) {
     // A prior action may have navigated to a new route — ready it before acting.
     if (browser.url() !== readiedUrl) {
       await awaitReadiness(browser, plan.scenario_id);
       readiedUrl = browser.url();
+    }
+    // #2 safety denylist: abort BEFORE performing an action that would touch a
+    // forbidden selector or reach a forbidden URL (config.forbid) — the CI
+    // guardrail against irreversible side effects.
+    const violation = forbiddenViolation(action, browser.url());
+    if (violation) {
+      progress(plan.scenario_id, `blocked by config.forbid — ${violation}`);
+      streamEvent(plan.scenario_id, "action", { id: action.id, type: action.type, status: "failed", reason: "forbidden" });
+      return { ok: false, actions: metrics, failure: { kind: "forbidden", action_id: action.id, message: `blocked by config.forbid — ${violation}` }, start_sig: startSig, nav_ms: navMs };
     }
     const timeoutMs = action.timeout_ms ?? DEFAULT_TIMEOUT_MS;
     const started = Date.now();

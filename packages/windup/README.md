@@ -353,7 +353,7 @@ A suite that runs on **every push** must never charge a card, send an email/OTP,
 - **Error states from bogus tokens/slugs** — `/order/BOGUS` → "not found", an invalid share link → "expired". Fully deterministic, no seed data needed.
 - **Confirmation dialogs — open and *cancel*.** Assert the "Delete?" dialog appears, then dismiss it (a native `confirm` via `"dialog": "dismiss"`; a modal by clicking Cancel). You verify the guard UI without performing the destructive action.
 
-Keep out of CI: real payment, OTP/email/WhatsApp sends, account/company creation, saving config that persists (**watch single-click toggles that save with no confirm step**), a check-in that consumes a voucher, and — most dangerous of all — **changing the test account's password**. Windup won't stop you from authoring such a step, so the discipline lives in the scenarios: every one stops before the irreversible action. `setup`/`teardown` (and `suite.setup`/`teardown`) exist for the writes you genuinely must exercise — do them against a disposable fixture, never production data.
+Keep out of CI: real payment, OTP/email/WhatsApp sends, account/company creation, saving config that persists (**watch single-click toggles that save with no confirm step**), a check-in that consumes a voucher, and — most dangerous of all — **changing the test account's password**. The discipline lives in the scenarios: every one stops before the irreversible action — and [`forbid`](#configuration-windupconfigts) in the config is the machine-enforced backstop (a run that ever targets a denied selector or URL aborts). `setup`/`teardown` (and `suite.setup`/`teardown`) exist for the writes you genuinely must exercise — do them against a disposable fixture, never production data.
 
 Example GitHub Actions step:
 
@@ -481,12 +481,18 @@ export default defineConfig({
     setup:    "npm run db:seed",
     teardown: "npm run db:reset",
   },
+  // Safety denylist: abort if a plan ever touches these (CI guardrail).
+  forbid: {
+    selectors: ["#change-password", "[data-danger]"],  // substring match on a plan's selector
+    urls: ["**/account/password", "**/admin/**"],       // path globs the run must never reach
+  },
 });
 ```
 
 - **`context.credentials`** maps account names to ENV references. When a task mentions the account, the plan uses `value_ref` — manifest credentials take precedence even if the page displays values, and the planner is forbidden from inventing ENV names.
 - **`readySignals`** maps a route glob to the CSS selector(s) that must be **visible before the executor runs the first action** on a matching page. It's applied deterministically at run time (no LLM, $0, not part of the cached plan) — so a hydration/loading wait is defined once per route instead of repeated as a hint in every scenario. It closes the load-time race where an element is present but its handlers aren't attached yet (which Playwright's per-element wait can't see). Best-effort: a signal that never appears within the timeout logs a warning and continues (it never hard-fails the suite), and it applies again whenever a run enters a matching route.
 - **`suite.setup` / `suite.teardown`** are shell command(s) run **once** around a `run --all` — setup before the first scenario, teardown after the last (always, even on failure) — for suite-wide fixtures (seed/reset a shared database, start a stub). Per-scenario `setup`/`teardown` (in the scenario JSON) still handle per-test state. A failing `suite.setup` aborts the suite before any scenario runs; a failing `suite.teardown` is a warning.
+- **`forbid`** is a safety denylist — a CI guardrail against irreversible side effects. If any plan action targets a forbidden **selector** (substring match on the plan's CSS selector, e.g. `#change-password`) or the run reaches a forbidden **URL** (path glob, e.g. `**/account/password`), the run **aborts** with a `forbidden` failure instead of performing it. You declare the danger list (the engine never infers it), so it's the belt-and-suspenders backstop to the [authoring discipline](#non-destructive-testing--stay-at-the-side-effect-boundary): even if a re-plan wanders toward "Change password", it's stopped before the click.
 - **LLM-assist** (scan layer 3) reads files the static layers couldn't resolve (dynamically built routes, indirect components), capped by `maxCalls`. Results are remembered per file hash — unchanged files never cost again. Costs are recorded in the ledger and shown by `windup costs`.
 
 ## Programmatic API & test runners
