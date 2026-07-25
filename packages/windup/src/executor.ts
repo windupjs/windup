@@ -53,9 +53,20 @@ async function observePage(browser: Browser, sig: string, collector: StepCollect
 async function initialSignature(browser: Browser, timeoutMs = 5000): Promise<string | null> {
   const deadline = Date.now() + timeoutMs;
   try {
-    while ((await browser.interactiveElementsRaw()).length === 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    // Proceed as soon as EITHER the app renders interactive elements OR the
+    // network settles — whichever comes first, capped at timeoutMs. The old
+    // code polled only for interactive elements, so a display-only page (no
+    // buttons, no pending requests) burned the full timeout on every run; the
+    // network-idle branch lets it sign immediately once loaded. Can only be
+    // faster, never slower (both are bounded by the same deadline).
+    await Promise.race([
+      (async () => {
+        while ((await browser.interactiveElementsRaw()).length === 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      })(),
+      browser.waitForIdle(timeoutMs),
+    ]);
     return await browser.pageSignature();
   } catch {
     return null;

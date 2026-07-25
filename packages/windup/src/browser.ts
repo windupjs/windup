@@ -29,6 +29,8 @@ export interface Browser {
   isVisible(selector: string): Promise<boolean>;
   /** Wait until the selector is visible (frame-safe). false on timeout. */
   waitForVisible(selector: string, timeoutMs: number): Promise<boolean>;
+  /** Wait until the network settles (no requests for 500ms), capped at timeoutMs. Best-effort — resolves (never throws) on timeout. */
+  waitForIdle(timeoutMs: number): Promise<void>;
   inputValue(selector: string): Promise<string>;
   url(): string;
   /** Accessibility tree of the current page, as text (planner context). */
@@ -167,6 +169,13 @@ class PlaywrightSession implements Browser {
 
   async storageState(): Promise<unknown> {
     return this.context.storageState();
+  }
+
+  async waitForIdle(timeoutMs: number): Promise<void> {
+    // "networkidle" = no in-flight requests for 500ms — the SPA-friendly "the
+    // data loaded" signal. Best-effort: apps with persistent connections
+    // (websocket/polling) never go idle, so swallow the timeout and move on.
+    await this.page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {});
   }
 
   async seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void> {

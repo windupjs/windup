@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.45.0
+- **Smarter readiness — stop burning the timeout on display pages (speed).** The initial page-signature wait now proceeds as soon as **either** the app renders interactive elements **or** the network settles (`networkidle`), whichever comes first (still capped at 5 s). Previously it polled only for interactive elements, so a display-only page — no buttons, no pending requests — waited the full 5 s on every run (it showed up as the dominant `nav` chunk in the 0.42 breakdown). Measured **~9× faster** on such a page (`exec` 5088 ms → 556 ms). Can only be faster, never slower — both branches share the same deadline, and pages with interactive elements already bailed early. New `browser.waitForIdle()`.
+
 ## 0.44.0
 - **Safety denylist — `config.forbid` (CI guardrail against irreversible side effects).** Declare selectors and URLs a plan must never touch: `forbid: { selectors: ["#change-password"], urls: ["**/account/password"] }`. Before each action (and on the landing page) the executor aborts with a `forbidden` failure if the action's CSS selector CONTAINS a forbidden substring or the current/goto URL matches a forbidden path glob — so even if a re-plan wanders toward "Change password", it's stopped before the click. You declare the danger list; the engine never infers it (zero site knowledge). The machine-enforced backstop to the non-destructive authoring discipline. New `config.forbid`, `forbidden` failure kind, `executor.forbiddenViolation()`.
 

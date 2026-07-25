@@ -14,6 +14,7 @@ class FakeBrowser implements Browser {
   url(): string { return this._url; }
   async goto(u: string): Promise<void> { this._url = u; }
   async waitForVisible(): Promise<boolean> { return true; }
+  async waitForIdle(): Promise<void> {}
   async click(): Promise<void> {}
   async fill(): Promise<void> {}
   armDialog(): void {}
