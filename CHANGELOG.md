@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.30.0
+- **Guided self-heal (#10, from a beta report).** When a cached plan fails verification and Windup re-plans, the re-plan context now names the **exact selector that failed** with a "do not reuse it" instruction, re-emphasizes the scenario hints, and — under `--suggest` — feeds the same expert diagnosis you'd read straight back into the planner, so it corrects instead of re-proposing a refuted semantic selector. A **loop-breaker** warns when a scenario keeps re-planning without stabilizing (the app likely lacks a stable selector — an accessibility gap — or has a race), instead of churning LLM calls silently.
+
 ## 0.29.0
 - **Per-scenario `setup` / `teardown` hooks** (from a beta report on non-idempotent CREATE). Shell commands that run **outside** the cached plan — so they run on every replay — for fixtures or cleanup (hard-delete what a test created, reset via SQL/HTTP). `setup` runs before the scenario and its dependencies (a failure fails the run, kind `setup`); `teardown` runs always, even on failure (a failure is a warning). They never enter the plan or cache.
 - **Docs: idempotency principle** — prefer idempotent scenarios (edit-to-fixed-value, toggle-and-check); a pure CREATE with a non-reusable unique key needs a teardown hook. Plus a "flakiness becomes signal" note: a plan that stops replaying deterministically is exposing an app race, not a flaky test.

@@ -1,5 +1,5 @@
 import { launchBrowser, type Browser } from "./browser.js";
-import { getCached, invalidate, recordReplay, saveCached } from "./cache.js";
+import { getCached, invalidate, recentStaleCount, recordReplay, saveCached } from "./cache.js";
 import { loadScenario } from "./scenario.js";
 import { getContext } from "./context.js";
 import { executePlan, type ExecutionResult, type StepCollector } from "./executor.js";
@@ -214,10 +214,22 @@ export async function runScenario(
       }
 
       // Replay failed on verification: invalidate → re-plan the whole flow (doc 03).
+      const churn = await recentStaleCount(scenario.scenario_id);
       await invalidate(cached);
       metrics.cache = "invalidated";
-      const failureContext = `The previous plan failed at action ${result.failure?.action_id}: ${result.failure?.message}`;
       progress(scenario.scenario_id, `verification failed at ${result.failure?.action_id ?? "?"} → self-heal re-planning`);
+      // Loop-breaker signal (#10): repeated re-plans that keep failing usually
+      // mean the app lacks a stable selector (an a11y gap) or has a race — not
+      // something more LLM calls will fix. Warn loudly instead of churning silently.
+      if (churn >= 2) {
+        console.warn(
+          `warning: "${scenario.scenario_id}" has re-planned ${churn + 1} times without stabilizing — the app may lack a stable selector for action ${result.failure?.action_id ?? "?"} (an accessibility gap) or have a race. Run with --suggest for a precise diagnosis, or pin a selector via hints.`,
+        );
+      }
+      // Guided self-heal (#10): enrich the re-plan with the failed selector
+      // ("don't reuse it"), the hints, and — under --suggest — the same expert
+      // diagnosis the human sees, so the planner corrects instead of repeating.
+      const failureContext = await buildReplanContext(scenario, cached.plan, result.failure, metrics, browser, opts.suggest === true);
       const replanned = await generateAndExecute(scenario, planner, browser, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
       return metrics;
@@ -237,7 +249,7 @@ export async function runScenario(
     // TEST duration and cost close before the summary: prose is not execution.
     metrics.duration_ms.total = Date.now() - startedMs;
     metrics.estimated_cost_usd = estimateCostUsd(metrics.tokens, metrics.llm_model, metrics.llm_provider);
-    if (opts.suggest && metrics.result === "failed") {
+    if (opts.suggest && metrics.result === "failed" && !metrics.suggestion) {
       try {
         const { generateFixSuggestion } = await import("./suggest.js");
         metrics.suggestion = await generateFixSuggestion(scenario, metrics, browser);
@@ -420,4 +432,42 @@ export async function runPool<T>(tasks: Array<() => Promise<T>>, limit: number):
   });
   await Promise.all(workers);
   return results;
+}
+
+/**
+ * Rich failure context for a self-heal re-plan (#10): the failed selector with
+ * a "do not reuse" instruction, the scenario hints re-emphasized, and — when
+ * --suggest is on — the same expert diagnosis the human gets, fed straight back
+ * into the planner so it corrects rather than re-proposing the refuted selector.
+ */
+async function buildReplanContext(
+  scenario: Scenario,
+  failedPlan: Plan,
+  failure: RunMetrics["failure"],
+  metrics: RunMetrics,
+  browser: Browser,
+  useSuggest: boolean,
+): Promise<string> {
+  const parts = [`The previous plan failed at action ${failure?.action_id}: ${failure?.message}.`];
+  const failed = failedPlan.actions.find((a) => a.id === failure?.action_id);
+  if (failed?.target?.selector) {
+    parts.push(
+      `The selector \`${failed.target.selector}\` did NOT match or was not actionable — do NOT reuse it. Choose a structurally different selector (a different attribute, a text-based match like \`text=…\`, or one scoped to a container). If a hint states the element's real nature, trust it over a semantic guess.`,
+    );
+  }
+  if (scenario.hints?.length) {
+    parts.push(`Honor the scenario hints strictly:\n${scenario.hints.map((h) => `- ${h}`).join("\n")}`);
+  }
+  if (useSuggest) {
+    try {
+      const { generateFixSuggestion } = await import("./suggest.js");
+      const suggestion = await generateFixSuggestion(scenario, metrics, browser);
+      metrics.suggestion = suggestion; // surface it once; the finally won't regenerate
+      metrics.estimated_cost_usd = Number((metrics.estimated_cost_usd + suggestion.est_cost_usd).toFixed(6));
+      parts.push(`Expert diagnosis of this failure — apply it:\n${suggestion.text}`);
+    } catch {
+      // suggestion is best-effort; the mechanical context above still helps
+    }
+  }
+  return parts.join("\n\n");
 }

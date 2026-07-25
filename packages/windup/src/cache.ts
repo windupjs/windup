@@ -129,3 +129,8 @@ export async function invalidate(entry: CacheEntry): Promise<void> {
 export async function clearCache(): Promise<void> {
   await rm(cacheDir(), { recursive: true, force: true });
 }
+
+/** How many recent `.stale-*` files exist for a scenario (a churn signal: repeated re-plans that keep failing). */
+export async function recentStaleCount(scenarioId: string): Promise<number> {
+  return (await staleFiles(scenarioId)).length;
+}
