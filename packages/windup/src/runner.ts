@@ -124,7 +124,9 @@ export async function runScenario(
     onTransition: (from, action, to) => mapStore.recordTransition(from, action, to),
   };
 
+  const launchStart = Date.now();
   const browser = await launchBrowser();
+  metrics.duration_ms.setup = Date.now() - launchStart;
   try {
     // Setup hook runs OUTSIDE the plan/cache, before anything (fixtures, DB reset).
     if (scenario.setup) {
@@ -159,6 +161,7 @@ export async function runScenario(
           return metrics;
         }
       }
+      metrics.duration_ms.dependencies = metrics.dependencies.reduce((s, d) => s + d.duration_ms, 0);
     }
 
     const skipGoto = (scenario as { continue_from_dependency?: boolean }).continue_from_dependency === true;

@@ -151,7 +151,14 @@ export interface RunMetrics {
   prompt_chars: number | null;
   tokens: { input: number; output: number };
   estimated_cost_usd: number;
-  duration_ms: { total: number; planning: number; execution: number };
+  /**
+   * Wall-clock breakdown (ms). `total` = the whole run; `planning` = LLM
+   * planning (0 on cache hit); `execution` = THIS scenario's Playwright actions;
+   * `dependencies` = time spent (re)running the `depends_on` chain; `setup` =
+   * browser context launch. The point of the cache is `$0` (no LLM) — wall-clock
+   * is still Playwright actions + dependencies, which `dependencies`/`setup` make visible.
+   */
+  duration_ms: { total: number; planning: number; execution: number; dependencies?: number; setup?: number };
   actions: ActionMetrics[];
   result: "passed" | "failed";
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;

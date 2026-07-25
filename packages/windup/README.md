@@ -33,6 +33,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 - **Site map** — every execution feeds a graph of pages and transitions; `windup scan` seeds that graph straight from your source code before the first run, so the planner uses your app's *real* selectors instead of guessing.
 - **Fragments** — proven action blocks (e.g. login) that the planner composes via `{ "type": "use" }` instead of regenerating.
 - **Zero hardcoded site knowledge** — the engine knows frameworks and the web, never *your* site. All site knowledge arrives as input (scenarios, config, manifest) or is discovered at runtime.
+- **What the cache buys is `$0`, not "instant"** — a cache hit skips the LLM *planning* (`plan=0ms`, `llm_calls=0`), but the plan's Playwright actions still run, and any `depends_on` chain still executes. Wall-clock is real-browser time, not a lookup. Each run reports the breakdown — `total=… (plan=… deps=… exec=… setup=…)` — so you can see where it goes: `deps` is the `depends_on` chain, `exec` is this scenario's actions, `setup` is the browser context. Overlap runs with [`--concurrency`](#cicd).
 
 ## A five-minute tour
 

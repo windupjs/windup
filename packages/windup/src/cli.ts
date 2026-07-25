@@ -32,9 +32,12 @@ program
 function printRun(metrics: RunMetrics): void {
   const status = metrics.result === "passed" ? "PASS" : "FAIL";
   const llm = metrics.llm_model ? ` llm=${metrics.llm_provider ? `${metrics.llm_provider}/` : ""}${metrics.llm_model}` : "";
+  const d = metrics.duration_ms;
+  const deps = d.dependencies ? ` deps=${d.dependencies}ms` : "";
+  const setup = d.setup ? ` setup=${d.setup}ms` : "";
   console.log(
     `${status}  ${metrics.scenario_id}  cache=${metrics.cache} llm_calls=${metrics.llm_calls}${llm} ` +
-      `total=${metrics.duration_ms.total}ms (plan=${metrics.duration_ms.planning}ms exec=${metrics.duration_ms.execution}ms) ` +
+      `total=${d.total}ms (plan=${d.planning}ms${deps} exec=${d.execution}ms${setup}) ` +
       `cost=$${metrics.estimated_cost_usd}`,
   );
   if (metrics.failure) {
@@ -127,7 +130,7 @@ program
 
     const reportRun = (m: RunMetrics): void => {
       if (opts.stream) {
-        streamEvent(m.scenario_id, "run:end", { result: m.result, cache: m.cache, llm_calls: m.llm_calls, cost: m.estimated_cost_usd, duration_ms: m.duration_ms.total });
+        streamEvent(m.scenario_id, "run:end", { result: m.result, cache: m.cache, llm_calls: m.llm_calls, cost: m.estimated_cost_usd, duration_ms: m.duration_ms.total, exec_ms: m.duration_ms.execution, deps_ms: m.duration_ms.dependencies ?? 0, setup_ms: m.duration_ms.setup ?? 0 });
         return; // stdout stays pure NDJSON
       }
       printRun(m);
