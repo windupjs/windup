@@ -170,8 +170,9 @@ ${r.actions
           ? `<details class="a11y"><summary>a11y: ${r.a11y.violations.length} violation(s)</summary><div class="bkleg">${r.a11y.violations.map((v) => `${esc(v.id)} — ${esc(v.impact)} (${v.nodes} node${v.nodes === 1 ? "" : "s"})`).join("<br>")}</div></details>`
           : `<div class="a11y-ok">a11y ✓</div>`)
         : "";
+      const flaky = r.flaky ? ` <span class="badge flaky" title="passed only after ${(r.attempts ?? 2) - 1} retry(ies) — a flake to investigate">FLAKY ${r.attempts}×</span>` : "";
       return `<tr class="${ok ? "" : "row-failed"}">
-<td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
+<td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span>${flaky}</td>
 <td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
@@ -223,6 +224,7 @@ td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; white-space:no
 .badge { font:600 11px/1 ui-monospace,Menlo,monospace; padding:4px 8px; border-radius:3px; }
 .badge.pass { color:var(--pass); background:var(--pass-bg); }
 .badge.fail { color:var(--fail); background:var(--fail-bg); }
+.badge.flaky { color:var(--accent); border:1px solid var(--accent); background:transparent; margin-left:6px; }
 .scenario { font-family:ui-monospace,Menlo,monospace; font-size:13px; }
 .model { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--muted); white-space:nowrap; }
 .row-failed td { background:color-mix(in srgb, var(--fail-bg) 35%, transparent); }

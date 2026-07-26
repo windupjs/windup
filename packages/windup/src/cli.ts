@@ -3,7 +3,7 @@ import "./env.js";
 import { Command } from "commander";
 import { clearCache } from "./cache.js";
 import { LlmPlanner } from "./planner.js";
-import { runScenario } from "./runner.js";
+import { runScenario, runWithRetries } from "./runner.js";
 import { progressStart, streamEvent } from "./progress.js";
 import { loadScenario } from "./scenario.js";
 import { runBench } from "./bench.js";
@@ -80,7 +80,9 @@ program
   .option("--watch", "re-run the scenario whenever its file changes — a fast authoring loop (single scenario only)")
   .option("--trace", "on a FAILED scenario, save a Playwright trace + screenshot next to the report (open the .zip in the Playwright trace viewer)")
   .option("--github", "emit GitHub Actions annotations for failures + a job summary (auto-on when GITHUB_ACTIONS=true)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean }) => {
+  .option("--retries <n>", "re-run a scenario that fails a FLAKY way (network/verification/setup/dependency) up to N extra times; a forbidden block is never retried", "0")
+  .option("--max-wall <seconds>", "with --all: stop starting new scenarios once the suite's wall-clock exceeds this many seconds (a CI time budget); exits non-zero if the cap is hit")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
@@ -153,6 +155,14 @@ program
     const planner = new LlmPlanner({ useMap: opts.map });
     const repeat = Number.parseInt(opts.repeat, 10);
     const concurrency = Math.max(1, Number.parseInt(opts.concurrency ?? "1", 10) || 1);
+    const retries = Math.max(0, Number.parseInt(opts.retries ?? "0", 10) || 0);
+    let maxWallMs = 0;
+    if (opts.maxWall !== undefined) {
+      const secs = Number.parseFloat(opts.maxWall);
+      if (!Number.isFinite(secs) || secs <= 0) { console.error(`--max-wall must be a positive number of seconds (got "${opts.maxWall}")`); process.exitCode = 2; return; }
+      if (!opts.all) { console.error("--max-wall gates a suite — use it with --all"); process.exitCode = 2; return; }
+      maxWallMs = secs * 1000;
+    }
 
     const printExtras = (metrics: RunMetrics): void => {
       if (metrics.summary) {
@@ -167,7 +177,7 @@ program
 
     const reportRun = (m: RunMetrics): void => {
       if (opts.stream) {
-        streamEvent(m.scenario_id, "run:end", { result: m.result, cache: m.cache, llm_calls: m.llm_calls, cost: m.estimated_cost_usd, duration_ms: m.duration_ms.total, exec_ms: m.duration_ms.execution, deps_ms: m.duration_ms.dependencies ?? 0, setup_ms: m.duration_ms.setup ?? 0 });
+        streamEvent(m.scenario_id, "run:end", { result: m.result, cache: m.cache, llm_calls: m.llm_calls, cost: m.estimated_cost_usd, duration_ms: m.duration_ms.total, exec_ms: m.duration_ms.execution, deps_ms: m.duration_ms.dependencies ?? 0, setup_ms: m.duration_ms.setup ?? 0, ...(m.attempts ? { attempts: m.attempts, flaky: m.flaky ?? false } : {}) });
         return; // stdout stays pure NDJSON
       }
       printRun(m);
@@ -200,6 +210,16 @@ program
     const jobs = scenarios.flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
 
     const wallStart = Date.now(); // real elapsed time of the whole run (≠ the sum of per-scenario totals under concurrency)
+    const overBudget = () => maxWallMs > 0 && Date.now() - wallStart >= maxWallMs;
+    const onRetry = (attempt: number, failed: RunMetrics): void => {
+      if (!opts.stream) console.log(`      ↻ retry ${attempt}/${retries} after ${failed.failure?.kind ?? "failure"}`);
+    };
+    // One job = one scenario run, retrying a flake up to `retries` times when asked.
+    const runJob = (scenario: typeof jobs[number], extra?: { sharedMap?: unknown }): Promise<RunMetrics> => {
+      const runOpts = { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest, ...extra } as Parameters<typeof runScenario>[2];
+      return retries > 0 ? runWithRetries(scenario, planner, runOpts, retries, onRetry) : runScenario(scenario, planner, runOpts);
+    };
+
     let results: RunMetrics[];
     if (concurrency > 1 && jobs.length > 1) {
       // Parallel: one shared site map (saved once at the end); results print as
@@ -215,23 +235,33 @@ program
         jobs.map((scenario) => async () => {
           progressStart(scenario.scenario_id);
           streamEvent(scenario.scenario_id, "run:start", {});
-          const m = await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest, sharedMap });
+          const m = await runJob(scenario, { sharedMap });
           reportRun(m);
           return m;
         }),
         concurrency,
+        overBudget, // stop dispatching new scenarios once the wall-clock budget is spent
       );
       await sharedMap.save();
     } else {
       results = [];
       for (let j = 0; j < jobs.length; j++) {
+        if (overBudget()) break; // --max-wall: don't start another scenario past the budget
         if (repeat > 1) console.log(`run ${(j % repeat) + 1}/${repeat}`);
         progressStart(jobs[j].scenario_id);
         streamEvent(jobs[j].scenario_id, "run:start", {});
-        const m = await runScenario(jobs[j], planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest });
+        const m = await runJob(jobs[j]);
         reportRun(m);
         results.push(m);
       }
+    }
+    const skipped = jobs.length - results.length; // scenarios never started (only > 0 when --max-wall tripped)
+    if (maxWallMs > 0 && skipped > 0 && !opts.stream) {
+      console.warn(`\n⏱  --max-wall ${maxWallMs / 1000}s exceeded — ${results.length}/${jobs.length} ran, ${skipped} not started (build fails).`);
+    }
+    const flakyCount = results.filter((m) => m.flaky).length;
+    if (flakyCount > 0 && !opts.stream) {
+      console.log(`\n↻ ${flakyCount} scenario(s) passed only on retry (flaky): ${results.filter((m) => m.flaky).map((m) => m.scenario_id).join(", ")}`);
     }
     const failures = results.filter((m) => m.result !== "passed").length;
 
@@ -267,7 +297,7 @@ program
       const file = await writeReport(results, opts.reporter as "junit" | "json" | "html", opts.reportFile, suiteOpts);
       console.log(`report (${opts.reporter}): ${file}`);
     }
-    process.exitCode = failures === 0 ? 0 : 1;
+    process.exitCode = failures === 0 && skipped === 0 ? 0 : 1;
     } finally {
       await runSuiteTeardown(); // always — even if a scenario/reporter threw
     }

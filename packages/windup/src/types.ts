@@ -226,6 +226,10 @@ export interface RunMetrics {
   failure_snapshot?: string;
   /** Dependencies executed before this scenario (depends_on), in order. */
   dependencies?: Array<{ scenario_id: string; cache: CacheOutcome; llm_calls: number; result: "passed" | "failed"; duration_ms: number }>;
+  /** `--retries` — total attempts made (present only when the scenario was retried, i.e. > 1). */
+  attempts?: number;
+  /** `--retries` — true when the scenario ultimately PASSED but needed more than one attempt (a flake worth surfacing). */
+  flaky?: boolean;
 }
 
 export const DEFAULT_TIMEOUT_MS = 5000;

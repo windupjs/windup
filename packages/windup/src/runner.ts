@@ -8,7 +8,7 @@ import { instantiatePlan } from "./isomorph.js";
 import { dropSnapshot, getSnapshot, saveSnapshot } from "./session-cache.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
-import type { Plan, RunMetrics, Scenario } from "./types.js";
+import type { FailureKind, Plan, RunMetrics, Scenario } from "./types.js";
 import { progress, streamEvent } from "./progress.js";
 import { runHooks } from "./hooks.js";
 
@@ -585,18 +585,61 @@ async function replanDependency(
  * Small hand-rolled pool (no dependency). A task that rejects is not caught
  * here — callers wrap runScenario so it always resolves to metrics.
  */
-export async function runPool<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
+/**
+ * Bounded-concurrency task pool. `shouldStop` (optional) is polled before each
+ * task is dispatched — once it returns true, no NEW task is started (in-flight
+ * ones finish); the returned array is sparse-then-compacted to the tasks that
+ * actually ran. This is how `--max-wall` halts a suite mid-flight under
+ * concurrency without cancelling work already in progress.
+ */
+export async function runPool<T>(tasks: Array<() => Promise<T>>, limit: number, shouldStop?: () => boolean): Promise<T[]> {
+  const results: Array<T | typeof UNRUN> = new Array(tasks.length).fill(UNRUN);
   let next = 0;
   const workers = Array.from({ length: Math.max(1, Math.min(limit, tasks.length)) }, async () => {
     while (true) {
+      if (shouldStop?.()) return; // budget exhausted — stop pulling new work
       const i = next++;
       if (i >= tasks.length) return;
       results[i] = await tasks[i]();
     }
   });
   await Promise.all(workers);
-  return results;
+  return results.filter((r): r is T => r !== UNRUN);
+}
+const UNRUN = Symbol("unrun");
+
+/** Failure kinds worth a `--retries` re-run — transient/flaky by nature. `forbidden` is excluded: a deliberate guard-rail block is never a flake. */
+const RETRYABLE: ReadonlySet<FailureKind> = new Set<FailureKind>(["network", "verification", "dependency", "setup", "plan_invalid"]);
+
+/**
+ * Runs a scenario, retrying a FLAKY failure up to `retries` extra times
+ * (`--retries`). A pass on any attempt wins; a `forbidden` block (or exhausting
+ * the budget) stops immediately. Records `attempts` (>1) and flags `flaky` when
+ * it eventually passed after a retry — a flake CI should see, not swallow.
+ */
+export async function runWithRetries(
+  scenario: Scenario,
+  planner: Planner,
+  opts: RunOptions,
+  retries: number,
+  onRetry?: (attempt: number, failed: RunMetrics) => void,
+  runner: (s: Scenario, p: Planner, o: RunOptions) => Promise<RunMetrics> = runScenario,
+): Promise<RunMetrics> {
+  const max = Math.max(0, retries);
+  let attempt = 0;
+  let m: RunMetrics;
+  while (true) {
+    attempt++;
+    m = await runner(scenario, planner, opts);
+    const retryable = m.result !== "passed" && (!m.failure || RETRYABLE.has(m.failure.kind));
+    if (m.result === "passed" || attempt > max || !retryable) break;
+    onRetry?.(attempt, m); // this attempt failed; another follows
+  }
+  if (attempt > 1) {
+    m.attempts = attempt;
+    if (m.result === "passed") m.flaky = true;
+  }
+  return m;
 }
 
 /**
