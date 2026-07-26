@@ -338,6 +338,15 @@ export async function runScenario(
         console.warn(`warning: could not generate the run summary: ${err instanceof Error ? err.message : err}`);
       }
     }
+    // #a11y — audit the final page (opt-in, --a11y). Informational: never
+    // changes the run result; best-effort so a missing dep / odd page can't crash.
+    if (process.env.WINDUP_A11Y === "1") {
+      try {
+        metrics.a11y = { violations: await browser.runAxe() };
+      } catch (err) {
+        console.warn(`warning: accessibility audit skipped: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     await browser.close();
     // Teardown runs ALWAYS (pass or fail), outside the plan — cleanup for
     // non-idempotent scenarios. A failure is surfaced but never flips the result.

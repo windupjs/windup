@@ -4,6 +4,15 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.46.0
+Five roadmap features in one release (from the "ideas for later" brainstorm), each tested and validated live:
+- **`windup doctor` — preflight checks.** Before a run, statically verify the LLM key for the active provider, the browser binary, that every scenario parses, that no cached plan references a missing fragment, and that the site map is scanned. No browser/LLM/network; non-zero exit only on a hard problem (invalid scenario, orphaned fragment).
+- **Sharding — `run --all --shard i/n`.** Round-robin-split the suite across parallel CI runners (`--shard 1/4`, `--shard 2/4`, …), each a separate job.
+- **Accessibility audit — `run --a11y`.** After each scenario, run [axe-core](https://github.com/dequelabs/axe-core) on the final page and report violations — a free a11y check on infra Windup already has. Informational (never fails the run). Opt-in: axe-core is an optional dependency loaded via dynamic import and kept out of the base install (`npm i -D axe-core` to enable).
+- **Flake root-cause hints.** Each flaky scenario (from `--repeat`) now carries a hint at the likely cause, read from its runs: start-page signature drift → hydration race; a network failure; always-fails-the-same-action → unstable selector; cache churn → non-deterministic replay. Shown in the terminal summary and the HTML report.
+- **Authoring `--watch`.** `run <id> --watch` re-runs a single scenario whenever its file changes — a tight authoring loop.
+- New `doctor.ts`, `browser.runAxe()`, `RunMetrics.a11y`, `FlakyScenario.hint`; `--shard`/`--a11y`/`--watch` on `run`.
+
 ## 0.45.0
 - **Smarter readiness — stop burning the timeout on display pages (speed).** The initial page-signature wait now proceeds as soon as **either** the app renders interactive elements **or** the network settles (`networkidle`), whichever comes first (still capped at 5 s). Previously it polled only for interactive elements, so a display-only page — no buttons, no pending requests — waited the full 5 s on every run (it showed up as the dominant `nav` chunk in the 0.42 breakdown). Measured **~9× faster** on such a page (`exec` 5088 ms → 556 ms). Can only be faster, never slower — both branches share the same deadline, and pages with interactive elements already bailed early. New `browser.waitForIdle()`.
 

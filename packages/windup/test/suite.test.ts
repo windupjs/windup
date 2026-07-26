@@ -36,4 +36,24 @@ describe("suite summary (feedback #3)", () => {
     expect(s.flaky).toHaveLength(1);
     expect(s.flaky[0]).toMatchObject({ scenario_id: "flako", passed: 2, total: 3 });
   });
+
+  it("flake root-cause hint reflects the failing runs' signals", () => {
+    const sig = buildSuiteSummary([
+      m({ scenario_id: "race", result: "passed" }),
+      m({ scenario_id: "race", result: "failed", sig_mismatch: true, failure: { kind: "verification", action_id: "a2", message: "x" } }),
+    ]);
+    expect(sig.flaky[0].hint).toMatch(/hydration|signature/i);
+
+    const net = buildSuiteSummary([
+      m({ scenario_id: "net", result: "passed" }),
+      m({ scenario_id: "net", result: "failed", failure: { kind: "network", action_id: null, message: "x" } }),
+    ]);
+    expect(net.flaky[0].hint).toMatch(/network/i);
+
+    const step = buildSuiteSummary([
+      m({ scenario_id: "step", result: "passed" }),
+      m({ scenario_id: "step", result: "failed", failure: { kind: "verification", action_id: "a3", message: "x" } }),
+    ]);
+    expect(step.flaky[0].hint).toMatch(/action a3/);
+  });
 });

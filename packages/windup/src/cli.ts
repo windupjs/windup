@@ -43,6 +43,11 @@ function printRun(metrics: RunMetrics): void {
   if (metrics.failure) {
     console.log(`      failure [${metrics.failure.kind}] action=${metrics.failure.action_id ?? "-"}: ${metrics.failure.message}`);
   }
+  if (metrics.a11y) {
+    const v = metrics.a11y.violations;
+    if (v.length === 0) console.log("      a11y: no violations ✓");
+    else console.log(`      a11y: ${v.length} violation(s): ${v.slice(0, 5).map((x) => `${x.id} (${x.impact}, ${x.nodes})`).join(", ")}${v.length > 5 ? " …" : ""}`);
+  }
 }
 
 program
@@ -66,7 +71,11 @@ program
   .option("--suggest", "on a FAILED run, an LLM proposes a concrete fix to the scenario (task/hints) from the real final page and the site map (1 extra LLM call, only on failure)")
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string }) => {
+  .option("--shard <i/n>", "with --all: run shard i of n (round-robin split) — spread a suite across parallel CI runners")
+  .option("--a11y", "after each scenario, run an accessibility audit (axe-core) on the final page and report violations (needs: npm i -D axe-core)")
+  .option("--watch", "re-run the scenario whenever its file changes — a fast authoring loop (single scenario only)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; a11y?: boolean; watch?: boolean }) => {
+    if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -101,8 +110,19 @@ program
           return; // exit 0: an empty affected set is a pass in CI
         }
       }
-    } else if (opts.changed || opts.since) {
-      console.error("--changed/--since select from the suite — use them with --all");
+      // Sharding: spread the suite across parallel CI runners (round-robin split).
+      if (opts.shard) {
+        const m = /^(\d+)\/(\d+)$/.exec(opts.shard.trim());
+        if (!m) { console.error(`--shard must be i/n (e.g. 1/4) — got "${opts.shard}"`); process.exitCode = 2; return; }
+        const i = Number(m[1]); const n = Number(m[2]);
+        if (i < 1 || i > n) { console.error(`--shard i/n: i must be between 1 and n (got ${i}/${n})`); process.exitCode = 2; return; }
+        const before = ids.length;
+        ids = ids.filter((_, idx) => idx % n === (i - 1));
+        if (!opts.stream) console.log(`shard ${i}/${n}: ${ids.length}/${before} scenarios`);
+        if (ids.length === 0) { if (!opts.stream) console.log("nothing in this shard. ✓"); return; }
+      }
+    } else if (opts.changed || opts.since || opts.shard) {
+      console.error("--changed/--since/--shard select from the suite — use them with --all");
       process.exitCode = 2;
       return;
     } else if (scenarioId) {
@@ -224,6 +244,41 @@ program
     process.exitCode = failures === 0 ? 0 : 1;
     } finally {
       await runSuiteTeardown(); // always — even if a scenario/reporter threw
+    }
+
+    // --watch: after the first run, re-run the single scenario whenever a
+    // scenario file changes — a fast authoring loop (single scenario only).
+    if (opts.watch && !opts.all && scenarioId) {
+      const { watch } = await import("node:fs");
+      const { getContext } = await import("./context.js");
+      const dir = getContext().paths.scenariosDir;
+      console.log(`\nwatching ${dir} — re-running "${scenarioId}" on change (Ctrl-C to stop)`);
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let running = false;
+      const rerun = async (): Promise<void> => {
+        if (running) return;
+        running = true;
+        try {
+          const scenario = await loadScenario(scenarioId);
+          progressStart(scenario.scenario_id);
+          printRun(await runScenario(scenario, planner, { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest }));
+        } catch (e) {
+          console.error(`re-run failed: ${e instanceof Error ? e.message : e}`);
+        } finally {
+          running = false;
+        }
+      };
+      try {
+        watch(dir, { recursive: true }, (_event, file) => {
+          if (file && file.toString().endsWith(".json")) {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => void rerun(), 200);
+          }
+        });
+        await new Promise(() => {}); // keep the process alive until Ctrl-C
+      } catch (e) {
+        console.error(`--watch is not supported here (${e instanceof Error ? e.message : e}); run without it`);
+      }
     }
   });
 
@@ -471,6 +526,14 @@ program
     const report = await computeCoverage();
     if (opts.json) console.log(JSON.stringify(report, null, 2));
     else printCoverage(report);
+  });
+
+program
+  .command("doctor")
+  .description("Preflight checks — LLM key, browser, scenarios parse, fragment orphans, site map — before a run (no browser/LLM/network)")
+  .action(async () => {
+    const { runDoctor, printDoctor } = await import("./doctor.js");
+    if (!printDoctor(await runDoctor())) process.exitCode = 1;
   });
 
 const fragment = program.command("fragment").description("Manage trajectory fragments (reusable, tested action blocks)");

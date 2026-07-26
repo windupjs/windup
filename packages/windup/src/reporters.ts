@@ -145,9 +145,14 @@ ${r.actions
       const bar = segs.map((s) => `<span class="seg seg-${s.k}" style="width:${((s.v / totalMs) * 100).toFixed(1)}%" title="${s.k} ${s.v} ms"></span>`).join("");
       const legend = segs.map((s) => `${s.k} ${s.v}`).join(" · ");
       const breakdown = `<details class="breakdown"><summary>${r.duration_ms.total} ms — where it went</summary><div class="bar">${bar}</div><div class="bkleg">${r.duration_ms.total} ms = ${legend}</div></details>`;
+      const a11y = r.a11y
+        ? (r.a11y.violations.length
+          ? `<details class="a11y"><summary>a11y: ${r.a11y.violations.length} violation(s)</summary><div class="bkleg">${r.a11y.violations.map((v) => `${esc(v.id)} — ${esc(v.impact)} (${v.nodes} node${v.nodes === 1 ? "" : "s"})`).join("<br>")}</div></details>`
+          : `<div class="a11y-ok">a11y ✓</div>`)
+        : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${suggestion}${summary}${breakdown}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>
@@ -167,7 +172,7 @@ ${r.actions
     : results.map(renderRow).join("\n");
 
   const flakyBanner = suite.flaky.length
-    ? `<div class="flaky-note"><b>Flaky (from --repeat):</b> ${suite.flaky.map((x) => `${esc(x.scenario_id)} ${x.passed}/${x.total}`).join(" · ")}</div>`
+    ? `<div class="flaky-note"><b>Flaky (from --repeat):</b>${suite.flaky.map((x) => `<div>${esc(x.scenario_id)} ${x.passed}/${x.total} — <i>${esc(x.hint)}</i></div>`).join("")}</div>`
     : "";
 
   return `<!doctype html>
@@ -223,6 +228,8 @@ details.breakdown summary { font:11.5px/1.4 ui-monospace,Menlo,monospace; color:
 .seg-setup { background:#9aa0a6; } .seg-deps { background:#c78b3b; } .seg-plan { background:#7c5cc4; }
 .seg-nav { background:#3b82c7; } .seg-actions { background:var(--pass); } .seg-other { background:var(--line); }
 .bkleg { font:11px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); }
+details.a11y summary, .a11y-ok { margin-top:5px; font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); }
+details.a11y summary { cursor:pointer; color:var(--fail); }
 footer { color:var(--muted); font-size:11.5px; margin-top:18px; }
 </style>
 </head>

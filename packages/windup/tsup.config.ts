@@ -7,4 +7,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   target: "node20",
+  // Optional peer tools loaded via dynamic import() only when a flag needs them
+  // (kept out of the base install; users opt in with `npm i -D <pkg>`).
+  external: ["axe-core"],
 });

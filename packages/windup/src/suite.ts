@@ -18,6 +18,8 @@ export interface FlakyScenario {
   module: string;
   passed: number;
   total: number;
+  /** Best-effort root-cause guess from the runs' signals (sig drift, network, always-same-action, cache churn). */
+  hint: string;
 }
 
 export interface SuiteSummary {
@@ -42,6 +44,17 @@ export interface SuiteSummary {
 
 const moduleOf = (m: RunMetrics): string => m.module ?? "(root)";
 const rate = (n: number, d: number): number => (d ? Number((n / d).toFixed(3)) : 0);
+
+/** A root-cause guess for a flaky scenario, from what its runs actually showed. */
+function flakeHint(runs: RunMetrics[]): string {
+  const failing = runs.filter((r) => r.result === "failed");
+  if (failing.some((r) => r.sig_mismatch)) return "start-page signature varied between runs — likely a hydration/redirect race in the app";
+  if (failing.some((r) => r.failure?.kind === "network")) return "a run failed on a network error — flaky backend or a timeout";
+  const actions = new Set(failing.map((r) => r.failure?.action_id).filter(Boolean));
+  if (actions.size === 1) return `always fails at action ${[...actions][0]} — that step's selector or timing is unstable`;
+  if (runs.some((r) => r.cache === "invalidated")) return "the cached plan keeps invalidating — the flow isn't replaying deterministically";
+  return "passes some runs, not others — likely data-dependent or a timing race";
+}
 
 export function buildSuiteSummary(results: RunMetrics[], opts: { wall_ms?: number; concurrency?: number } = {}): SuiteSummary {
   const passed = results.filter((m) => m.result === "passed").length;
@@ -70,7 +83,7 @@ export function buildSuiteSummary(results: RunMetrics[], opts: { wall_ms?: numbe
   }
   const flaky = [...byId.entries()]
     .filter(([, e]) => e.total > 1 && e.passed > 0 && e.passed < e.total)
-    .map(([scenario_id, e]) => ({ scenario_id, module: e.module, passed: e.passed, total: e.total }))
+    .map(([scenario_id, e]) => ({ scenario_id, module: e.module, passed: e.passed, total: e.total, hint: flakeHint(results.filter((r) => r.scenario_id === scenario_id)) }))
     .sort((a, b) => a.passed / a.total - b.passed / b.total);
 
   return {
@@ -113,6 +126,9 @@ export function printSuiteSummary(s: SuiteSummary): void {
   }
   if (s.flaky.length) {
     console.log("flaky (passed some, not all — from --repeat):");
-    for (const f of s.flaky) console.log(`  ${f.scenario_id.padEnd(24)} ${f.passed}/${f.total}`);
+    for (const f of s.flaky) {
+      console.log(`  ${f.scenario_id.padEnd(24)} ${f.passed}/${f.total}`);
+      console.log(`  ${" ".repeat(24)} ↳ ${f.hint}`);
+    }
   }
 }

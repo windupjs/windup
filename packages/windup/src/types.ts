@@ -178,6 +178,8 @@ export interface RunMetrics {
   actions: ActionMetrics[];
   result: "passed" | "failed";
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
+  /** #a11y — accessibility violations on the final page (axe-core), when `--a11y` ran. Informational; never fails the run. */
+  a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
   /** Executed plan (diagnostic; absent if generation failed before a plan existed). */
   plan?: Plan;
   /**

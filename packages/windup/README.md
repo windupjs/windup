@@ -167,6 +167,8 @@ Some state lives entirely in the browser — a shopping cart in `localStorage`, 
 > **The task and its final verification are the LLM's best guess** from your instruction and the site map — an LLM can pick a plausible-but-wrong destination. `windup new` now steers the verification toward the instruction's actual goal (a visible element/text over a guessed route), and recommends confirming with **`windup new "..." --validate`** (generate → run → self-refine until green) or a first `windup run`.
 
 
+While iterating on a scenario, **`windup run <id> --watch`** re-runs it every time you save the file — a tight authoring loop.
+
 You don't have to write detailed tasks by hand. Give `windup new` a rough instruction and the LLM acts as a test author — it rewrites it into a precise, verifiable scenario using the **site map** (real screens, menus and elements from `windup scan` and past runs) and the **project manifest** (accounts referenced by name, never literal credentials):
 
 ```bash
@@ -335,7 +337,9 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 
 - `--all` runs every scenario in the directory (one warm browser for the whole suite).
 - **Suite summary & module grouping.** `--all` (or a multi-scenario run) prints a suite line — pass rate, cache-hit rate, re-plans, LLM calls, cost, and **wall-clock time** (real elapsed; the inflated sum-of-totals is shown alongside with the concurrency, e.g. `wall 130s (sum 512s · concurrency 4)`) — plus a per-**module** (folder) breakdown. The HTML report groups by module, leads with the wall-clock, and gives each scenario a duration breakdown bar that reconciles to its total; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`wall_ms`, `concurrency`, `by_module`, `flaky`) and a per-case `duration_breakdown`.
-- **Flake score.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), so data-dependent flakiness surfaces before you commit a green.
+- **Flake score + root-cause hint.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), with a **hint** at the likely cause drawn from its runs (start-page signature drift → hydration race; a network failure; always-same-action → an unstable selector; cache churn → non-deterministic replay) — so data-dependent flakiness surfaces, and points somewhere, before you commit a green.
+- **Sharding.** `--all --shard i/n` runs shard *i* of *n* (round-robin split of the scenario list) — spread a big suite across parallel CI runners (`--shard 1/4`, `--shard 2/4`, …), each a separate job.
+- **Accessibility (`--a11y`).** After each scenario, run an [axe-core](https://github.com/dequelabs/axe-core) audit on the final page and report violations — a free a11y check riding on infrastructure Windup already has (it reads the page anyway). Informational: it never fails the run. Opt-in tool: `npm i -D axe-core`.
 - `--concurrency <n>` runs scenarios in parallel (one shared browser, isolated contexts) — measured ~2× faster on a mixed 11-scenario suite at `--concurrency 4`, more on suites with planning or long flows.
 - **Incremental runs (`--changed` / `--since <ref>`).** With `--all`, run only the scenarios a change affects: `--changed` diffs the working tree against `HEAD`, `--since main` (or any git ref) diffs against that ref. A scenario is selected when its own file changed, when it has no cached plan, or when its plan visits a route whose **indexed source** changed (the site map's file→route attribution). Selection is sound-but-coarse and **never a silent false green**: if the diff touches files the map can't attribute to a route (shared code, config), or there's no git/site map, Windup runs the whole suite and prints why. Re-scan (`windup scan`) keeps the attribution current; use plain `--all` for a full pre-merge/nightly gate.
 - Exit code is non-zero when any scenario fails.
@@ -380,6 +384,7 @@ Example GitHub Actions step:
 | `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
 | `windup coverage [--json]` | Cross-reference indexed routes (`windup scan`) with your scenarios — which routes have a scenario and which have none (finds coverage gaps automatically) |
+| `windup doctor` | Preflight checks before a run — LLM key for the provider, browser installed, scenarios all parse, no orphaned fragment references, site map scanned. No browser/LLM/network; non-zero exit on a hard problem |
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |

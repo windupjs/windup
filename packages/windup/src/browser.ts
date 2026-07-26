@@ -47,7 +47,16 @@ export interface Browser {
   storageState(): Promise<unknown>;
   /** Seed localStorage/sessionStorage for an origin BEFORE the plan runs (client-side fixtures). Each key is set only if absent. */
   seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void>;
+  /** Run an axe-core accessibility audit on the current page (needs axe-core installed). Returns the violations. */
+  runAxe(): Promise<A11yViolation[]>;
   close(): Promise<void>;
+}
+
+export interface A11yViolation {
+  id: string;
+  impact: string;
+  help: string;
+  nodes: number;
 }
 
 const ACTION_TIMEOUT_MS = () => Number.parseInt(process.env.WINDUP_ACTION_TIMEOUT_MS ?? "10000", 10) || 10_000;
@@ -169,6 +178,25 @@ class PlaywrightSession implements Browser {
 
   async storageState(): Promise<unknown> {
     return this.context.storageState();
+  }
+
+  async runAxe(): Promise<A11yViolation[]> {
+    let axeSource: string;
+    try {
+      // axe-core is a CJS `export =` module: under ESM dynamic import its object
+      // (with `.source`) lands on `.default`. Fall back to the namespace itself.
+      const mod = (await import("axe-core")) as unknown as { source?: string; default?: { source?: string } };
+      axeSource = mod.default?.source ?? mod.source ?? "";
+      if (!axeSource) throw new Error("axe-core loaded but its source was empty");
+    } catch (err) {
+      throw new WindupError(`--a11y needs axe-core installed as a dev dependency (npm i -D axe-core)${err instanceof Error && !/Cannot find/.test(err.message) ? ` — ${err.message}` : ""}`);
+    }
+    await this.page.addScriptTag({ content: axeSource }); // defines window.axe
+    return this.page.evaluate(async () => {
+      const axe = (window as unknown as { axe: { run: (ctx: Document, opts: object) => Promise<{ violations: Array<{ id: string; impact?: string; help: string; nodes: unknown[] }> }> } }).axe;
+      const r = await axe.run(document, { resultTypes: ["violations"] });
+      return r.violations.map((v) => ({ id: v.id, impact: v.impact ?? "n/a", help: v.help, nodes: v.nodes.length }));
+    });
   }
 
   async waitForIdle(timeoutMs: number): Promise<void> {
