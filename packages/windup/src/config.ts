@@ -95,6 +95,35 @@ export interface WindupConfig {
     /** URL-path globs the run must never reach (e.g. "**\/account/password", "**\/admin/**"). */
     urls?: string[];
   };
+  /**
+   * Dynamic values fetched at run time (OTP codes, magic-link URLs, …), keyed by
+   * a name a plan references via `value_ref: "<name>"` (a fill) or `url_ref:
+   * "<name>"` (a goto). The SOURCE is AUTHOR-declared here — never emitted by the
+   * LLM — so this can run trusted shell/HTTP/JS without becoming a code-exec
+   * vector. Resolved lazily at the point of use, with polling (the value takes a
+   * moment to appear). The value is ephemeral: it is NEVER cached, reported or logged.
+   */
+  resolve?: Record<string, {
+    source: {
+      kind: "cmd" | "http" | "fn";
+      /** cmd: a shell command whose stdout is the value (e.g. `psql -tAc "select code from otp_codes …"`). */
+      command?: string;
+      /** http: fetch this URL (e.g. a test-inbox API); response text/JSON is the source. */
+      url?: string;
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      /** fn: path to a project JS/TS module that default-exports (or names) an async () => string. */
+      module?: string;
+      export?: string;
+    };
+    /** Pull the value out of the source output: a regex (capture group 1, or the whole match) or a dot-path into JSON. */
+    extract?: { regex?: string; json?: string };
+    /** Poll until the value appears (default 30s, every 1s). */
+    poll?: { timeout_ms?: number; interval_ms?: number };
+    /** true = the resolved value is a URL (used via `url_ref` on a goto) — informational for the planner. */
+    url?: boolean;
+  }>;
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

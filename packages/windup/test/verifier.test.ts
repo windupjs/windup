@@ -28,18 +28,28 @@ describe("urlMatches", () => {
 
 describe("resolveValue", () => {
   const base: Action = { id: "a1", type: "fill", target: { selector: "#x", description: "x" } };
+  const ctx = () => ({ resolvers: undefined, vars: new Map<string, string>() });
 
-  it("uses the literal value when present", () => {
-    expect(resolveValue({ ...base, value: "abc" })).toBe("abc");
+  it("uses the literal value when present", async () => {
+    expect(await resolveValue({ ...base, value: "abc" }, ctx())).toBe("abc");
   });
 
-  it("resolves value_ref ENV:*", () => {
+  it("resolves value_ref ENV:*", async () => {
     process.env.SPIKE_TEST_SECRET = "s3cret";
-    expect(resolveValue({ ...base, value_ref: "ENV:SPIKE_TEST_SECRET" })).toBe("s3cret");
+    expect(await resolveValue({ ...base, value_ref: "ENV:SPIKE_TEST_SECRET" }, ctx())).toBe("s3cret");
     delete process.env.SPIKE_TEST_SECRET;
   });
 
-  it("fails if the variable does not exist", () => {
-    expect(() => resolveValue({ ...base, value_ref: "ENV:SPIKE_NAO_EXISTE" })).toThrow(/is not set/);
+  it("fails if the env variable does not exist", async () => {
+    await expect(resolveValue({ ...base, value_ref: "ENV:SPIKE_NAO_EXISTE" }, ctx())).rejects.toThrow(/is not set/);
+  });
+
+  it("reuses an already-resolved run var (cached in the context)", async () => {
+    const c = { resolvers: undefined, vars: new Map([["otp_code", "123456"]]) };
+    expect(await resolveValue({ ...base, value_ref: "otp_code" }, c)).toBe("123456");
+  });
+
+  it("errors clearly when a value_ref names neither an env var nor a resolver", async () => {
+    await expect(resolveValue({ ...base, value_ref: "otp_code" }, ctx())).rejects.toThrow(/no resolver named "otp_code"/);
   });
 });

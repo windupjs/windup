@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.47.0
+- **Dynamic values — `config.resolve` (unblocks OTP, magic-links, passwordless login).** Windup's steps were UI-only (`goto`/`click`/`fill`/`wait_for`) — there was no way to grab a value generated at run time (an OTP code, a magic-link URL) and use it, so no OTP/magic-link flow was testable end-to-end. Now you declare a **resolver** in `windup.config.ts` — `resolve: { otp_code: { source: { kind: "cmd"|"http"|"fn", … }, extract: { regex | json }, poll } }` — and a plan references it: `{ "type": "fill", "value_ref": "otp_code" }` or `{ "type": "goto", "url_ref": "magic_link" }`. The value is fetched (with polling — the code/email arrives late) at the point of use. **Sources are author-declared, never LLM-generated** (no code-exec-from-model vector), and the resolved value is **ephemeral** — never cached, reported or logged (the plan carries the reference name, like `ENV:` credentials). The planner is told the available names so it emits `value_ref`/`url_ref` instead of a literal. Validated live: a cached replay of an OTP login fetches the run-time code from an external source and completes the flow at `$0`. New `resolvers.ts`, `config.resolve`, `Action.url_ref`.
+
 ## 0.46.0
 Five roadmap features in one release (from the "ideas for later" brainstorm), each tested and validated live:
 - **`windup doctor` — preflight checks.** Before a run, statically verify the LLM key for the active provider, the browser binary, that every scenario parses, that no cached plan references a missing fragment, and that the site map is scanned. No browser/LLM/network; non-zero exit only on a hard problem (invalid scenario, orphaned fragment).

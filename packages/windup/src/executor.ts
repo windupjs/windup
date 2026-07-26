@@ -3,6 +3,7 @@ import type { Browser } from "./browser.js";
 import type { Action, ActionMetrics, FailureKind, Plan } from "./types.js";
 import { DEFAULT_TIMEOUT_MS } from "./types.js";
 import { getContext } from "./context.js";
+import type { WindupConfig } from "./config.js";
 import { verify } from "./verifier.js";
 import { progress, streamEvent } from "./progress.js";
 
@@ -80,17 +81,38 @@ function classifyError(err: unknown): FailureKind {
   return NETWORK_ERROR_PATTERNS.some((p) => p.test(message)) ? "network" : "verification";
 }
 
-/** Resolves value/value_ref of a fill action. value_ref is never persisted resolved. */
-export function resolveValue(action: Action): string {
-  if (action.value !== undefined) return action.value;
-  if (action.value_ref !== undefined) {
-    const varName = action.value_ref.replace(/^ENV:/, "");
-    const resolved = process.env[varName];
-    if (resolved === undefined) {
-      throw new Error(`value_ref ${action.value_ref}: environment variable ${varName} is not set`);
-    }
-    return resolved;
+/**
+ * Run-scoped resolver context: the config-declared dynamic-value sources and a
+ * per-run cache of already-resolved values. Values are EPHEMERAL — held only
+ * here, never cached, reported or logged.
+ */
+export interface ResolverContext {
+  resolvers?: WindupConfig["resolve"];
+  vars: Map<string, string>;
+}
+
+/** Resolve a "ENV:NAME" env var or a `config.resolve` name (fetched + polled once per run, then cached in-memory). */
+async function resolveRef(ref: string, ctx: ResolverContext): Promise<string> {
+  if (ref.startsWith("ENV:")) {
+    const name = ref.slice(4);
+    const v = process.env[name];
+    if (v === undefined) throw new Error(`value_ref ENV:${name}: environment variable is not set`);
+    return v;
   }
+  const cached = ctx.vars.get(ref);
+  if (cached !== undefined) return cached;
+  const spec = ctx.resolvers?.[ref];
+  if (!spec) throw new Error(`value_ref "${ref}": no such env var (use ENV:${ref}) and no resolver named "${ref}" in config.resolve`);
+  const { runResolver } = await import("./resolvers.js");
+  const value = await runResolver(ref, spec);
+  ctx.vars.set(ref, value);
+  return value;
+}
+
+/** Resolves value/value_ref of a fill action (async — value_ref may fetch a runtime value). Never persisted resolved. */
+export async function resolveValue(action: Action, ctx: ResolverContext): Promise<string> {
+  if (action.value !== undefined) return action.value;
+  if (action.value_ref !== undefined) return resolveRef(action.value_ref, ctx);
   throw new Error(`action ${action.id}: fill has neither value nor value_ref`);
 }
 
@@ -165,13 +187,14 @@ export function forbiddenViolation(action: Action, currentUrl: string): string |
   return null;
 }
 
-async function performAction(browser: Browser, action: Action, timeoutMs: number): Promise<void> {
+async function performAction(browser: Browser, action: Action, timeoutMs: number, ctx: ResolverContext): Promise<void> {
   // Arm the native-dialog handler BEFORE the action that opens it: the click
   // that triggers window.confirm blocks until the dialog is handled.
   if (action.dialog) browser.armDialog(action.dialog);
   switch (action.type) {
     case "goto":
-      await browser.goto(action.url!);
+      // url_ref resolves a runtime URL (e.g. a magic-link) via config.resolve.
+      await browser.goto(action.url_ref ? await resolveRef(action.url_ref, ctx) : action.url!);
       return;
     case "click":
       await waitForVisible(browser, action.target!.selector, timeoutMs);
@@ -179,7 +202,7 @@ async function performAction(browser: Browser, action: Action, timeoutMs: number
       return;
     case "fill":
       await waitForVisible(browser, action.target!.selector, timeoutMs);
-      await browser.fill(action.target!.selector, resolveValue(action));
+      await browser.fill(action.target!.selector, await resolveValue(action, ctx));
       return;
     case "wait_for":
       await waitForVisible(browser, action.target!.selector, timeoutMs);
@@ -201,6 +224,8 @@ export interface ExecuteOptions {
 
 export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector, opts: ExecuteOptions = {}): Promise<ExecutionResult> {
   const metrics: ActionMetrics[] = [];
+  // Ephemeral per-run resolver context for dynamic values (OTP/magic-link, etc.).
+  const resolverCtx: ResolverContext = { resolvers: getContext().config.resolve, vars: new Map() };
   const navStart = Date.now();
 
   if (!opts.skipInitialGoto) {
@@ -258,7 +283,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     }
 
     try {
-      await performAction(browser, action, timeoutMs);
+      await performAction(browser, action, timeoutMs, resolverCtx);
     } catch (err) {
       const duration = Date.now() - started;
       progress(plan.scenario_id, `${action.id} ${action.type} ✗ ${err instanceof Error ? err.message.split("\n")[0] : ""}`);

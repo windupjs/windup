@@ -37,9 +37,11 @@ export const PLAN_JSON_SCHEMA = {
             },
           },
           value: { type: "string" },
-          value_ref: { type: "string", pattern: "^ENV:[A-Z0-9_]+$" },
+          // "ENV:NAME" (an env var) or a lowercase config.resolve name (a runtime value like an OTP).
+          value_ref: { type: "string", pattern: "^(ENV:[A-Z0-9_]+|[a-z][a-z0-9_]*)$" },
           dialog: { type: "string", enum: ["accept", "dismiss"] },
           url: { type: "string", format: "uri" },
+          url_ref: { type: "string", pattern: "^[a-z][a-z0-9_]*$" },
           use: { type: "string" },
           expect: {
             type: "object",
@@ -96,6 +98,7 @@ export const PLAN_GEMINI_SCHEMA = {
           value_ref: { type: "string" },
           dialog: { type: "string", enum: ["accept", "dismiss"] },
           url: { type: "string" },
+          url_ref: { type: "string" },
           use: { type: "string" },
           expect: {
             type: "object",

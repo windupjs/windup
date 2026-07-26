@@ -21,8 +21,11 @@ export interface Action {
   type: ActionType;
   target?: ActionTarget;
   value?: string;
+  /** Fill value from a reference: "ENV:NAME" (an env var) or a `config.resolve` name (a runtime value like an OTP). Never a literal secret. */
   value_ref?: string;
   url?: string;
+  /** goto: navigate to a runtime-resolved URL (a `config.resolve` name, e.g. a magic-link). Resolved at run time; never cached as a value. */
+  url_ref?: string;
   /** type=use: id of the fragment to expand inline (E3). */
   use?: string;
   expect?: Expect;

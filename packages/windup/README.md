@@ -213,6 +213,22 @@ Then reference the account by name in the task:
 
 Windup tells the planner the `admin` account maps to `ENV:WINDUP_ADMIN_USER` / `ENV:WINDUP_ADMIN_PASSWORD`, so the plan fills those with `value_ref: "ENV:WINDUP_ADMIN_PASSWORD"`, resolved to the real value only at execution time. `windup new` does this automatically: credentials typed in the instruction are detected, registered and scrubbed — the scenario mentions the account, never the values. You can also declare the mapping directly under `context.credentials` in `windup.config.ts`. In CI, define the same variable names as pipeline secrets; `windup secret list` flags any that are missing before a run.
 
+### Dynamic values — OTP codes, magic-links (`config.resolve`)
+
+Some values only exist at run time: a one-time code, a magic-link URL, a token. Declare a **resolver** in `windup.config.ts` — a source Windup fetches (with polling) at the moment it's needed — and the plan references it by name:
+
+```ts
+resolve: {
+  otp_code:   { source: { kind: "cmd", command: "psql \"$DATABASE_URL\" -tAc \"select code from otp_codes order by created_at desc limit 1\"" }, extract: { regex: "(\\d{6})" }, poll: { timeout_ms: 30000 } },
+  magic_link: { source: { kind: "http", url: "https://inbox.test/latest" }, extract: { json: "body.url" }, url: true },
+}
+```
+
+- The plan uses `{ "type": "fill", "value_ref": "otp_code" }` for a field, or `{ "type": "goto", "url_ref": "magic_link" }` to navigate to a resolved URL. The planner is told the available names and emits these instead of a literal (it never sees or invents the value).
+- **Sources** (`kind`): **`cmd`** (a shell command's stdout — read a DB, run `curl`), **`http`** (fetch a URL — a test-inbox API like Mailosaur/MailSlurp), or **`fn`** (a project JS/TS module that exports `async () => string`). **`extract`** pulls the value out — a `regex` (capture group) or a `json` dot-path. **`poll`** retries until it appears (default 30 s / 1 s), because the code/email arrives with a delay.
+- **The source is author-declared, never LLM-generated** — so `cmd`/`http`/`fn` run only what *you* wrote, never something the model invented. And the resolved value is **ephemeral**: it is used for the fill/goto and never written to the cache, the report, or logs.
+- This unblocks any flow gated by a runtime value: OTP/magic-link/passwordless login, and everything behind it.
+
 ### Idempotency, setup & teardown
 
 A replay re-runs the **same cached plan with the same values**. That is ideal for **idempotent** flows — edit a fixed record to a fixed value, toggle something and check the final state, read/list/filter. It does **not** fit a pure **CREATE** whose resource has a non-reusable unique key: the first run creates it, every replay violates the constraint.

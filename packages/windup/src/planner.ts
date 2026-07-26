@@ -45,11 +45,22 @@ export function buildManifestSection(): string {
   return `\n# Project manifest (provided by the team — trust it)\n${parts.join("\n\n").slice(0, MANIFEST_MAX_CHARS)}\n`;
 }
 
+/** Dynamic values (OTP codes, magic-links, …) the team declared in config.resolve — the planner references them by name, never as a literal. */
+function buildResolversSection(): string {
+  const resolvers = getContext().config.resolve;
+  if (!resolvers || Object.keys(resolvers).length === 0) return "";
+  const lines = Object.entries(resolvers).map(([name, spec]) => `- "${name}"${spec.url ? " — a URL (magic-link, etc.)" : " — a value (OTP code, token, etc.)"}`);
+  return `\n# Dynamic values (fetched at run time — provided by the team)
+When the task needs one of these, DO NOT invent or type a literal. For a form field use { "type": "fill", "value_ref": "<name>" }; for a URL to navigate to use { "type": "goto", "url_ref": "<name>" }. The value is fetched (with polling) at run time and never stored.
+${lines.join("\n")}\n`;
+}
+
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string, continuesFromDependency = false): string {
   // Doc 07 principle: ZERO hardcoded site knowledge in the prompt.
   // Site-specific knowledge only enters via author hints, the site map
   // (E2) or the project manifest (E4) — never via our own code.
   const manifestSection = buildManifestSection();
+  const resolversSection = buildResolversSection();
   const hintsSection = scenario.hints?.length
     ? `\n# Hints provided by the scenario author\n${scenario.hints.join("\n")}\n`
     : "";
@@ -143,7 +154,7 @@ steps (the verification is the last action's "expect", not an action).
 }
 
 FINAL REMINDER: the last action of the plan MUST contain the "expect" field proving the task was fulfilled.
-${manifestSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Previous failure context (avoid repeating the mistake)\n${failureContext}\n` : ""}
+${manifestSection}${resolversSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Previous failure context (avoid repeating the mistake)\n${failureContext}\n` : ""}
 Respond only with the plan JSON.`;
 }
 
