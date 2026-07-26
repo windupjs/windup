@@ -147,6 +147,10 @@ export type CacheOutcome = "hit" | "miss" | "invalidated";
 
 export interface ActionMetrics {
   id: string;
+  /** What the action did — its kind (goto/click/fill/wait_for/use). */
+  type?: ActionType;
+  /** Human label for the report: the target's description/selector, the goto URL, or the fragment id (never a fill VALUE — secrets stay out). */
+  label?: string;
   duration_ms: number;
   verify_ms: number;
   status: "passed" | "failed";

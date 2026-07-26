@@ -207,6 +207,15 @@ export function forbiddenViolation(action: Action, currentUrl: string): string |
   return null;
 }
 
+/** Human label for the report: WHAT the action did. Never a fill's value (secrets/OTP stay out). */
+function actionLabel(action: Action): string {
+  if (action.type === "goto") return `→ ${action.url ?? (action.url_ref ? `{${action.url_ref}}` : "")}`;
+  if (action.type === "use") return `use ${action.use ?? ""}`;
+  const target = action.target?.description || action.target?.selector || "";
+  if (action.type === "fill") return `${target}${action.value_ref ? ` = {${action.value_ref}}` : ""}`; // {ref} is a name, not the value
+  return target;
+}
+
 async function performAction(browser: Browser, action: Action, timeoutMs: number, ctx: ResolverContext): Promise<void> {
   // Arm the native-dialog handler BEFORE the action that opens it: the click
   // that triggers window.confirm blocks until the dialog is handled.
@@ -313,7 +322,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     } catch (err) {
       const duration = Date.now() - started;
       progress(plan.scenario_id, `${action.id} ${action.type} ✗ ${err instanceof Error ? err.message.split("\n")[0] : ""}`);
-      metrics.push({ id: action.id, duration_ms: duration, verify_ms: 0, status: "failed" });
+      metrics.push({ id: action.id, type: action.type, label: actionLabel(action), duration_ms: duration, verify_ms: 0, status: "failed" });
       return {
         ok: false,
         actions: metrics,
@@ -331,6 +340,8 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
     const result = await verify(browser, action.expect, timeoutMs);
     metrics.push({
       id: action.id,
+      type: action.type,
+      label: actionLabel(action),
       duration_ms: actionMs,
       verify_ms: result.verify_ms,
       status: result.ok ? "passed" : "failed",

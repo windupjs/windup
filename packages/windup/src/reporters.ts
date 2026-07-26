@@ -126,11 +126,11 @@ export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; conc
         : "";
       const actions = r.actions.length
         ? `<details><summary>${r.actions.length} action(s)</summary><table class="actions">
-<tr><th>id</th><th>status</th><th class="n">action</th><th class="n">verify</th></tr>
+<tr><th>id</th><th>type</th><th>what</th><th>status</th><th class="n">action</th><th class="n">verify</th></tr>
 ${r.actions
   .map(
     (a) =>
-      `<tr><td>${esc(a.id)}</td><td class="${a.status === "passed" ? "ok" : "bad"}">${a.status}</td><td class="n">${a.duration_ms} ms</td><td class="n">${a.verify_ms} ms</td></tr>`,
+      `<tr><td>${esc(a.id)}</td><td class="act-type">${esc(a.type ?? "")}</td><td class="act-what">${esc(a.label ?? "")}</td><td class="${a.status === "passed" ? "ok" : "bad"}">${a.status}</td><td class="n">${a.duration_ms} ms</td><td class="n">${a.verify_ms} ms</td></tr>`,
   )
   .join("\n")}
 </table></details>`
@@ -236,6 +236,8 @@ details { margin-top:6px; font-family:"Avenir Next","Segoe UI",system-ui,sans-se
 summary { cursor:pointer; font-size:12px; color:var(--muted); }
 table.actions { margin-top:6px; font-size:12px; }
 table.actions th, table.actions td { padding:4px 10px; }
+td.act-type { color:var(--accent); font-weight:600; }
+td.act-what { color:var(--ink); max-width:42ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 td.ok { color:var(--pass); } td.bad { color:var(--fail); }
 details.breakdown { margin-top:5px; }
 details.breakdown summary { font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); cursor:pointer; }
