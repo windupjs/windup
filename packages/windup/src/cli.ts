@@ -75,10 +75,14 @@ program
   .option("--reporter <format>", "write a report: junit | json | html")
   .option("--report-file <path>", "report destination (default: .windup/reports/windup-report.{xml,json})")
   .option("--shard <i/n>", "with --all: run shard i of n (round-robin split) — spread a suite across parallel CI runners")
+  .option("--tag <names>", "with --all: run only scenarios with any of these tags (comma-separated, e.g. smoke,checkout)")
   .option("--a11y", "after each scenario, run an accessibility audit (axe-core) on the final page and report violations (needs: npm i -D axe-core)")
   .option("--watch", "re-run the scenario whenever its file changes — a fast authoring loop (single scenario only)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; a11y?: boolean; watch?: boolean }) => {
+  .option("--trace", "on a FAILED scenario, save a Playwright trace + screenshot next to the report (open the .zip in the Playwright trace viewer)")
+  .option("--github", "emit GitHub Actions annotations for failures + a job summary (auto-on when GITHUB_ACTIONS=true)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
+    if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
     if (opts.baseUrl) process.env.WINDUP_BASE_URL = opts.baseUrl;
@@ -113,6 +117,16 @@ program
           return; // exit 0: an empty affected set is a pass in CI
         }
       }
+      // Tag filter: run only scenarios carrying any of the given tags.
+      if (opts.tag) {
+        const wanted = new Set(opts.tag.split(",").map((t) => t.trim()).filter(Boolean));
+        const { scenarioTagsById } = await import("./scenario.js");
+        const tags = await scenarioTagsById();
+        const before = ids.length;
+        ids = ids.filter((id) => (tags.get(id) ?? []).some((t) => wanted.has(t)));
+        if (!opts.stream) console.log(`tags [${[...wanted].join(", ")}]: ${ids.length}/${before} scenarios`);
+        if (ids.length === 0) { if (!opts.stream) console.log("no scenarios match the tag(s). ✓"); return; }
+      }
       // Sharding: spread the suite across parallel CI runners (round-robin split).
       if (opts.shard) {
         const m = /^(\d+)\/(\d+)$/.exec(opts.shard.trim());
@@ -124,8 +138,8 @@ program
         if (!opts.stream) console.log(`shard ${i}/${n}: ${ids.length}/${before} scenarios`);
         if (ids.length === 0) { if (!opts.stream) console.log("nothing in this shard. ✓"); return; }
       }
-    } else if (opts.changed || opts.since || opts.shard) {
-      console.error("--changed/--since/--shard select from the suite — use them with --all");
+    } else if (opts.changed || opts.since || opts.shard || opts.tag) {
+      console.error("--changed/--since/--shard/--tag select from the suite — use them with --all");
       process.exitCode = 2;
       return;
     } else if (scenarioId) {
@@ -237,6 +251,15 @@ program
       const summary = buildSuiteSummary(results, suiteOpts);
       if (opts.stream) streamEvent(null, "suite", { ...summary });
       else printSuiteSummary(summary);
+    }
+
+    // GitHub Actions output: ::error:: annotations for failures + a job summary.
+    const { inGithubActions } = await import("./github.js");
+    if (opts.github || inGithubActions()) {
+      const { githubAnnotate, githubStepSummary } = await import("./github.js");
+      const { buildSuiteSummary } = await import("./suite.js");
+      githubAnnotate(results);
+      await githubStepSummary(buildSuiteSummary(results, suiteOpts), results);
     }
 
     if (opts.reporter) {

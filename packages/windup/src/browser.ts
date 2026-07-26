@@ -49,6 +49,10 @@ export interface Browser {
   seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void>;
   /** Run an axe-core accessibility audit on the current page (needs axe-core installed). Returns the violations. */
   runAxe(): Promise<A11yViolation[]>;
+  /** Stop the Playwright trace and write it to `path` (a .zip openable in the trace viewer). No-op if tracing wasn't started. */
+  saveTrace(path: string): Promise<void>;
+  /** Full-page screenshot to `path`. */
+  screenshot(path: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -180,6 +184,18 @@ class PlaywrightSession implements Browser {
     return this.context.storageState();
   }
 
+  async saveTrace(path: string): Promise<void> {
+    try {
+      await this.context.tracing.stop({ path });
+    } catch {
+      // tracing wasn't started (no --trace) — nothing to save
+    }
+  }
+
+  async screenshot(path: string): Promise<void> {
+    await this.page.screenshot({ path, fullPage: true });
+  }
+
   async runAxe(): Promise<A11yViolation[]> {
     let axeSource: string;
     try {
@@ -287,13 +303,20 @@ function getEngine(): Promise<PWBrowser> {
  * `storageState` (a prior session snapshot) to seed cookies/localStorage into
  * the fresh context — restoring auth without re-running the login flow.
  */
-export async function launchBrowser(opts: { storageState?: unknown } = {}): Promise<Browser> {
+export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean } = {}): Promise<Browser> {
   const browser = await getEngine();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     // Playwright accepts the storageState object directly; typed loosely at our boundary.
     ...(opts.storageState ? { storageState: opts.storageState as BrowserContextOptions["storageState"] } : {}),
   });
+  if (opts.trace) {
+    try {
+      await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+    } catch {
+      // tracing unsupported on this engine build — the run proceeds without it
+    }
+  }
   const page = await context.newPage();
   return new PlaywrightSession(context, page);
 }

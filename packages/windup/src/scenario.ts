@@ -57,6 +57,9 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.requires !== undefined && (!Array.isArray(scenario.requires) || scenario.requires.some((r) => typeof r !== "string"))) {
     throw new WindupError(`scenario "${id}": "requires" must be a list of strings (data preconditions, e.g. ["1 active attraction"])`);
   }
+  if (scenario.tags !== undefined && (!Array.isArray(scenario.tags) || scenario.tags.some((t) => typeof t !== "string"))) {
+    throw new WindupError(`scenario "${id}": "tags" must be a list of strings (e.g. ["smoke", "checkout"])`);
+  }
   if (scenario.seed !== undefined) {
     const seed = scenario.seed as { localStorage?: unknown; sessionStorage?: unknown; origin?: unknown };
     const okMap = (v: unknown) => v === undefined || (typeof v === "object" && v !== null && Object.values(v).every((x) => typeof x === "string"));
@@ -127,6 +130,21 @@ export async function discoverScenarioIds(): Promise<string[]> {
     byId.set(id, file);
   }
   return [...byId.keys()].sort();
+}
+
+/** Map scenario_id → its tags (for `run --all --tag`). */
+export async function scenarioTagsById(): Promise<Map<string, string[]>> {
+  const dir = getContext().paths.scenariosDir;
+  const map = new Map<string, string[]>();
+  for (const file of await listScenarioFiles(dir)) {
+    try {
+      const s = JSON.parse(await readFile(file, "utf8")) as Scenario;
+      if (s.scenario_id && !map.has(s.scenario_id)) map.set(s.scenario_id, s.tags ?? []);
+    } catch {
+      // unreadable/invalid — skip
+    }
+  }
+  return map;
 }
 
 /** Map scenario_id → absolute path of its file (for change-impact selection). */

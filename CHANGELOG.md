@@ -4,6 +4,13 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.51.0
+Three CI features (from the roadmap brainstorm), each tested and validated live:
+- **Trace + screenshot on failure — `run --trace`.** When a scenario fails, save a **Playwright trace** (`.windup/reports/traces/<id>.zip`, openable in the trace viewer — DOM snapshots, network, console per step) plus a full-page **screenshot** next to the report; the HTML report links both from the failed row. You can finally *see* what happened in CI instead of reading ms numbers. (Trace is captured only on failure; a passing run discards it, no overhead kept.)
+- **Scenario tags — `run --all --tag <names>`.** Tag scenarios (`"tags": ["smoke", "checkout"]`) and run a subset: `--tag smoke,checkout` runs any scenario carrying one of those tags. Run smoke on every push, the full suite nightly — composes with `--shard` and `--changed`. New `Scenario.tags`.
+- **GitHub Actions output — `run --github` (auto-on when `GITHUB_ACTIONS=true`).** Emits a `::error::` workflow annotation for each failed scenario (shown inline on the PR) and appends a Markdown suite summary + per-scenario table to `$GITHUB_STEP_SUMMARY` (shown on the job page). New `github.ts`.
+- New `ActionMetrics`→`browser.saveTrace()/screenshot()`, `RunMetrics.artifacts`.
+
 ## 0.50.0
 - **Readable action table — see WHAT each step did (feedback).** The per-scenario action list showed `a1 · 76 ms · 2 ms` with no way to tell what `a1` was. Each action now carries its **`type`** (goto/click/fill/wait_for/use) and a **`label`** — the target's description or selector, the goto URL, or `= {ref}` for a resolved fill — so the HTML report reads `a4 · fill · otp` instead of an opaque id. A fill's VALUE is never shown (secrets/OTP stay out — the label is the field description, and a `value_ref` renders as its name, not its value). New `ActionMetrics.type` / `ActionMetrics.label`.
 

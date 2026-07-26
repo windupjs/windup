@@ -152,7 +152,8 @@ export async function runScenario(
   const snapshot = anchorId && ownCached ? await getSnapshot(anchorId) : null;
 
   const launchStart = Date.now();
-  let browser = await launchBrowser(snapshot ? { storageState: snapshot.storage_state } : {});
+  const trace = process.env.WINDUP_TRACE === "1";
+  let browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace });
   metrics.duration_ms.setup = Date.now() - launchStart;
 
   // Runs the scenario's OWN plan (cached replay / isomorphic reuse / generate),
@@ -294,7 +295,7 @@ export async function runScenario(
         await browser.close();
         resetForFallback(metrics);
         const relaunch = Date.now();
-        browser = await launchBrowser();
+        browser = await launchBrowser({ trace });
         metrics.duration_ms.setup += Date.now() - relaunch;
         if (await runDepsChain(browser)) await runOwnPlan(browser, false);
       }
@@ -346,6 +347,22 @@ export async function runScenario(
         metrics.a11y = { violations: await browser.runAxe() };
       } catch (err) {
         console.warn(`warning: accessibility audit skipped: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    // --trace: on a FAILURE, save a Playwright trace + screenshot next to the
+    // report so you can SEE what happened in CI (open the .zip in the trace viewer).
+    if (trace && metrics.result === "failed") {
+      try {
+        const { mkdir } = await import("node:fs/promises");
+        const nodePath = (await import("node:path")).default;
+        const tracesDir = nodePath.join(getContext().paths.root, ".windup", "reports", "traces");
+        await mkdir(tracesDir, { recursive: true });
+        const safe = scenario.scenario_id.replace(/[/\\]/g, "__");
+        await browser.saveTrace(nodePath.join(tracesDir, `${safe}.zip`));
+        try { await browser.screenshot(nodePath.join(tracesDir, `${safe}.png`)); } catch { /* page may be gone */ }
+        metrics.artifacts = { trace: `traces/${safe}.zip`, screenshot: `traces/${safe}.png` };
+      } catch (err) {
+        console.warn(`warning: could not save trace: ${err instanceof Error ? err.message : err}`);
       }
     }
     await browser.close();

@@ -32,6 +32,8 @@ class FakeBrowser implements Browser {
   async storageState(): Promise<unknown> { return { cookies: [], origins: [] }; }
   async seedStorage(): Promise<void> {}
   async runAxe(): Promise<import("../src/browser.js").A11yViolation[]> { return []; }
+  async saveTrace(): Promise<void> {}
+  async screenshot(): Promise<void> {}
   async close(): Promise<void> {}
 }
 

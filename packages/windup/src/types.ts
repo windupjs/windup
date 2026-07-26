@@ -117,6 +117,8 @@ export interface Scenario {
    * (use `setup`/`suite.setup` to actually seed the data).
    */
   requires?: string[];
+  /** Free-form tags for selecting a subset with `run --all --tag <name>` (e.g. ["smoke", "checkout"]). */
+  tags?: string[];
 }
 
 export type CacheStatus = "active" | "stale";
@@ -197,6 +199,8 @@ export interface RunMetrics {
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
   /** #a11y — accessibility violations on the final page (axe-core), when `--a11y` ran. Informational; never fails the run. */
   a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
+  /** --trace — paths (relative to the report dir) to a saved Playwright trace / screenshot captured on a FAILED run. */
+  artifacts?: { trace?: string; screenshot?: string };
   /** Executed plan (diagnostic; absent if generation failed before a plan existed). */
   plan?: Plan;
   /**

@@ -124,6 +124,10 @@ export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; conc
       const failure = r.failure
         ? `<div class="failure"><span class="kind">[${esc(r.failure.kind)}]</span> action=${esc(r.failure.action_id ?? "-")}: ${esc(r.failure.message)}</div>`
         : "";
+      // --trace artifacts saved on failure: link the trace.zip (Playwright viewer) + screenshot.
+      const artifacts = r.artifacts && r.result === "failed"
+        ? `<div class="deps">${r.artifacts.trace ? `<a href="${esc(r.artifacts.trace)}">trace.zip ↗</a>` : ""}${r.artifacts.trace && r.artifacts.screenshot ? " · " : ""}${r.artifacts.screenshot ? `<a href="${esc(r.artifacts.screenshot)}">screenshot ↗</a>` : ""}</div>`
+        : "";
       const actions = r.actions.length
         ? `<details><summary>${r.actions.length} action(s)</summary><table class="actions">
 <tr><th>id</th><th>type</th><th>what</th><th>status</th><th class="n">action</th><th class="n">verify</th></tr>
@@ -168,7 +172,7 @@ ${r.actions
         : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>
