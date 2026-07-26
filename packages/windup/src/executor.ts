@@ -88,7 +88,19 @@ function classifyError(err: unknown): FailureKind {
  */
 export interface ResolverContext {
   resolvers?: WindupConfig["resolve"];
+  /** Deterministic selector-substring → resolver name binding (config.resolveFields). */
+  resolveFields?: Record<string, string>;
   vars: Map<string, string>;
+}
+
+/** Find a declared resolver by name, tolerating the LLM's casing/dashes (OTP_CODE / otp-code → otp_code). */
+function findResolver(ref: string, resolvers?: WindupConfig["resolve"]): string | null {
+  if (!resolvers) return null;
+  if (resolvers[ref]) return ref;
+  const norm = ref.toLowerCase().replace(/-/g, "_");
+  if (resolvers[norm]) return norm;
+  const hit = Object.keys(resolvers).find((k) => k.toLowerCase().replace(/-/g, "_") === norm);
+  return hit ?? null;
 }
 
 /** Resolve a "ENV:NAME" env var or a `config.resolve` name (fetched + polled once per run, then cached in-memory). */
@@ -99,14 +111,22 @@ async function resolveRef(ref: string, ctx: ResolverContext): Promise<string> {
     if (v === undefined) throw new Error(`value_ref ENV:${name}: environment variable is not set`);
     return v;
   }
-  const cached = ctx.vars.get(ref);
+  const name = findResolver(ref, ctx.resolvers) ?? ref;
+  const cached = ctx.vars.get(name);
   if (cached !== undefined) return cached;
-  const spec = ctx.resolvers?.[ref];
+  const spec = ctx.resolvers?.[name];
   if (!spec) throw new Error(`value_ref "${ref}": no such env var (use ENV:${ref}) and no resolver named "${ref}" in config.resolve`);
   const { runResolver } = await import("./resolvers.js");
-  const value = await runResolver(ref, spec);
-  ctx.vars.set(ref, value);
+  const value = await runResolver(name, spec);
+  ctx.vars.set(name, value);
   return value;
+}
+
+/** The resolver a field is deterministically bound to (config.resolveFields), if any — by selector substring. */
+function boundResolver(selector: string, ctx: ResolverContext): string | null {
+  if (!ctx.resolveFields) return null;
+  for (const [key, resolver] of Object.entries(ctx.resolveFields)) if (selector.includes(key)) return resolver;
+  return null;
 }
 
 /** Resolves value/value_ref of a fill action (async — value_ref may fetch a runtime value). Never persisted resolved. */
@@ -200,10 +220,15 @@ async function performAction(browser: Browser, action: Action, timeoutMs: number
       await waitForVisible(browser, action.target!.selector, timeoutMs);
       await browser.click(action.target!.selector);
       return;
-    case "fill":
+    case "fill": {
       await waitForVisible(browser, action.target!.selector, timeoutMs);
-      await browser.fill(action.target!.selector, await resolveValue(action, ctx));
+      // A field bound in config.resolveFields is ALWAYS filled from its resolver,
+      // overriding whatever the plan put there (a literal or a mis-named ref) —
+      // deterministic, so the OTP/token flow doesn't depend on the LLM guessing.
+      const bound = boundResolver(action.target!.selector, ctx);
+      await browser.fill(action.target!.selector, bound ? await resolveRef(bound, ctx) : await resolveValue(action, ctx));
       return;
+    }
     case "wait_for":
       await waitForVisible(browser, action.target!.selector, timeoutMs);
       return;
@@ -225,7 +250,8 @@ export interface ExecuteOptions {
 export async function executePlan(browser: Browser, plan: Plan, collector?: StepCollector, opts: ExecuteOptions = {}): Promise<ExecutionResult> {
   const metrics: ActionMetrics[] = [];
   // Ephemeral per-run resolver context for dynamic values (OTP/magic-link, etc.).
-  const resolverCtx: ResolverContext = { resolvers: getContext().config.resolve, vars: new Map() };
+  const cfg = getContext().config;
+  const resolverCtx: ResolverContext = { resolvers: cfg.resolve, resolveFields: cfg.resolveFields, vars: new Map() };
   const navStart = Date.now();
 
   if (!opts.skipInitialGoto) {

@@ -124,6 +124,15 @@ export interface WindupConfig {
     /** true = the resolved value is a URL (used via `url_ref` on a goto) — informational for the planner. */
     url?: boolean;
   }>;
+  /**
+   * Deterministic field → resolver binding (feedback: don't leave it to the LLM
+   * to guess `value_ref`). Keyed by a SELECTOR SUBSTRING; any `fill` whose
+   * selector contains the key is filled with that resolver's value, overriding
+   * whatever the plan put there (a literal or a mis-named ref). Declare it once,
+   * app-wide, so an OTP/token field is always resolved — the whole point of a
+   * deterministic CI test. E.g. `{ "[name=otp]": "otp_code" }`.
+   */
+  resolveFields?: Record<string, string>;
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

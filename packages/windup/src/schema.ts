@@ -37,11 +37,13 @@ export const PLAN_JSON_SCHEMA = {
             },
           },
           value: { type: "string" },
-          // "ENV:NAME" (an env var) or a lowercase config.resolve name (a runtime value like an OTP).
-          value_ref: { type: "string", pattern: "^(ENV:[A-Z0-9_]+|[a-z][a-z0-9_]*)$" },
+          // "ENV:NAME" (an env var) or a config.resolve name (a runtime value like an OTP).
+          // The resolver branch tolerates the LLM's casing/dashes — normalized to a
+          // declared name at run time — so a stray "OTP_CODE"/"otp-code" doesn't fail validation.
+          value_ref: { type: "string", pattern: "^(ENV:[A-Z0-9_]+|[A-Za-z][A-Za-z0-9_-]*)$" },
           dialog: { type: "string", enum: ["accept", "dismiss"] },
           url: { type: "string", format: "uri" },
-          url_ref: { type: "string", pattern: "^[a-z][a-z0-9_]*$" },
+          url_ref: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_-]*$" },
           use: { type: "string" },
           expect: {
             type: "object",
@@ -155,8 +157,8 @@ export function validatePlan(data: unknown): ValidationResult {
     if ((action.type === "click" || action.type === "fill" || action.type === "wait_for") && !action.target?.selector) {
       errors.push(`${where}: type=${action.type} requires target.selector`);
     }
-    if (action.type === "goto" && !action.url) {
-      errors.push(`${where}: type=goto requires url`);
+    if (action.type === "goto" && !action.url && !action.url_ref) {
+      errors.push(`${where}: type=goto requires url (or url_ref for a resolved URL)`);
     }
     if (action.type === "use" && !action.use) {
       errors.push(`${where}: type=use requires the use field with a fragment id`);

@@ -47,12 +47,16 @@ export function buildManifestSection(): string {
 
 /** Dynamic values (OTP codes, magic-links, …) the team declared in config.resolve — the planner references them by name, never as a literal. */
 function buildResolversSection(): string {
-  const resolvers = getContext().config.resolve;
+  const cfg = getContext().config;
+  const resolvers = cfg.resolve;
   if (!resolvers || Object.keys(resolvers).length === 0) return "";
   const lines = Object.entries(resolvers).map(([name, spec]) => `- "${name}"${spec.url ? " — a URL (magic-link, etc.)" : " — a value (OTP code, token, etc.)"}`);
+  const bound = cfg.resolveFields && Object.keys(cfg.resolveFields).length
+    ? `\nSome fields are AUTO-BOUND to a resolver by the team (selectors: ${Object.keys(cfg.resolveFields).map((s) => `"${s}"`).join(", ")}); Windup fills those from the resolver no matter what you put — you may fill them with any placeholder.`
+    : "";
   return `\n# Dynamic values (fetched at run time — provided by the team)
-When the task needs one of these, DO NOT invent or type a literal. For a form field use { "type": "fill", "value_ref": "<name>" }; for a URL to navigate to use { "type": "goto", "url_ref": "<name>" }. The value is fetched (with polling) at run time and never stored.
-${lines.join("\n")}\n`;
+When the task involves a one-time code / OTP / token / magic-link, you MUST reference the matching value below — NEVER type a literal and NEVER use an env var. For a form field: { "type": "fill", "value_ref": "<name>" }; for a URL to open: { "type": "goto", "url_ref": "<name>" }. Use the EXACT name as written (lowercase). The value is fetched (with polling) at run time and never stored.
+${lines.join("\n")}${bound}\n`;
 }
 
 function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[], siteKnowledge?: string, fragmentsCatalog?: string, failureContext?: string, continuesFromDependency = false): string {
