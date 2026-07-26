@@ -136,11 +136,6 @@ export async function resolveValue(action: Action, ctx: ResolverContext): Promis
   throw new Error(`action ${action.id}: fill has neither value nor value_ref`);
 }
 
-async function waitForVisible(browser: Browser, selector: string, timeoutMs: number): Promise<void> {
-  if (!(await browser.waitForVisible(selector, timeoutMs))) {
-    throw new Error(`element ${selector} did not become visible within ${timeoutMs}ms`);
-  }
-}
 
 const READINESS_TIMEOUT_MS = 8000;
 
@@ -216,31 +211,44 @@ function actionLabel(action: Action): string {
   return target;
 }
 
-async function performAction(browser: Browser, action: Action, timeoutMs: number, ctx: ResolverContext): Promise<void> {
-  // Arm the native-dialog handler BEFORE the action that opens it: the click
-  // that triggers window.confirm blocks until the dialog is handled.
+/** Message when a target can't be found — flags the likely a11y gap (the field a screen reader also can't find). */
+function notFound(selector: string, description?: string): Error {
+  return new Error(
+    description
+      ? `element ${selector} not found, and no single field matches "${description}" by label/placeholder/role — the control likely has no accessible label (a11y gap). Anchor it with a hint.`
+      : `element ${selector} did not become visible within the timeout`,
+  );
+}
+
+/** Runs an action. Returns a note when an accessibility fallback recovered the target (the plan's selector was wrong but the field has a label). */
+async function performAction(browser: Browser, action: Action, timeoutMs: number, ctx: ResolverContext): Promise<string | undefined> {
+  // Arm the native-dialog handler BEFORE the action that opens it (unless a
+  // scenario-level on_dialog default already handles every dialog).
   if (action.dialog) browser.armDialog(action.dialog);
+  const sel = action.target?.selector;
+  const desc = action.target?.description;
   switch (action.type) {
     case "goto":
       // url_ref resolves a runtime URL (e.g. a magic-link) via config.resolve.
       await browser.goto(action.url_ref ? await resolveRef(action.url_ref, ctx) : action.url!);
       return;
     case "click":
-      await waitForVisible(browser, action.target!.selector, timeoutMs);
-      await browser.click(action.target!.selector);
-      return;
+      if (await browser.waitForVisible(sel!, timeoutMs)) { await browser.click(sel!); return; }
+      if (desc && (await browser.clickByDescription(desc))) return `≈ found "${desc}" by label (plan selector "${sel}" missed)`;
+      throw notFound(sel!, desc);
     case "fill": {
-      await waitForVisible(browser, action.target!.selector, timeoutMs);
       // A field bound in config.resolveFields is ALWAYS filled from its resolver,
-      // overriding whatever the plan put there (a literal or a mis-named ref) —
-      // deterministic, so the OTP/token flow doesn't depend on the LLM guessing.
-      const bound = boundResolver(action.target!.selector, ctx);
-      await browser.fill(action.target!.selector, bound ? await resolveRef(bound, ctx) : await resolveValue(action, ctx));
-      return;
+      // overriding whatever the plan put there — deterministic OTP/token.
+      const bound = boundResolver(sel!, ctx);
+      const value = bound ? await resolveRef(bound, ctx) : await resolveValue(action, ctx);
+      if (await browser.waitForVisible(sel!, timeoutMs)) { await browser.fill(sel!, value); return; }
+      if (desc && (await browser.fillByDescription(desc, value))) return `≈ found "${desc}" by label (plan selector "${sel}" missed)`;
+      throw notFound(sel!, desc);
     }
     case "wait_for":
-      await waitForVisible(browser, action.target!.selector, timeoutMs);
-      return;
+      if (await browser.waitForVisible(sel!, timeoutMs)) return;
+      if (desc && (await browser.isVisibleByDescription(desc))) return `≈ found "${desc}" by label (plan selector "${sel}" missed)`;
+      throw notFound(sel!, desc);
   }
 }
 
@@ -317,8 +325,10 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
       console.error(`[executor] ${action.id} ${action.type} ${action.target?.selector ?? action.url ?? ""} | url=${browser.url()}`);
     }
 
+    let recovered: string | undefined;
     try {
-      await performAction(browser, action, timeoutMs, resolverCtx);
+      recovered = await performAction(browser, action, timeoutMs, resolverCtx);
+      if (recovered) progress(plan.scenario_id, `${action.id} ${recovered}`);
     } catch (err) {
       const duration = Date.now() - started;
       progress(plan.scenario_id, `${action.id} ${action.type} ✗ ${err instanceof Error ? err.message.split("\n")[0] : ""}`);
@@ -342,6 +352,7 @@ export async function executePlan(browser: Browser, plan: Plan, collector?: Step
       id: action.id,
       type: action.type,
       label: actionLabel(action),
+      ...(recovered ? { note: recovered } : {}),
       duration_ms: actionMs,
       verify_ms: result.verify_ms,
       status: result.ok ? "passed" : "failed",

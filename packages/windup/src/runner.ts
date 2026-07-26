@@ -154,6 +154,7 @@ export async function runScenario(
   const launchStart = Date.now();
   const trace = process.env.WINDUP_TRACE === "1";
   let browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace });
+  if (scenario.on_dialog) browser.setDialogHandler(scenario.on_dialog);
   metrics.duration_ms.setup = Date.now() - launchStart;
 
   // Runs the scenario's OWN plan (cached replay / isomorphic reuse / generate),
@@ -296,6 +297,7 @@ export async function runScenario(
         resetForFallback(metrics);
         const relaunch = Date.now();
         browser = await launchBrowser({ trace });
+        if (scenario.on_dialog) browser.setDialogHandler(scenario.on_dialog);
         metrics.duration_ms.setup += Date.now() - relaunch;
         if (await runDepsChain(browser)) await runOwnPlan(browser, false);
       }

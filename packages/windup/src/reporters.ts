@@ -134,7 +134,7 @@ export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; conc
 ${r.actions
   .map(
     (a) =>
-      `<tr><td>${esc(a.id)}</td><td class="act-type">${esc(a.type ?? "")}</td><td class="act-what">${esc(a.label ?? "")}</td><td class="${a.status === "passed" ? "ok" : "bad"}">${a.status}</td><td class="n">${a.duration_ms} ms</td><td class="n">${a.verify_ms} ms</td></tr>`,
+      `<tr><td>${esc(a.id)}</td><td class="act-type">${esc(a.type ?? "")}</td><td class="act-what">${esc(a.label ?? "")}${a.note ? ` <span class="act-note" title="the plan's selector missed; recovered by accessible name — the app's selector is fragile">${esc(a.note)}</span>` : ""}</td><td class="${a.status === "passed" ? "ok" : "bad"}">${a.status}</td><td class="n">${a.duration_ms} ms</td><td class="n">${a.verify_ms} ms</td></tr>`,
   )
   .join("\n")}
 </table></details>`
@@ -241,7 +241,8 @@ summary { cursor:pointer; font-size:12px; color:var(--muted); }
 table.actions { margin-top:6px; font-size:12px; }
 table.actions th, table.actions td { padding:4px 10px; }
 td.act-type { color:var(--accent); font-weight:600; }
-td.act-what { color:var(--ink); max-width:42ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+td.act-what { color:var(--ink); max-width:42ch; }
+.act-note { color:var(--accent); font-size:11px; }
 td.ok { color:var(--pass); } td.bad { color:var(--fail); }
 details.breakdown { margin-top:5px; }
 details.breakdown summary { font:11.5px/1.4 ui-monospace,Menlo,monospace; color:var(--muted); cursor:pointer; }

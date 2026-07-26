@@ -30,6 +30,10 @@ class FakeBrowser implements Browser {
   async runAxe(): Promise<import("../src/browser.js").A11yViolation[]> { return []; }
   async saveTrace(): Promise<void> {}
   async screenshot(): Promise<void> {}
+  setDialogHandler(): void {}
+  async clickByDescription(): Promise<boolean> { return false; }
+  async fillByDescription(): Promise<boolean> { return false; }
+  async isVisibleByDescription(): Promise<boolean> { return false; }
   async close(): Promise<void> {}
 }
 

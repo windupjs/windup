@@ -60,6 +60,9 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.tags !== undefined && (!Array.isArray(scenario.tags) || scenario.tags.some((t) => typeof t !== "string"))) {
     throw new WindupError(`scenario "${id}": "tags" must be a list of strings (e.g. ["smoke", "checkout"])`);
   }
+  if (scenario.on_dialog !== undefined && scenario.on_dialog !== "accept" && scenario.on_dialog !== "dismiss") {
+    throw new WindupError(`scenario "${id}": "on_dialog" must be "accept" or "dismiss"`);
+  }
   if (scenario.seed !== undefined) {
     const seed = scenario.seed as { localStorage?: unknown; sessionStorage?: unknown; origin?: unknown };
     const okMap = (v: unknown) => v === undefined || (typeof v === "object" && v !== null && Object.values(v).every((x) => typeof x === "string"));

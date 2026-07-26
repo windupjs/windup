@@ -119,6 +119,10 @@ export interface Scenario {
   requires?: string[];
   /** Free-form tags for selecting a subset with `run --all --tag <name>` (e.g. ["smoke", "checkout"]). */
   tags?: string[];
+  /** Auto-handle EVERY native dialog (window.confirm/alert/prompt) this scenario opens — a default so a per-action `dialog` isn't repeated on each destructive step. */
+  on_dialog?: "accept" | "dismiss";
+  /** Force one interaction per action: tell the planner never to combine a reveal/expand click with the action it uncovers (multi-click flows behind accordions/menus). */
+  atomic_steps?: boolean;
 }
 
 export type CacheStatus = "active" | "stale";
@@ -153,6 +157,8 @@ export interface ActionMetrics {
   type?: ActionType;
   /** Human label for the report: the target's description/selector, the goto URL, or the fragment id (never a fill VALUE — secrets stay out). */
   label?: string;
+  /** Set when the plan's selector missed but an accessibility fallback (label/placeholder) recovered the target — a signal the app's selector is fragile. */
+  note?: string;
   duration_ms: number;
   verify_ms: number;
   status: "passed" | "failed";

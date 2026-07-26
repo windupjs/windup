@@ -65,6 +65,10 @@ function buildPrompt(scenario: Scenario, pageTree: string, interactive: string[]
   // (E2) or the project manifest (E4) — never via our own code.
   const manifestSection = buildManifestSection();
   const resolversSection = buildResolversSection();
+  const atomicSection = scenario.atomic_steps
+    ? `\n# One interaction per action (REQUIRED for this scenario)
+Every click and fill is its OWN action. NEVER merge a reveal/expand click (an accordion, an "Add …"/"New" button, a menu, a card that opens a panel) with the action it uncovers — emit the reveal click FIRST, then a SEPARATE action for the field/button it exposes. If the task enumerates steps "(1)…(2)…(3)", produce at least one action per number. Skipping the middle click is the #1 cause of "element not visible".\n`
+    : "";
   const hintsSection = scenario.hints?.length
     ? `\n# Hints provided by the scenario author\n${scenario.hints.join("\n")}\n`
     : "";
@@ -158,7 +162,7 @@ steps (the verification is the last action's "expect", not an action).
 }
 
 FINAL REMINDER: the last action of the plan MUST contain the "expect" field proving the task was fulfilled.
-${manifestSection}${resolversSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Previous failure context (avoid repeating the mistake)\n${failureContext}\n` : ""}
+${manifestSection}${resolversSection}${atomicSection}${knowledgeSection}${fragmentsSection}${hintsSection}${failureContext ? `\n# Previous failure context (avoid repeating the mistake)\n${failureContext}\n` : ""}
 Respond only with the plan JSON.`;
 }
 

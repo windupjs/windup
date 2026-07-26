@@ -25,6 +25,14 @@ export interface Browser {
   click(selector: string): Promise<void>;
   /** Arm a one-time handler for the next native dialog (window.confirm/alert/prompt), to fire on the action that opens it. */
   armDialog(action: "accept" | "dismiss"): void;
+  /** Persistent default for EVERY native dialog this run (scenario `on_dialog`) — so authors don't repeat a per-action `dialog`. Disables one-time arming. */
+  setDialogHandler(action: "accept" | "dismiss"): void;
+  /** Accessibility fallback: click the single visible field/control whose accessible name (label/placeholder/role) matches `description`. false if none or ambiguous. */
+  clickByDescription(description: string): Promise<boolean>;
+  /** Accessibility fallback: fill the single visible field matching `description`. false if none or ambiguous. */
+  fillByDescription(description: string, value: string): Promise<boolean>;
+  /** Accessibility fallback: is there a single visible element matching `description`? */
+  isVisibleByDescription(description: string): Promise<boolean>;
   fill(selector: string, value: string): Promise<void>;
   isVisible(selector: string): Promise<boolean>;
   /** Wait until the selector is visible (frame-safe). false on timeout. */
@@ -86,13 +94,57 @@ class PlaywrightSession implements Browser {
     await this.page.goto(url, { waitUntil: "load" });
   }
 
+  private persistentDialog = false;
+
   armDialog(action: "accept" | "dismiss"): void {
     // One-time: applies to the next dialog only (the one this action opens).
     // Without a handler Playwright auto-dismisses dialogs, so a confirm()-gated
-    // mutation never runs — this lets a scenario accept (or cancel) it.
+    // mutation never runs — this lets a scenario accept (or cancel) it. No-op
+    // when a persistent scenario default is active (would double-handle).
+    if (this.persistentDialog) return;
     this.page.once("dialog", (d) => {
       void (action === "accept" ? d.accept() : d.dismiss()).catch(() => {});
     });
+  }
+
+  setDialogHandler(action: "accept" | "dismiss"): void {
+    this.persistentDialog = true;
+    this.page.on("dialog", (d) => {
+      void (action === "accept" ? d.accept() : d.dismiss()).catch(() => {});
+    });
+  }
+
+  /** The single visible element whose accessible name matches `description`, or null (none / ambiguous — never guess among many). */
+  private async locateUnique(description: string) {
+    const t = description.replace(/\b(the|a|an|field|input|button|link|box|textbox|dropdown|select|icon)\b/gi, " ").replace(/\s+/g, " ").trim() || description;
+    const candidates = [
+      this.page.getByLabel(t, { exact: false }),
+      this.page.getByPlaceholder(t, { exact: false }),
+      this.page.getByRole("textbox", { name: t }),
+    ];
+    for (const c of candidates) {
+      const vis = c.filter({ visible: true });
+      if ((await vis.count()) === 1) return vis.first();
+    }
+    return null;
+  }
+
+  async clickByDescription(description: string): Promise<boolean> {
+    const loc = await this.locateUnique(description);
+    if (!loc) return false;
+    await loc.click({ timeout: ACTION_TIMEOUT_MS() });
+    return true;
+  }
+
+  async fillByDescription(description: string, value: string): Promise<boolean> {
+    const loc = await this.locateUnique(description);
+    if (!loc) return false;
+    await loc.fill(value, { timeout: ACTION_TIMEOUT_MS() });
+    return true;
+  }
+
+  async isVisibleByDescription(description: string): Promise<boolean> {
+    return (await this.locateUnique(description)) !== null;
   }
 
   async click(selector: string): Promise<void> {
