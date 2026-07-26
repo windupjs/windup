@@ -83,7 +83,8 @@ program
   .option("--retries <n>", "re-run a scenario that fails a FLAKY way (network/verification/setup/dependency) up to N extra times; a forbidden block is never retried", "0")
   .option("--max-wall <seconds>", "with --all: stop starting new scenarios once the suite's wall-clock exceeds this many seconds (a CI time budget); exits non-zero if the cap is hit")
   .option("--bail", "with --all: stop starting new scenarios after the first failure (fast feedback in PR checks)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean }) => {
+  .option("--no-prewarm", "disable pre-warming the next scenario's browser off the critical path (sequential --all)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
@@ -229,7 +230,7 @@ program
       if (!opts.stream) console.log(`      ↻ retry ${attempt}/${retries} after ${failed.failure?.kind ?? "failure"}`);
     };
     // One job = one scenario run, retrying a flake up to `retries` times when asked.
-    const runJob = (scenario: typeof jobs[number], extra?: { sharedMap?: unknown }): Promise<RunMetrics> => {
+    const runJob = (scenario: typeof jobs[number], extra?: { sharedMap?: unknown; prewarmed?: unknown }): Promise<RunMetrics> => {
       const runOpts = { useCache: opts.cache, summary: opts.summary, suggest: opts.suggest, ...extra } as Parameters<typeof runScenario>[2];
       return retries > 0 ? runWithRetries(scenario, planner, runOpts, retries, onRetry) : runScenario(scenario, planner, runOpts);
     };
@@ -259,15 +260,37 @@ program
       await sharedMap.save();
     } else {
       results = [];
+      // Prewarm: while a scenario runs, create the NEXT scenario's fresh browser
+      // (context+page) off the critical path. Isolation is unchanged — each
+      // scenario still gets its own clean context; only the ~200 ms launch moves
+      // off the wait. Sequential only (concurrency > 1 already overlaps launches).
+      const prewarm = opts.prewarm !== false && jobs.length > 1;
+      const { launchBrowser } = prewarm ? await import("./browser.js") : { launchBrowser: null };
+      const traceOn = process.env.WINDUP_TRACE === "1";
+      let warming: Promise<import("./browser.js").Browser | null> | null = null;
+      const startWarm = (): void => { if (launchBrowser) warming = launchBrowser({ trace: traceOn }).catch(() => null); };
+      const takeWarm = async (): Promise<(() => import("./browser.js").Browser | undefined) | undefined> => {
+        if (!warming) return undefined;
+        const b = await warming; warming = null;
+        if (!b) return undefined;
+        let taken = false; // one-shot: a --retries re-attempt launches fresh
+        return () => { if (taken) return undefined; taken = true; return b; };
+      };
+      if (prewarm) startWarm();
       for (let j = 0; j < jobs.length; j++) {
         if (shouldStop()) break; // --max-wall / --bail: don't start another scenario
+        const prewarmed = await takeWarm();
+        if (prewarm && j + 1 < jobs.length) startWarm(); // warm j+1 during job j
         if (repeat > 1) console.log(`run ${(j % repeat) + 1}/${repeat}`);
         progressStart(jobs[j].scenario_id);
         streamEvent(jobs[j].scenario_id, "run:start", {});
-        const m = noteResult(await runJob(jobs[j]));
+        const m = noteResult(await runJob(jobs[j], prewarmed ? { prewarmed } : undefined));
         reportRun(m);
         results.push(m);
       }
+      // Close a warmed session left unused (a --bail/--max-wall early stop).
+      const leftover = await takeWarm();
+      if (leftover) { const b = leftover(); if (b) await b.close().catch(() => {}); }
     }
     const skipped = jobs.length - results.length; // scenarios never started (--max-wall or --bail)
     if (maxWallMs > 0 && overBudget() && skipped > 0 && !opts.stream) {

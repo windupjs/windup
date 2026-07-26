@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.55.0
+- **Browser prewarming — the next scenario's context launches off the critical path (on by default; `--no-prewarm` to disable).** In a sequential `run --all`, while a scenario runs (navigation + actions), Windup pre-creates the **fresh** `BrowserContext` + page the *next* scenario will use, so that scenario no longer waits ~200 ms on `newContext`/`newPage`. **Isolation is identical** to a per-scenario launch — every scenario still gets its own clean context; only the launch moves off the wait (a scenario's `setup` segment drops to ~0 in the breakdown, verified live). Safe by construction: the prewarmed session is a one-shot — a `--retries` re-attempt and the session-snapshot (`storageState`) fast path each launch fresh, and an unused warmed session (a `--bail`/`--max-wall` early stop) is closed. Only sequential runs prewarm (`--concurrency > 1` already overlaps launches across workers). This is the deliberate, zero-risk answer to "context pool": measurement showed reusing a *live* context saves only ~18 ms and would leak state between tests, so Windup prewarms a **fresh** one instead. New `RunOptions.prewarmed`.
+
 ## 0.54.0
 Diagnostics & determinism — a batch of tools that read what Windup already knows and two config knobs that make hard-to-reproduce states testable. Every command is LLM-free; each feature is unit-tested and validated (real-browser for the two that touch the page).
 

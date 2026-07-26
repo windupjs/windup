@@ -88,6 +88,16 @@ export interface RunOptions {
    * absent, the run owns its own store and saves it in the finally.
    */
   sharedMap?: SiteMapStore;
+  /**
+   * A pre-warmed browser session (context + page created off the critical path
+   * while the previous scenario ran — sequential `--all`). A one-shot thunk:
+   * the first call yields the session, later calls (a `--retries` re-attempt)
+   * yield undefined so the retry launches fresh. Used only when the scenario
+   * needs no session-snapshot `storageState`; otherwise it is closed and a
+   * fresh context is launched. Isolation is identical to a per-scenario launch
+   * — this only moves the ~200 ms launch off the wait.
+   */
+  prewarmed?: () => Browser | undefined;
 }
 
 export class PlanGenerationError extends Error {
@@ -153,7 +163,17 @@ export async function runScenario(
 
   const launchStart = Date.now();
   const trace = process.env.WINDUP_TRACE === "1";
-  let browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace });
+  // A pre-warmed session (fresh context, launched off the critical path) is
+  // usable only when this run needs no snapshot storageState; otherwise close it
+  // and launch with the snapshot. Isolation is unchanged either way.
+  const pre = opts.prewarmed?.();
+  let browser: Browser;
+  if (pre && !snapshot) {
+    browser = pre;
+  } else {
+    if (pre) await pre.close().catch(() => {});
+    browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace });
+  }
   if (scenario.on_dialog) browser.setDialogHandler(scenario.on_dialog);
   metrics.duration_ms.setup = Date.now() - launchStart;
 
