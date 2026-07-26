@@ -114,6 +114,7 @@ export async function runScenario(
 
   const metrics: RunMetrics = {
     scenario_id: scenario.scenario_id,
+    ...(scenario.requires?.length ? { requires: scenario.requires } : {}),
     started_at: startedAt,
     cache: "miss",
     llm_calls: 0,

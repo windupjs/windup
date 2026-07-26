@@ -48,6 +48,9 @@ function printRun(metrics: RunMetrics): void {
     if (v.length === 0) console.log("      a11y: no violations ✓");
     else console.log(`      a11y: ${v.length} violation(s): ${v.slice(0, 5).map((x) => `${x.id} (${x.impact}, ${x.nodes})`).join(", ")}${v.length > 5 ? " …" : ""}`);
   }
+  if (metrics.requires?.length && metrics.result === "failed") {
+    console.log(`      requires (data): ${metrics.requires.join("; ")}`);
+  }
 }
 
 program

@@ -49,7 +49,7 @@ describe("CI/CD reporters", () => {
         actions: [{ id: "a1", duration_ms: 113, verify_ms: 139, status: "passed" }],
       }),
     ], { wall_ms: 130000, concurrency: 4 }));
-    expect(out.cases[0].duration_breakdown).toEqual({ setup: 766, dependencies: 0, planning: 0, navigation: 2606, actions: 252 });
+    expect(out.cases[0].duration_breakdown).toEqual({ setup: 766, dependencies: 0, planning: 0, navigation: 2606, actions: 252, active: 3624, contention: 28 });
     // setup 766 + nav 2606 + actions 252 = 3624 ≈ total 3652 (small overhead)
     expect(out.summary.wall_ms).toBe(130000);
     expect(out.summary.concurrency).toBe(4);
@@ -101,5 +101,14 @@ describe("CI/CD reporters", () => {
     expect(html).toContain("where it went"); // the reconciling breakdown
     expect(html).toContain("seg-nav"); // nav segment present (the SPA time sink)
     expect(html).toContain("nav 2606");
+  });
+
+  it("html: under concurrency the leftover is labeled 'contention', with active_ms; data requires shown", () => {
+    const html = htmlReport([
+      metric({ scenario_id: "arch", requires: ["1 active attraction"], duration_ms: { total: 19679, planning: 0, execution: 446, setup: 756, dependencies: 5051, navigation: 949 }, actions: [{ id: "a1", duration_ms: 400, verify_ms: 46, status: "passed" }] }),
+    ], { wall_ms: 5000, concurrency: 4 });
+    expect(html).toContain("contention"); // not the opaque "other"
+    expect(html).toMatch(/active \d+ ms/); // the concurrency-stable work number
+    expect(html).toContain("requires (data): 1 active attraction");
   });
 });

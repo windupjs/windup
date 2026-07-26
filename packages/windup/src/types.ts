@@ -109,6 +109,14 @@ export interface Scenario {
     /** Origin to seed (default: the scenario's start_url origin). */
     origin?: string;
   };
+  /**
+   * #3 — human-readable DATA preconditions this scenario assumes exist (e.g.
+   * "1 active attraction", "a paid order"). Declarative only: Windup shows them
+   * in the report so a reader understands why the scenario breaks when the data
+   * is gone, and can plan the create→use→archive cycle. It does NOT verify them
+   * (use `setup`/`suite.setup` to actually seed the data).
+   */
+  requires?: string[];
 }
 
 export type CacheStatus = "active" | "stale";
@@ -148,6 +156,8 @@ export interface RunMetrics {
   scenario_id: string;
   /** Folder of the scenario file relative to the scenarios dir ("(root)" for top-level) — used to group the suite report. */
   module?: string;
+  /** #3 — the scenario's declared DATA preconditions (from `requires`), surfaced in the report. */
+  requires?: string[];
   started_at: string;
   cache: CacheOutcome;
   /** #1 — set to the source scenario_id when this run reused another scenario's plan (isomorphic reuse, no LLM); absent otherwise. */

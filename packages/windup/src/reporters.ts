@@ -61,17 +61,19 @@ export function jsonReport(results: RunMetrics[], opts: { wall_ms?: number; conc
     cache: r.cache,
     llm_calls: r.llm_calls,
     duration_ms: r.duration_ms.total,
-    // Wall-clock breakdown so the total reconciles (feedback: "where did the time go").
-    duration_breakdown: {
-      setup: r.duration_ms.setup ?? 0,
-      dependencies: r.duration_ms.dependencies ?? 0,
-      planning: r.duration_ms.planning,
-      navigation: r.duration_ms.navigation ?? 0,
-      actions: r.actions.reduce((s, a) => s + a.duration_ms + a.verify_ms, 0),
-    },
+    // Wall-clock breakdown so the total reconciles. `active` = this scenario's
+    // own work; `contention` = time waiting for a slot under --concurrency (idle).
+    duration_breakdown: (() => {
+      const setup = r.duration_ms.setup ?? 0, dependencies = r.duration_ms.dependencies ?? 0;
+      const planning = r.duration_ms.planning, navigation = r.duration_ms.navigation ?? 0;
+      const actions = r.actions.reduce((s, a) => s + a.duration_ms + a.verify_ms, 0);
+      const active = setup + dependencies + planning + navigation + actions;
+      return { setup, dependencies, planning, navigation, actions, active, contention: Math.max(0, r.duration_ms.total - active) };
+    })(),
     est_cost_usd: r.estimated_cost_usd,
     failure: r.failure,
     ...(r.dependencies?.length ? { dependencies: r.dependencies } : {}),
+    ...(r.requires?.length ? { requires: r.requires } : {}),
     ...(r.summary ? { summary: r.summary.text } : {}),
     ...(r.suggestion ? { suggestion: r.suggestion.text } : {}),
   }));
@@ -92,6 +94,7 @@ export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; conc
   const freeReplays = results.filter((r) => r.llm_calls === 0).length;
   const generatedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
   const suite = buildSuiteSummary(results, opts);
+  const concurrency = opts.concurrency;
   // Wall-clock (real elapsed) is the honest headline; the sum inflates ~N× under
   // --concurrency N. Show wall as the big stat and the sum as its subtitle.
   const durationStat = suite.wall_ms !== undefined
@@ -107,6 +110,10 @@ export function htmlReport(results: RunMetrics[], opts: { wall_ms?: number; conc
       // table — the label shows it exists; one click expands (<details>, no JS).
       const deps = r.dependencies?.length
         ? `<div class="deps">deps: ${r.dependencies.map((d) => `${esc(d.scenario_id)} (${d.result === "passed" ? esc(d.cache) : "FAILED"})`).join(" → ")}</div>`
+        : "";
+      // #3 declared DATA preconditions — helps explain a break when the seed data is gone.
+      const requires = r.requires?.length
+        ? `<div class="deps">requires (data): ${r.requires.map((x) => esc(x)).join(" · ")}</div>`
         : "";
       const summary = r.summary
         ? `<details class="ai-summary"><summary>AI debrief</summary><div class="ai-text">${esc(r.summary.text)}</div></details>`
@@ -132,19 +139,28 @@ ${r.actions
       // setup (context launch) · deps (depends_on chain) · plan (LLM) · nav
       // (goto + load/hydration before a1) · actions (sum of act+verify) · other.
       const actionsMs = r.actions.reduce((s, a) => s + a.duration_ms + a.verify_ms, 0);
-      const segs = [
+      const activeSegs = [
         { k: "setup", v: r.duration_ms.setup ?? 0 },
         { k: "deps", v: r.duration_ms.dependencies ?? 0 },
         { k: "plan", v: r.duration_ms.planning },
         { k: "nav", v: r.duration_ms.navigation ?? 0 },
         { k: "actions", v: actionsMs },
-      ].filter((s) => s.v > 0);
-      const other = Math.max(0, r.duration_ms.total - segs.reduce((s, x) => s + x.v, 0));
-      if (other > 0) segs.push({ k: "other", v: other });
+      ];
+      const activeMs = activeSegs.reduce((s, x) => s + x.v, 0);
+      const segs = activeSegs.filter((s) => s.v > 0);
+      // The remainder is time NOT spent on this scenario's own work. Under
+      // --concurrency it's mostly waiting for a CPU/browser slot while siblings
+      // run — idle contention, not cost. Label it honestly (feedback #2).
+      const leftover = Math.max(0, r.duration_ms.total - activeMs);
+      const leftoverLabel = (concurrency && concurrency > 1) ? "contention" : "other";
+      if (leftover > 0) segs.push({ k: leftoverLabel, v: leftover });
       const totalMs = r.duration_ms.total || 1;
-      const bar = segs.map((s) => `<span class="seg seg-${s.k}" style="width:${((s.v / totalMs) * 100).toFixed(1)}%" title="${s.k} ${s.v} ms"></span>`).join("");
+      const bar = segs.map((s) => `<span class="seg seg-${s.k === "contention" ? "other" : s.k}" style="width:${((s.v / totalMs) * 100).toFixed(1)}%" title="${s.k} ${s.v} ms"></span>`).join("");
       const legend = segs.map((s) => `${s.k} ${s.v}`).join(" · ");
-      const breakdown = `<details class="breakdown"><summary>${r.duration_ms.total} ms — where it went</summary><div class="bar">${bar}</div><div class="bkleg">${r.duration_ms.total} ms = ${legend}</div></details>`;
+      // active_ms = this scenario's own work (stable-ish across --concurrency),
+      // so you can compare scenarios without the parallelization noise.
+      const activeNote = leftover > 0 ? ` · <b>active ${activeMs} ms</b>${leftoverLabel === "contention" ? ` (+ ${leftover} ms contention @ ×${concurrency})` : ""}` : "";
+      const breakdown = `<details class="breakdown"><summary>${r.duration_ms.total} ms — where it went</summary><div class="bar">${bar}</div><div class="bkleg">${r.duration_ms.total} ms = ${legend}${activeNote}</div></details>`;
       const a11y = r.a11y
         ? (r.a11y.violations.length
           ? `<details class="a11y"><summary>a11y: ${r.a11y.violations.length} violation(s)</summary><div class="bkleg">${r.a11y.violations.map((v) => `${esc(v.id)} — ${esc(v.impact)} (${v.nodes} node${v.nodes === 1 ? "" : "s"})`).join("<br>")}</div></details>`
@@ -152,7 +168,7 @@ ${r.actions
         : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span></td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${failure}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>
