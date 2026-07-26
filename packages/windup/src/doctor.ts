@@ -74,6 +74,16 @@ export async function runDoctor(): Promise<Check[]> {
     ? { name: "fragments", status: "fail", detail: `orphaned reference(s): ${orphans.join("; ")}` }
     : { name: "fragments", status: "ok", detail: `${fragments.length} fragment(s), no orphaned references` });
 
+  // 4b. config.network / config.clock are well-formed (validated lazily at run — surface it here too).
+  const { validateNetwork } = await import("./network.js");
+  const { validateClock } = await import("./clock.js");
+  const cfgErrors = [...validateNetwork(ctx.config.network), ...validateClock(ctx.config.clock)];
+  if (ctx.config.network || ctx.config.clock) {
+    checks.push(cfgErrors.length
+      ? { name: "config", status: "fail", detail: cfgErrors.join("; ") }
+      : { name: "config", status: "ok", detail: `${ctx.config.network ? `network: ${ctx.config.network.length} rule(s)` : ""}${ctx.config.network && ctx.config.clock ? ", " : ""}${ctx.config.clock ? "clock set" : ""}` });
+  }
+
   // 5. Site map scanned — planning and `windup coverage` are weaker without it.
   const map = await SiteMapStore.load(ctx.paths.mapFile);
   checks.push(map.pageCount > 0

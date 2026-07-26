@@ -362,6 +362,7 @@ npx windup run --all --reporter junit --report-file reports/windup.xml
 - **Flake score + root-cause hint.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), with a **hint** at the likely cause drawn from its runs (start-page signature drift → hydration race; a network failure; always-same-action → an unstable selector; cache churn → non-deterministic replay) — so data-dependent flakiness surfaces, and points somewhere, before you commit a green.
 - **Retry a flake (`--retries N`).** Re-run a scenario that failed a **transient** way (a network reset, a hydration-race verification miss, a wobbly `setup`/`dependency`) up to N extra times — the first pass wins. A `config.forbid` block is **never** retried (a deliberate guard, not a flake). The flake is **surfaced, not swallowed**: a scenario that only goes green on a retry is flagged `flaky` — `↻ N passed only on retry` on the console, a `FLAKY N×` badge in the HTML report, `flaky`/`attempts` on the JSON record and the `run:end` stream event — so you fix the root cause instead of laundering a red build green.
 - **Time budget (`--all --max-wall <seconds>`).** A CI guard-rail: once the suite's wall-clock crosses the cap, Windup **stops starting new scenarios** (in-flight ones finish — nothing is cancelled mid-run) and **exits non-zero**, so a runaway suite fails the build instead of hanging the runner. Works sequentially and under `--concurrency`. Prints `⏱ --max-wall Ns exceeded — X/Y ran, Z not started`.
+- **Fail fast (`--all --bail`).** Stop starting new scenarios after the **first failure** — quick feedback in a PR check instead of waiting out the whole suite. Completes the guard-rail trio with `--retries`/`--max-wall`; works sequentially and under `--concurrency`.
 - **Sharding.** `--all --shard i/n` runs shard *i* of *n* (round-robin split of the scenario list) — spread a big suite across parallel CI runners (`--shard 1/4`, `--shard 2/4`, …), each a separate job.
 - **Tags.** Tag scenarios (`"tags": ["smoke", "checkout"]`) and run a subset: `--all --tag smoke,checkout` runs any scenario carrying one of those tags. Run smoke on every push, the full suite nightly — composes with `--shard` and `--changed`.
 - **Trace + screenshot on failure (`--trace`).** When a scenario fails, Windup saves a **Playwright trace** (`.windup/reports/traces/<id>.zip` — open it in the Playwright trace viewer: DOM snapshots, network and console per step) plus a full-page **screenshot**, and the HTML report links both from the failed row. See exactly what happened in CI instead of guessing from timings. (Captured only on failure — a passing run keeps nothing.)
@@ -411,6 +412,10 @@ Example GitHub Actions step:
 | `windup costs [--last n] [--days n] [--json]` | AI usage report from the run ledger: totals, free replays, per-provider, per-model and per-scenario breakdown, scan and authoring spend |
 | `windup status` | Site-map pages by source, staleness, cached scenarios, fragments |
 | `windup coverage [--json]` | Cross-reference indexed routes (`windup scan`) with your scenarios — which routes have a scenario and which have none (finds coverage gaps automatically) |
+| `windup why <scenario> [--json]` | Diagnose one scenario: cache state (replay-ready or will-plan), re-plan churn, `depends_on` chain, run history and the last failure — all from the ledger, no LLM |
+| `windup explain <scenario> [--json]` | Print the cached plan as readable steps (go to / click / fill / verify). Review a plan without opening the JSON; a fill's secret value is never shown |
+| `windup diff <scenario> [--json]` | Compare a scenario's two most recent runs — result flip, cache, and Δ time / Δ cost / Δ actions (a regression check) |
+| `windup badge [--json] [--out <path>]` | Suite-status badge from each scenario's latest run — a self-contained SVG (`N/M passing · $0`) or a shields.io endpoint JSON |
 | `windup doctor` | Preflight checks before a run — LLM key for the provider, browser installed, scenarios all parse, no orphaned fragment references, site map scanned. No browser/LLM/network; non-zero exit on a hard problem |
 | `windup fragment extract <scenario> <a1..aN> --id <id> --description <text>` | Promote a slice of a cached plan to a reusable fragment |
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
@@ -422,7 +427,7 @@ Example GitHub Actions step:
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |
 
-**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--retries <n>` (re-run a flake; forbidden never retried) · `--max-wall <seconds>` (suite time budget) · `--browser chromium|firefox|webkit` · `--verbose` (planning/execution heartbeat) · `--stream` (NDJSON events) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>` · `--shard i/n` · `--tag <names>` · `--trace` · `--github` · `--a11y` · `--watch`
+**`run` flags:** `--all` · `--no-cache` · `--no-map` · `--repeat <n>` · `--concurrency <n>` (parallel) · `--retries <n>` (re-run a flake; forbidden never retried) · `--max-wall <seconds>` (suite time budget) · `--bail` (stop on first failure) · `--browser chromium|firefox|webkit` · `--verbose` (planning/execution heartbeat) · `--stream` (NDJSON events) · `--headed` (show the browser) · `--slowmo <ms>` (demo pace) · `--base-url <url>` · `--llm <provider[:model]>` · `--summary` (AI debrief) · `--suggest` (fix hint on failure) · `--reporter junit|json|html` · `--report-file <path>` · `--shard i/n` · `--tag <names>` · `--trace` · `--github` · `--a11y` · `--watch`
 
 ### AI debrief (`--summary`)
 
@@ -518,6 +523,14 @@ export default defineConfig({
     selectors: ["#change-password", "[data-danger]"],  // substring match on a plan's selector
     urls: ["**/account/password", "**/admin/**"],       // path globs the run must never reach
   },
+  // Request stubbing: deterministic responses for matched requests (test a 500, an empty list, a slow/failing endpoint).
+  network: [
+    { url: "**/api/orders", json: [] },                 // force an empty list
+    { url: "**/api/report", status: 500 },              // simulate a server error
+    { url: "**/analytics", abort: true },               // drop the request (network error)
+  ],
+  // Frozen clock: pin the page's time and/or timezone for date-dependent scenarios.
+  clock: { now: "2026-01-15T09:00:00Z", timezone: "America/Sao_Paulo" },
 });
 ```
 
@@ -525,6 +538,8 @@ export default defineConfig({
 - **`readySignals`** maps a route glob to the CSS selector(s) that must be **visible before the executor runs the first action** on a matching page. It's applied deterministically at run time (no LLM, $0, not part of the cached plan) — so a hydration/loading wait is defined once per route instead of repeated as a hint in every scenario. It closes the load-time race where an element is present but its handlers aren't attached yet (which Playwright's per-element wait can't see). Best-effort: a signal that never appears within the timeout logs a warning and continues (it never hard-fails the suite), and it applies again whenever a run enters a matching route.
 - **`suite.setup` / `suite.teardown`** are shell command(s) run **once** around a `run --all` — setup before the first scenario, teardown after the last (always, even on failure) — for suite-wide fixtures (seed/reset a shared database, start a stub). Per-scenario `setup`/`teardown` (in the scenario JSON) still handle per-test state. A failing `suite.setup` aborts the suite before any scenario runs; a failing `suite.teardown` is a warning.
 - **`forbid`** is a safety denylist — a CI guardrail against irreversible side effects. If any plan action targets a forbidden **selector** (substring match on the plan's CSS selector, e.g. `#change-password`) or the run reaches a forbidden **URL** (path glob, e.g. `**/account/password`), the run **aborts** with a `forbidden` failure instead of performing it. You declare the danger list (the engine never infers it), so it's the belt-and-suspenders backstop to the [authoring discipline](#non-destructive-testing--stay-at-the-side-effect-boundary): even if a re-plan wanders toward "Change password", it's stopped before the click.
+- **`network`** stubs HTTP requests deterministically — a list of rules, each matched against the request URL (a **substring** or a **glob**) plus an optional `method`; the **first match wins**. Respond with `status` (default 200) + `body` / `json` (a JSON body sets `content-type` automatically) + optional `headers` / `contentType`, or `abort: true` to drop the request (a simulated network error). It lets a scenario reach a hard-to-seed state — a 500, an empty list, a failing third-party call — without touching the backend. Author-declared (the engine keeps zero site knowledge), applied on every run and **never part of the cached plan**.
+- **`clock`** pins the page's time. `now` (an ISO string or epoch ms) freezes `Date` and `Date.now()` to a fixed instant — injected before any page script, so `new Date()` in the app returns it — for scenarios that would otherwise drift ("orders from today", a countdown). `timezone` (an IANA name) sets the browser's zone natively. Frozen, not moving; applied every run, never cached.
 - **LLM-assist** (scan layer 3) reads files the static layers couldn't resolve (dynamically built routes, indirect components), capped by `maxCalls`. Results are remembered per file hash — unchanged files never cost again. Costs are recorded in the ledger and shown by `windup costs`.
 
 ## Programmatic API & test runners

@@ -4,6 +4,24 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.54.0
+Diagnostics & determinism — a batch of tools that read what Windup already knows and two config knobs that make hard-to-reproduce states testable. Every command is LLM-free; each feature is unit-tested and validated (real-browser for the two that touch the page).
+
+**Four read-only commands (zero LLM, straight from the ledger/cache):**
+- **`windup why <scenario>`** — one place for a scenario's whole story: is a plan cached and ready to replay ($0) or will the next run plan; re-plan **churn** (a stability signal); the `depends_on` chain; run **history** (pass rate, avg cost/time); and the **last run** with its failure kind/message and whether a snapshot is stored. Turns "why is this red/slow/re-planning?" from a ledger grep into one line.
+- **`windup explain <scenario>`** — the cached plan as readable steps (`go to /login · fill one-time code with {otp_code} · click Place order ↳ verify #confirmation is visible`). Review a plan without opening the JSON. A fill's **value is never shown** (a `value_ref` renders as its name) — secrets/OTP stay out.
+- **`windup diff <scenario>`** — compares the two most recent runs: result flip, cache, and **Δ time / Δ cost / Δ actions**. Catches "this scenario got 2× slower" or a plan that quietly grew.
+- **`windup badge [--json] [--out <path>]`** — a suite-status badge from each scenario's latest run: a self-contained **SVG** (`271/271 passing · $0`, no external fetch — safe to commit) or a **shields.io endpoint JSON**.
+
+**Determinism (config, applied every run, never cached, author-declared):**
+- **`config.network`** — request **stubbing**: match by URL (substring or glob) + optional method, then respond with a `status`/`body`/`json` or `abort` the request — test a 500, an empty list, a slow or failing endpoint without touching the backend. First match wins. Validated live: the same page renders 3 (real) → 0 (stub `[]`) → error (abort).
+- **`config.clock`** — pin the page's time: `now` freezes `Date`/`Date.now()` to a fixed instant (injected before any page script, transform-proof) and `timezone` sets the browser's IANA zone (native Playwright) — so "orders from today" or a countdown stops drifting at midnight. Validated live: `now: "1999-12-31…"` → the page's `new Date()` reads 1999-12-31.
+
+**CI guard-rail:**
+- **`run --all --bail`** — stop starting new scenarios after the first failure (fast PR-check feedback). Completes the trio with `--retries`/`--max-wall`; works sequentially and under `--concurrency` (shared halt), prints `⏹ --bail: stopped after the first failure — X/Y ran, Z not started`.
+
+New modules `why.ts`/`explain.ts`/`diff.ts`/`badge.ts`/`ledger.ts`/`network.ts`/`clock.ts`; `config.network`/`config.clock`; a `windup doctor` config check.
+
 ## 0.53.0
 Resilient-CI pair — turn a flaky suite green without hiding the flake, and cap how long a suite may run. Both tested (unit + real-browser live) and LLM-free on the happy path:
 - **Retry a flake — `run --retries N`.** Re-run a scenario that failed a **transient** way (network reset, a hydration-race verification miss, a wobbly `setup`/`dependency`) up to N extra times; the first pass wins. A `forbidden` block is **never** retried — a `config.forbid` guard is a deliberate stop, not a flake. Crucially the flake is **surfaced, not swallowed**: a scenario that only passes on a retry is flagged `flaky` (`↻ N passed only on retry` in the console, a `FLAKY N×` badge in the HTML report, `flaky`/`attempts` on the JSON record and the `run:end` stream event) so you fix the root cause instead of laundering it green. Validated live: a page whose first connection is dropped fails attempt 1 (`network`) and passes attempt 2 — recovered, marked flaky, zero LLM calls. New `RunMetrics.attempts` / `RunMetrics.flaky`.

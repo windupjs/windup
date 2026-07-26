@@ -133,6 +133,40 @@ export interface WindupConfig {
    * deterministic CI test. E.g. `{ "[name=otp]": "otp_code" }`.
    */
   resolveFields?: Record<string, string>;
+  /**
+   * Request stubbing (#network): deterministic responses for matched requests,
+   * applied on EVERY run (never part of the cached plan) so a scenario can hit a
+   * hard-to-seed state — a 500, an empty list, a slow endpoint — without touching
+   * the backend. Author-declared (the engine keeps zero site knowledge). The
+   * FIRST rule whose `url` (substring or glob) and optional `method` match wins.
+   */
+  network?: NetworkRule[];
+  /**
+   * Frozen clock (#clock): pin the page's time and/or timezone for date-dependent
+   * scenarios ("orders from today", a countdown) that otherwise drift at midnight.
+   * Applied on every run, never cached. `now` freezes `Date`/`Date.now()` to a
+   * fixed instant (it does not tick); `timezone` sets the browser's IANA zone.
+   */
+  clock?: { now?: string | number; timezone?: string };
+}
+
+export interface NetworkRule {
+  /** Matched against the request URL: a substring (fast path) or a glob (`**\/api/orders`). */
+  url: string;
+  /** Optional HTTP method filter (GET, POST, …), case-insensitive. */
+  method?: string;
+  /** Abort the request instead of responding (simulate a network error). Mutually exclusive with a response. */
+  abort?: boolean;
+  /** Response status (default 200). */
+  status?: number;
+  /** Response body as a string (use `json` for objects). */
+  body?: string;
+  /** Convenience: a JSON body — stringified, with content-type application/json unless overridden. */
+  json?: unknown;
+  /** Override the response content-type. */
+  contentType?: string;
+  /** Extra response headers. */
+  headers?: Record<string, string>;
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

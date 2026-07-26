@@ -82,7 +82,8 @@ program
   .option("--github", "emit GitHub Actions annotations for failures + a job summary (auto-on when GITHUB_ACTIONS=true)")
   .option("--retries <n>", "re-run a scenario that fails a FLAKY way (network/verification/setup/dependency) up to N extra times; a forbidden block is never retried", "0")
   .option("--max-wall <seconds>", "with --all: stop starting new scenarios once the suite's wall-clock exceeds this many seconds (a CI time budget); exits non-zero if the cap is hit")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string }) => {
+  .option("--bail", "with --all: stop starting new scenarios after the first failure (fast feedback in PR checks)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
@@ -164,6 +165,16 @@ program
       maxWallMs = secs * 1000;
     }
 
+    // config.network / config.clock — validate eagerly so a malformed rule fails loud.
+    {
+      const { getContext } = await import("./context.js");
+      const { validateNetwork } = await import("./network.js");
+      const { validateClock } = await import("./clock.js");
+      const cfg = getContext().config;
+      const cfgErrors = [...validateNetwork(cfg.network), ...validateClock(cfg.clock)];
+      if (cfgErrors.length) { console.error(`invalid config:\n${cfgErrors.map((e) => `  - ${e}`).join("\n")}`); process.exitCode = 2; return; }
+    }
+
     const printExtras = (metrics: RunMetrics): void => {
       if (metrics.summary) {
         console.log(`      summary (${metrics.summary.provider}/${metrics.summary.model}, $${metrics.summary.est_cost_usd}):`);
@@ -210,7 +221,10 @@ program
     const jobs = scenarios.flatMap((scenario) => Array.from({ length: repeat }, () => scenario));
 
     const wallStart = Date.now(); // real elapsed time of the whole run (≠ the sum of per-scenario totals under concurrency)
+    let bailed = false; // --bail: set on the first non-pass, halts new scenarios
     const overBudget = () => maxWallMs > 0 && Date.now() - wallStart >= maxWallMs;
+    const shouldStop = () => overBudget() || bailed;
+    const noteResult = (m: RunMetrics): RunMetrics => { if (opts.bail && m.result !== "passed") bailed = true; return m; };
     const onRetry = (attempt: number, failed: RunMetrics): void => {
       if (!opts.stream) console.log(`      ↻ retry ${attempt}/${retries} after ${failed.failure?.kind ?? "failure"}`);
     };
@@ -235,29 +249,32 @@ program
         jobs.map((scenario) => async () => {
           progressStart(scenario.scenario_id);
           streamEvent(scenario.scenario_id, "run:start", {});
-          const m = await runJob(scenario, { sharedMap });
+          const m = noteResult(await runJob(scenario, { sharedMap }));
           reportRun(m);
           return m;
         }),
         concurrency,
-        overBudget, // stop dispatching new scenarios once the wall-clock budget is spent
+        shouldStop, // stop dispatching new scenarios once the budget is spent or --bail tripped
       );
       await sharedMap.save();
     } else {
       results = [];
       for (let j = 0; j < jobs.length; j++) {
-        if (overBudget()) break; // --max-wall: don't start another scenario past the budget
+        if (shouldStop()) break; // --max-wall / --bail: don't start another scenario
         if (repeat > 1) console.log(`run ${(j % repeat) + 1}/${repeat}`);
         progressStart(jobs[j].scenario_id);
         streamEvent(jobs[j].scenario_id, "run:start", {});
-        const m = await runJob(jobs[j]);
+        const m = noteResult(await runJob(jobs[j]));
         reportRun(m);
         results.push(m);
       }
     }
-    const skipped = jobs.length - results.length; // scenarios never started (only > 0 when --max-wall tripped)
-    if (maxWallMs > 0 && skipped > 0 && !opts.stream) {
+    const skipped = jobs.length - results.length; // scenarios never started (--max-wall or --bail)
+    if (maxWallMs > 0 && overBudget() && skipped > 0 && !opts.stream) {
       console.warn(`\n⏱  --max-wall ${maxWallMs / 1000}s exceeded — ${results.length}/${jobs.length} ran, ${skipped} not started (build fails).`);
+    }
+    if (bailed && skipped > 0 && !opts.stream) {
+      console.warn(`\n⏹  --bail: stopped after the first failure — ${results.length}/${jobs.length} ran, ${skipped} not started.`);
     }
     const flakyCount = results.filter((m) => m.flaky).length;
     if (flakyCount > 0 && !opts.stream) {
@@ -531,6 +548,59 @@ program
       console.log(JSON.stringify(report, null, 2));
     } else {
       printCostsReport(report, getContext().paths.runsDir);
+    }
+  });
+
+program
+  .command("why <scenario>")
+  .description("Diagnose one scenario: cache state, re-plan churn, dependency chain, run history and the last failure — all from the ledger, no LLM")
+  .option("--json", "machine-readable output")
+  .action(async (scenario: string, opts: { json?: boolean }) => {
+    const { buildWhy, printWhy } = await import("./why.js");
+    const report = await buildWhy(scenario);
+    if (opts.json) console.log(JSON.stringify(report, null, 2));
+    else printWhy(report);
+  });
+
+program
+  .command("explain <scenario>")
+  .description("Print the cached plan as readable steps (go to / click / fill / verify) — review a plan without opening the JSON; never shows a fill's secret value")
+  .option("--json", "machine-readable output")
+  .action(async (scenario: string, opts: { json?: boolean }) => {
+    const { explainPlan, printExplain } = await import("./explain.js");
+    const e = await explainPlan(scenario);
+    if (opts.json) console.log(JSON.stringify(e, null, 2));
+    else printExplain(e);
+  });
+
+program
+  .command("diff <scenario>")
+  .description("Compare a scenario's two most recent runs — result, cache, cost, time and plan-size deltas (a regression check)")
+  .option("--json", "machine-readable output")
+  .action(async (scenario: string, opts: { json?: boolean }) => {
+    const { buildDiff, printDiff } = await import("./diff.js");
+    const d = await buildDiff(scenario);
+    if (opts.json) console.log(JSON.stringify(d, null, 2));
+    else printDiff(d);
+  });
+
+program
+  .command("badge")
+  .description("Write a suite-status badge (each scenario's latest run): SVG by default, or a shields.io endpoint JSON")
+  .option("--json", "emit shields.io endpoint JSON instead of SVG")
+  .option("--out <path>", "write to this file instead of stdout")
+  .action(async (opts: { json?: boolean; out?: string }) => {
+    const { buildBadge, badgeSvg, badgeJson } = await import("./badge.js");
+    const b = await buildBadge();
+    const content = opts.json ? badgeJson(b) : badgeSvg(b);
+    if (opts.out) {
+      const { writeFile, mkdir } = await import("node:fs/promises");
+      const { dirname } = await import("node:path");
+      await mkdir(dirname(opts.out), { recursive: true });
+      await writeFile(opts.out, content, "utf8");
+      console.log(`badge (${opts.json ? "json" : "svg"}): ${opts.out} — ${b.message}`);
+    } else {
+      console.log(content);
     }
   });
 

@@ -1,6 +1,8 @@
 import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserContextOptions, type BrowserType, type Page } from "playwright-core";
+import { clockInitScript, frozenNowMs } from "./clock.js";
 import { getContext } from "./context.js";
 import { WindupError } from "./errors.js";
+import { matchRule } from "./network.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
 import { computeSignature, type RawElement } from "./signature.js";
 
@@ -357,11 +359,29 @@ function getEngine(): Promise<PWBrowser> {
  */
 export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean } = {}): Promise<Browser> {
   const browser = await getEngine();
+  const cfg = currentConfig();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     // Playwright accepts the storageState object directly; typed loosely at our boundary.
     ...(opts.storageState ? { storageState: opts.storageState as BrowserContextOptions["storageState"] } : {}),
+    ...(cfg?.clock?.timezone ? { timezoneId: cfg.clock.timezone } : {}),
   });
+  // config.clock — freeze Date/now before any page script (every navigation).
+  const nowMs = frozenNowMs(cfg?.clock);
+  if (nowMs !== null) await context.addInitScript(clockInitScript(nowMs));
+  // config.network — deterministic stubs for matched requests; author-declared, never cached.
+  if (cfg?.network?.length) {
+    const rules = cfg.network;
+    await context.route("**/*", async (route) => {
+      const req = route.request();
+      const rule = matchRule(rules, req.url(), req.method());
+      if (!rule) return route.continue();
+      if (rule.abort) return route.abort();
+      const body = rule.json !== undefined ? JSON.stringify(rule.json) : rule.body ?? "";
+      const contentType = rule.contentType ?? (rule.json !== undefined ? "application/json" : "text/plain");
+      return route.fulfill({ status: rule.status ?? 200, contentType, headers: rule.headers, body });
+    });
+  }
   if (opts.trace) {
     try {
       await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -371,6 +391,15 @@ export async function launchBrowser(opts: { storageState?: unknown; trace?: bool
   }
   const page = await context.newPage();
   return new PlaywrightSession(context, page);
+}
+
+/** The active windup config, or undefined when no context is set (e.g. isolated unit tests). */
+function currentConfig(): import("./config.js").WindupConfig | undefined {
+  try {
+    return getContext().config;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Shut the engine down (CLI exit hook; API/test teardown). Safe to call twice. */
