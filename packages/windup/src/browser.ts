@@ -1,9 +1,10 @@
 import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserContextOptions, type BrowserType, type Page } from "playwright-core";
-import { clockInitScript, frozenNowMs } from "./clock.js";
+import { clockInitScript, frozenNowMs, type ClockConfig } from "./clock.js";
 import { getContext } from "./context.js";
 import { resolveDeviceContext } from "./device.js";
 import { WindupError } from "./errors.js";
 import { matchRule } from "./network.js";
+import type { NetworkRule } from "./config.js";
 import { VITALS_INIT_SCRIPT } from "./vitals.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
 import { computeSignature, type RawElement } from "./signature.js";
@@ -103,6 +104,8 @@ class PlaywrightSession implements Browser {
   constructor(
     private readonly context: BrowserContext,
     private readonly page: Page,
+    /** Effective network stubs for THIS session (scenario merged over config) — captureDiagnostics uses these to exclude deliberately-stubbed 5xx. */
+    private readonly network?: NetworkRule[],
   ) {}
 
   private readonly consoleErrs: string[] = [];
@@ -119,7 +122,8 @@ class PlaywrightSession implements Browser {
     const cfg = (() => { try { return getContext().config; } catch { return undefined; } })();
     const ignore = cfg?.failOn?.ignore ?? [];
     const ignored = (url: string) => ignore.some((s) => url.includes(s));
-    const isStub = (url: string, method: string) => Boolean(cfg?.network?.length && matchRule(cfg.network, url, method));
+    const stubs = this.network; // effective (scenario + config) rules for this session
+    const isStub = (url: string, method: string) => Boolean(stubs?.length && matchRule(stubs, url, method));
     this.page.on("console", (m) => { if (m.type() === "error") this.consoleErrs.push(m.text()); });
     this.page.on("pageerror", (e) => this.consoleErrs.push(e.message));
     this.page.on("response", (r) => {
@@ -452,26 +456,29 @@ function getEngine(): Promise<PWBrowser> {
  * `storageState` (a prior session snapshot) to seed cookies/localStorage into
  * the fresh context — restoring auth without re-running the login flow.
  */
-export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean } = {}): Promise<Browser> {
+export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean; network?: NetworkRule[]; clock?: ClockConfig } = {}): Promise<Browser> {
   const browser = await getEngine();
   const cfg = currentConfig();
+  // Per-scenario network/clock (already merged over config by the caller) win; else the global config.
+  const network = opts.network ?? cfg?.network;
+  const clock = opts.clock ?? cfg?.clock;
   // config.device / --device — a Playwright device preset (viewport, UA, scale, mobile/touch).
   const device = resolveDeviceContext(); // throws on an unknown preset name
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     // Playwright accepts the storageState object directly; typed loosely at our boundary.
     ...(opts.storageState ? { storageState: opts.storageState as BrowserContextOptions["storageState"] } : {}),
-    ...(cfg?.clock?.timezone ? { timezoneId: cfg.clock.timezone } : {}),
+    ...(clock?.timezone ? { timezoneId: clock.timezone } : {}),
     ...(device ?? {}), // device viewport/UA overrides the default
   });
-  // config.clock — freeze Date/now before any page script (every navigation).
-  const nowMs = frozenNowMs(cfg?.clock);
+  // config.clock / scenario.clock — freeze Date/now before any page script (every navigation).
+  const nowMs = frozenNowMs(clock);
   if (nowMs !== null) await context.addInitScript(clockInitScript(nowMs));
   // --web-vitals / config.budgets — observe LCP+CLS from the first paint (every navigation).
   if (process.env.WINDUP_WEB_VITALS === "1" || cfg?.budgets) await context.addInitScript(VITALS_INIT_SCRIPT);
-  // config.network — deterministic stubs for matched requests; author-declared, never cached.
-  if (cfg?.network?.length) {
-    const rules = cfg.network;
+  // config.network / scenario.network — deterministic stubs for matched requests; author-declared, never cached.
+  if (network?.length) {
+    const rules = network;
     await context.route("**/*", async (route) => {
       const req = route.request();
       const rule = matchRule(rules, req.url(), req.method());
@@ -490,7 +497,7 @@ export async function launchBrowser(opts: { storageState?: unknown; trace?: bool
     }
   }
   const page = await context.newPage();
-  const session = new PlaywrightSession(context, page);
+  const session = new PlaywrightSession(context, page, network);
   session.captureDiagnostics(); // passive console/5xx listeners for config.failOn / --fail-on-*
   return session;
 }

@@ -4,6 +4,8 @@ import path from "node:path";
 import type { Scenario } from "./types.js";
 import { getContext } from "./context.js";
 import { resolveStartUrl } from "./start-url.js";
+import { validateNetwork } from "./network.js";
+import { validateClock } from "./clock.js";
 
 export type ResolvedScenario = Scenario & {
   start_url: string;
@@ -73,6 +75,10 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
       throw new WindupError(`scenario "${id}": "seed" must be { localStorage?: {string→string}, sessionStorage?: {string→string}, origin?: string }`);
     }
   }
+  const netErrs = validateNetwork(scenario.network);
+  if (netErrs.length) throw new WindupError(`scenario "${id}": ${netErrs.join("; ").replace(/config\.network/g, '"network"')}`);
+  const clkErrs = validateClock(scenario.clock);
+  if (clkErrs.length) throw new WindupError(`scenario "${id}": ${clkErrs.join("; ").replace(/config\.clock/g, '"clock"')}`);
   const continueFromDependency = !scenario.start_url && (scenario.depends_on?.length ?? 0) > 0;
   scenario.start_url = resolveStartUrl(scenario.start_url);
   return Object.assign(scenario, { continue_from_dependency: continueFromDependency }) as ResolvedScenario;

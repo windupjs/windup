@@ -1,3 +1,6 @@
+import type { NetworkRule } from "./config.js";
+import type { ClockConfig } from "./clock.js";
+
 export type ActionType = "goto" | "click" | "fill" | "wait_for" | "use";
 
 export interface ActionTarget {
@@ -151,6 +154,10 @@ export interface Scenario {
   atomic_steps?: boolean;
   /** Quarantine a known-flaky scenario: it still runs and reports, but its failure does NOT fail the suite (non-zero exit). Surfaced prominently so it isn't forgotten. */
   quarantine?: boolean;
+  /** Per-scenario request stubs, MERGED over `config.network` (scenario rules win). Scope a stub — e.g. a `{ url, status: 500 }` — to just this run so an error-state test doesn't leak into every scenario hitting that endpoint. Applied every run, never cached. */
+  network?: NetworkRule[];
+  /** Per-scenario frozen clock / timezone, field-merged over `config.clock` (scenario fields win). Applied every run, never cached. */
+  clock?: ClockConfig;
 }
 
 export type CacheStatus = "active" | "stale";

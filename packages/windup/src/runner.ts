@@ -9,6 +9,10 @@ import { dropSnapshot, getSnapshot, saveSnapshot } from "./session-cache.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { FailureKind, Plan, RunMetrics, Scenario } from "./types.js";
+import type { NetworkRule } from "./config.js";
+import type { ClockConfig } from "./clock.js";
+import { effectiveNetwork } from "./network.js";
+import { effectiveClock } from "./clock.js";
 import { progress, streamEvent } from "./progress.js";
 import { runHooks } from "./hooks.js";
 
@@ -163,16 +167,25 @@ export async function runScenario(
 
   const launchStart = Date.now();
   const trace = process.env.WINDUP_TRACE === "1";
+  // Per-scenario determinism (network/clock) merged over the global config, applied
+  // at context creation. detOpts is empty unless the scenario declares its own.
+  const gCfg = getContext().config;
+  const detOpts: { network?: NetworkRule[]; clock?: ClockConfig } = {
+    ...(scenario.network ? { network: effectiveNetwork(scenario.network, gCfg?.network) } : {}),
+    ...(scenario.clock ? { clock: effectiveClock(scenario.clock, gCfg?.clock) } : {}),
+  };
+  const hasDetOverride = Boolean(scenario.network || scenario.clock);
   // A pre-warmed session (fresh context, launched off the critical path) is
-  // usable only when this run needs no snapshot storageState; otherwise close it
-  // and launch with the snapshot. Isolation is unchanged either way.
+  // usable only when this run needs no snapshot storageState AND no per-scenario
+  // network/clock (the prewarmed context was built with the global config only);
+  // otherwise close it and launch fresh. Isolation is unchanged either way.
   const pre = opts.prewarmed?.();
   let browser: Browser;
-  if (pre && !snapshot) {
+  if (pre && !snapshot && !hasDetOverride) {
     browser = pre;
   } else {
     if (pre) await pre.close().catch(() => {});
-    browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace });
+    browser = await launchBrowser({ ...(snapshot ? { storageState: snapshot.storage_state } : {}), trace, ...detOpts });
   }
   if (scenario.on_dialog) browser.setDialogHandler(scenario.on_dialog);
   metrics.duration_ms.setup = Date.now() - launchStart;
@@ -316,7 +329,7 @@ export async function runScenario(
         await browser.close();
         resetForFallback(metrics);
         const relaunch = Date.now();
-        browser = await launchBrowser({ trace });
+        browser = await launchBrowser({ trace, ...detOpts });
         if (scenario.on_dialog) browser.setDialogHandler(scenario.on_dialog);
         metrics.duration_ms.setup += Date.now() - relaunch;
         if (await runDepsChain(browser)) await runOwnPlan(browser, false);

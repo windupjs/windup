@@ -22,6 +22,20 @@ export function validateNetwork(rules: unknown): string[] {
   return errors;
 }
 
+/**
+ * Merge a scenario's network rules over the global `config.network`: scenario
+ * rules come FIRST so they win on overlapping URLs (`matchRule` takes the first
+ * match), with global rules falling through. Returns `undefined` when neither
+ * side declares any (so the caller can leave the global config path untouched).
+ */
+export function effectiveNetwork(
+  scenarioRules: NetworkRule[] | undefined,
+  globalRules: NetworkRule[] | undefined,
+): NetworkRule[] | undefined {
+  if (!scenarioRules?.length) return globalRules;
+  return [...scenarioRules, ...(globalRules ?? [])];
+}
+
 /** The first rule whose method (if any) and url (substring or glob) match the request — or null. */
 export function matchRule(rules: NetworkRule[], url: string, method: string): NetworkRule | null {
   for (const rule of rules) {

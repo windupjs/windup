@@ -1,5 +1,6 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import path from "node:path";
+import type { ClockConfig } from "./clock.js";
 
 /**
  * Project configuration (windup.config.ts) — full SPEC-002 schema.
@@ -139,6 +140,9 @@ export interface WindupConfig {
    * hard-to-seed state — a 500, an empty list, a slow endpoint — without touching
    * the backend. Author-declared (the engine keeps zero site knowledge). The
    * FIRST rule whose `url` (substring or glob) and optional `method` match wins.
+   * Global here applies to every scenario hitting a matched URL; a single scenario
+   * can also set `network` in its JSON, merged over this (scenario rules win) so an
+   * error-state test is scoped to just that run.
    */
   network?: NetworkRule[];
   /**
@@ -146,8 +150,9 @@ export interface WindupConfig {
    * scenarios ("orders from today", a countdown) that otherwise drift at midnight.
    * Applied on every run, never cached. `now` freezes `Date`/`Date.now()` to a
    * fixed instant (it does not tick); `timezone` sets the browser's IANA zone.
+   * Also settable per scenario (field-merged over this global, scenario winning).
    */
-  clock?: { now?: string | number; timezone?: string };
+  clock?: ClockConfig;
   /**
    * Fail a scenario on runtime health signals observed DURING the run (#diagnostics),
    * even if every action verified. `consoleErrors` fails when the page logged a

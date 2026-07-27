@@ -18,6 +18,23 @@ export function validateClock(clock: unknown): string[] {
   return errors;
 }
 
+/**
+ * Merge a scenario's clock over the global `config.clock`, field by field
+ * (scenario `now`/`timezone` win, each falling back to the global value).
+ * Returns `undefined` when neither side declares a clock (so the caller can
+ * leave the global config path untouched).
+ */
+export function effectiveClock(
+  scenarioClock: ClockConfig | undefined,
+  globalClock: ClockConfig | undefined,
+): ClockConfig | undefined {
+  if (!scenarioClock) return globalClock;
+  return {
+    ...(( scenarioClock.now ?? globalClock?.now) !== undefined ? { now: scenarioClock.now ?? globalClock?.now } : {}),
+    ...(( scenarioClock.timezone ?? globalClock?.timezone) !== undefined ? { timezone: scenarioClock.timezone ?? globalClock?.timezone } : {}),
+  };
+}
+
 /** The fixed instant `config.clock.now` pins to, in epoch ms — or null when unset/unparseable. */
 export function frozenNowMs(clock: { now?: string | number } | undefined): number | null {
   if (!clock || clock.now === undefined) return null;
