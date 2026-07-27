@@ -7,6 +7,19 @@ import { resolveStartUrl } from "./start-url.js";
 import { validateNetwork } from "./network.js";
 import { validateClock } from "./clock.js";
 
+/**
+ * A scenario id becomes a file path (its `.json`, its cache entry) — reject any
+ * id that could escape the scenarios/cache dir. Subfolder ids ("auth/login")
+ * stay legal; `..` segments and absolute paths do not. Guards both the CLI/`--all`
+ * lookup id and the `scenario_id` FIELD (an untrusted committed scenario could
+ * otherwise write a cache file anywhere when you run its suite).
+ */
+export function assertSafeScenarioId(id: string): void {
+  if (!id || /\0/.test(id) || path.isAbsolute(id) || id.split(/[\\/]/).some((seg) => seg === "..")) {
+    throw new WindupError(`invalid scenario id "${id}": must be a relative name without ".." path segments`);
+  }
+}
+
 export type ResolvedScenario = Scenario & {
   start_url: string;
   /** true = no explicit start_url AND with depends_on: continues from the last dependency's final page (no initial goto). */
@@ -14,6 +27,7 @@ export type ResolvedScenario = Scenario & {
 };
 
 export async function loadScenario(id: string): Promise<ResolvedScenario> {
+  assertSafeScenarioId(id); // no path traversal via the lookup id
   const scenariosDir = getContext().paths.scenariosDir;
   // Fast path: <dir>/<id>.json (backward-compatible; also serves path-style
   // ids like "contacts/list"). Fallback: search subfolders for a file whose
@@ -33,6 +47,7 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (!scenario.scenario_id || !scenario.task) {
     throw new WindupError(`scenario "${id}" is invalid: "scenario_id" and "task" are required`);
   }
+  assertSafeScenarioId(scenario.scenario_id); // the id becomes a cache file path — no traversal from an untrusted file
   if (scenario.hints !== undefined && (!Array.isArray(scenario.hints) || scenario.hints.some((h) => typeof h !== "string"))) {
     throw new WindupError(`scenario "${id}" is invalid: "hints" must be a list of strings`);
   }

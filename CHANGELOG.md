@@ -1,8 +1,13 @@
 # Changelog
 
-All notable changes to `windupjs` are documented here. The project is in the
-`0.x` line (pre-1.0): it is usable and tested, but the API may still change
-between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
+All notable changes to `windupjs` are documented here. From **1.0** the project
+follows semantic versioning: the public CLI and programmatic API are stable, and
+breaking changes wait for a major bump. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
+
+## 1.0.0
+First stable release. The API and CLI surface built across the `0.x` line are now committed to under semver. No feature changes over 0.60 — this is the stability milestone plus one security hardening found in the pre-1.0 review:
+- **Security — scenario-id path-traversal fixed.** A scenario's `scenario_id` becomes a file path (its `.json`, its trajectory-cache entry). `loadScenario` now rejects an id with `..` path segments or an absolute path (subfolder ids like `auth/login` stay valid) — both on the lookup id and on the `scenario_id` field read from disk. Without this, running an **untrusted** windup project (`windup run --all` on a cloned repo) whose scenario declared `scenario_id: "../../…"` could write a cache file outside `.windup/`. New `assertSafeScenarioId`.
+- The 0.x line delivered: deterministic `$0` replay (LLM plans once, Playwright replays), self-healing re-plan, `depends_on` + session snapshots, cross-browser + device emulation, `config.network`/`clock` (global and per-scenario), richer `expect` asserts, runtime-health gates (console/5xx, web-vitals budgets), CI guard-rails (`--retries`/`--max-wall`/`--bail`/quarantine), the read-only diagnostics family (`why`/`explain`/`diff`/`badge`/`trends`), coverage → `suggest-scenarios`, and authoring by `windup new` **or** `windup record` (by demonstration). Secrets never enter scenarios, plans, the cache or git.
 
 ## 0.60.0
 - **Per-scenario `network` & `clock` (feedback).** The determinism knobs added in 0.54 lived only in `windup.config.ts` (global), so a request stub applied to *every* scenario that hit the endpoint — you couldn't force a `500` on one listing to test its error UI without breaking the scenario that reads the same list normally. Now a scenario can carry its **own** `network` and `clock` in its JSON, **merged over the global config with the scenario winning**: `{ "scenario_id": "erro-lista-500", "network": [{ "url": "v1/passports", "status": 500 }] }` stubs that endpoint **only for that run** — global stubs still fall through, and the next scenario's context is untouched. `clock` merges field-wise (scenario `now`/`timezone` override global). Both are applied at context creation (never cached — each error scenario has its own `scenario_id`, so its plan is planned *against* the stubbed page). A scenario carrying an override opts out of browser prewarming (the prewarmed context only knows the global config); everything else is unchanged. Validated live: the same page renders data under a global `200` stub, the error banner under a scenario `500` override merged over it, and data again in the next context (no leak). New `Scenario.network` / `Scenario.clock`; `effectiveNetwork`/`effectiveClock` merge helpers; `launchBrowser({ network, clock })`.
