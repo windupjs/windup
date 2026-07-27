@@ -141,6 +141,12 @@ nothing. NEVER invent a fragment/use to handle a dialog — it is a field on the
 stable, lasting signal — a row that appears/disappears from a list, a button \
 whose label changes, a heading or a URL — over transient toast/notification/snackbar \
 messages, which vanish after a few seconds and make the verification a race.
+- RICHER "expect" (use when it verifies the task more precisely than a bare selector): \
+"text_contains": { "selector": "#status", "text": "Active" } (the element's text contains a string); \
+"count": { "selector": ".order-row", "equals": 3 } (also "min"/"max" — how many elements match); \
+"not_visible": "#error-banner" (a selector is gone/hidden — good for "the error disappears"); \
+"attribute": { "selector": "#email", "name": "aria-invalid", "value": "false" }. Combine with \
+selector/url as needed; they all must hold (AND).
 - Do NOT include fields that do not apply to the action — never use an empty string as a value. \
 click has no value/value_ref/url. The action's "url" field exists ONLY on goto (navigation destination). \
 The URL expected after the action goes in expect.url (accepts glob).
@@ -327,7 +333,7 @@ ${lastErrors.join("\n")}
 # Rules
 - click/fill/wait_for require target.selector and target.description; goto requires url.
 - fill requires value OR value_ref (exactly one); do not use empty fields or fields that do not apply.
-- The LAST action must have the "expect" field (selector and/or url) proving the task was fulfilled.
+- The LAST action must have the "expect" field (selector, url, text_contains, count, not_visible and/or attribute) proving the task was fulfilled.
 - scenario_id "${scenario.scenario_id}", start_url "${scenario.start_url}", plan_version "0.1".
 
 Return the complete corrected plan. Respond ONLY with the plan JSON.`;

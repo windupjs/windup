@@ -48,6 +48,12 @@ function printRun(metrics: RunMetrics): void {
     if (v.length === 0) console.log("      a11y: no violations ✓");
     else console.log(`      a11y: ${v.length} violation(s): ${v.slice(0, 5).map((x) => `${x.id} (${x.impact}, ${x.nodes})`).join(", ")}${v.length > 5 ? " …" : ""}`);
   }
+  if (metrics.diagnostics) {
+    const ce = metrics.diagnostics.console_errors ?? [];
+    const fr = metrics.diagnostics.failed_responses ?? [];
+    if (ce.length) console.log(`      console errors: ${ce.length} — ${ce.slice(0, 3).map((t) => t.slice(0, 80)).join(" | ")}${ce.length > 3 ? " …" : ""}`);
+    if (fr.length) console.log(`      failed responses: ${fr.slice(0, 5).map((r) => `${r.status} ${r.url}`).join(", ")}${fr.length > 5 ? " …" : ""}`);
+  }
   if (metrics.requires?.length && metrics.result === "failed") {
     console.log(`      requires (data): ${metrics.requires.join("; ")}`);
   }
@@ -84,8 +90,12 @@ program
   .option("--max-wall <seconds>", "with --all: stop starting new scenarios once the suite's wall-clock exceeds this many seconds (a CI time budget); exits non-zero if the cap is hit")
   .option("--bail", "with --all: stop starting new scenarios after the first failure (fast feedback in PR checks)")
   .option("--no-prewarm", "disable pre-warming the next scenario's browser off the critical path (sequential --all)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean }) => {
+  .option("--fail-on-console", "fail a scenario if the page logged a console error or threw an uncaught exception during the run")
+  .option("--fail-on-5xx", "fail a scenario if any request got a 5xx response during the run (config.network stubs are excluded)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean; failOnConsole?: boolean; failOn5xx?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
+    if (opts.failOnConsole) process.env.WINDUP_FAIL_ON_CONSOLE = "1";
+    if (opts.failOn5xx) process.env.WINDUP_FAIL_ON_5XX = "1";
     if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
@@ -675,6 +685,26 @@ program
     const report = await computeCoverage();
     if (opts.json) console.log(JSON.stringify(report, null, 2));
     else printCoverage(report);
+  });
+
+program
+  .command("suggest-scenarios")
+  .description("Propose (write) scenarios for the site-map routes that have no scenario yet — one LLM call per route; drafts for you to review")
+  .option("--limit <n>", "author for at most N uncovered routes")
+  .option("--force", "overwrite an existing scenario file with the same id")
+  .option("--dry-run", "list the uncovered routes that would be authored, without calling the LLM or writing files")
+  .option("--llm <provider[:model]>", "LLM for authoring (e.g. openai:gpt-5-mini)")
+  .option("--json", "machine-readable output")
+  .action(async (opts: { limit?: string; force?: boolean; dryRun?: boolean; llm?: string; json?: boolean }) => {
+    if (opts.llm) process.env.WINDUP_LLM = opts.llm;
+    const { suggestScenarios, printSuggest } = await import("./suggest-scenarios.js");
+    const result = await suggestScenarios({
+      limit: opts.limit ? Number.parseInt(opts.limit, 10) : undefined,
+      force: opts.force,
+      dryRun: opts.dryRun,
+    });
+    if (opts.json) console.log(JSON.stringify(result, null, 2));
+    else printSuggest(result);
   });
 
 program

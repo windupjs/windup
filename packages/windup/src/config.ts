@@ -148,6 +148,16 @@ export interface WindupConfig {
    * fixed instant (it does not tick); `timezone` sets the browser's IANA zone.
    */
   clock?: { now?: string | number; timezone?: string };
+  /**
+   * Fail a scenario on runtime health signals observed DURING the run (#diagnostics),
+   * even if every action verified. `consoleErrors` fails when the page logged a
+   * console error or threw an uncaught exception; `http5xx` fails when a request
+   * got a 5xx response. `ignore` is a list of URL/text substrings to silence
+   * (known-noisy analytics, a third-party 500 you don't own). Requests answered by
+   * `config.network` are always excluded (a deliberate stub is not a real failure).
+   * The CLI flags `--fail-on-console` / `--fail-on-5xx` force these on for a run.
+   */
+  failOn?: { consoleErrors?: boolean; http5xx?: boolean; ignore?: string[] };
 }
 
 export interface NetworkRule {

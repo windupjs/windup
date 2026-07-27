@@ -24,6 +24,12 @@ class FakeBrowser implements Browser {
   armDialog(): void {}
   async isVisible(): Promise<boolean> { return true; }
   async inputValue(): Promise<string> { return ""; }
+  async textContent(): Promise<string> { return ""; }
+  async count(): Promise<number> { return 0; }
+  async getAttribute(): Promise<string | null> { return null; }
+  async waitForHidden(): Promise<boolean> { return true; }
+  consoleErrors(): string[] { return []; }
+  failedResponses(): { url: string; status: number; method: string }[] { return []; }
   async snapshotTree(): Promise<string> { return ""; }
   async interactiveElements(): Promise<string[]> { return ["btn"]; }
   async interactiveElementsRaw(): Promise<RawPageElement[]> { return [{ tag: "button" } as RawPageElement]; }

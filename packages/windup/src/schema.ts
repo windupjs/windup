@@ -58,6 +58,27 @@ export const PLAN_JSON_SCHEMA = {
                   value: { type: "string" },
                 },
               },
+              text_contains: {
+                type: "object",
+                required: ["selector", "text"],
+                properties: { selector: { type: "string" }, text: { type: "string" } },
+              },
+              count: {
+                type: "object",
+                required: ["selector"],
+                properties: {
+                  selector: { type: "string" },
+                  equals: { type: "integer", minimum: 0 },
+                  min: { type: "integer", minimum: 0 },
+                  max: { type: "integer", minimum: 0 },
+                },
+              },
+              not_visible: { type: "string" },
+              attribute: {
+                type: "object",
+                required: ["selector", "name", "value"],
+                properties: { selector: { type: "string" }, name: { type: "string" }, value: { type: "string" } },
+              },
             },
           },
           timeout_ms: { type: "integer", minimum: 100, maximum: 30000 },
@@ -114,6 +135,27 @@ export const PLAN_GEMINI_SCHEMA = {
                   selector: { type: "string" },
                   value: { type: "string" },
                 },
+              },
+              text_contains: {
+                type: "object",
+                required: ["selector", "text"],
+                properties: { selector: { type: "string" }, text: { type: "string" } },
+              },
+              count: {
+                type: "object",
+                required: ["selector"],
+                properties: {
+                  selector: { type: "string" },
+                  equals: { type: "integer" },
+                  min: { type: "integer" },
+                  max: { type: "integer" },
+                },
+              },
+              not_visible: { type: "string" },
+              attribute: {
+                type: "object",
+                required: ["selector", "name", "value"],
+                properties: { selector: { type: "string" }, name: { type: "string" }, value: { type: "string" } },
               },
             },
           },
@@ -175,8 +217,11 @@ export function validatePlan(data: unknown): ValidationResult {
   const last = plan.actions[plan.actions.length - 1];
   const lastExpect = last.expect ?? {};
   // type=use ends in a fragment whose last action carries its own postcondition.
-  if (last.type !== "use" && !lastExpect.selector && !lastExpect.url && !lastExpect.selector_value) {
-    errors.push(`action ${last.id}: the final action must declare expect (selector, url or selector_value)`);
+  const hasAnyExpect =
+    lastExpect.selector || lastExpect.url || lastExpect.selector_value ||
+    lastExpect.text_contains || lastExpect.count || lastExpect.not_visible || lastExpect.attribute;
+  if (last.type !== "use" && !hasAnyExpect) {
+    errors.push(`action ${last.id}: the final action must declare expect (selector, url, selector_value, text_contains, count, not_visible or attribute)`);
   }
 
   return { ok: errors.length === 0, errors };

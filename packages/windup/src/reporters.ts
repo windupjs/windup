@@ -76,6 +76,7 @@ export function jsonReport(results: RunMetrics[], opts: { wall_ms?: number; conc
     ...(r.requires?.length ? { requires: r.requires } : {}),
     ...(r.summary ? { summary: r.summary.text } : {}),
     ...(r.suggestion ? { suggestion: r.suggestion.text } : {}),
+    ...(r.diagnostics ? { diagnostics: r.diagnostics } : {}),
   }));
   return `${JSON.stringify({ summary, cases }, null, 2)}\n`;
 }
@@ -171,9 +172,15 @@ ${r.actions
           : `<div class="a11y-ok">a11y ✓</div>`)
         : "";
       const flaky = r.flaky ? ` <span class="badge flaky" title="passed only after ${(r.attempts ?? 2) - 1} retry(ies) — a flake to investigate">FLAKY ${r.attempts}×</span>` : "";
+      const diag = r.diagnostics && ((r.diagnostics.console_errors?.length ?? 0) + (r.diagnostics.failed_responses?.length ?? 0) > 0)
+        ? `<details class="a11y"><summary>runtime: ${(r.diagnostics.console_errors?.length ?? 0)} console error(s), ${(r.diagnostics.failed_responses?.length ?? 0)} failed response(s)</summary><div class="bkleg">${[
+            ...(r.diagnostics.console_errors ?? []).map((t) => `console: ${esc(t.slice(0, 200))}`),
+            ...(r.diagnostics.failed_responses ?? []).map((x) => `${x.status} ${esc(x.method)} ${esc(x.url)}`),
+          ].join("<br>")}</div></details>`
+        : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span>${flaky}</td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${diag}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>

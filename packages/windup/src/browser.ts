@@ -42,6 +42,14 @@ export interface Browser {
   /** Wait until the network settles (no requests for 500ms), capped at timeoutMs. Best-effort — resolves (never throws) on timeout. */
   waitForIdle(timeoutMs: number): Promise<void>;
   inputValue(selector: string): Promise<string>;
+  /** Visible text content of the first visible match (empty string if none). */
+  textContent(selector: string): Promise<string>;
+  /** How many elements match the selector (all matches, visible or not). */
+  count(selector: string): Promise<number>;
+  /** An attribute value on the first visible match (null if absent). */
+  getAttribute(selector: string, name: string): Promise<string | null>;
+  /** Wait until the selector is absent/hidden (frame-safe). false on timeout. */
+  waitForHidden(selector: string, timeoutMs: number): Promise<boolean>;
   url(): string;
   /** Accessibility tree of the current page, as text (planner context). */
   snapshotTree(): Promise<string>;
@@ -59,6 +67,10 @@ export interface Browser {
   seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void>;
   /** Run an axe-core accessibility audit on the current page (needs axe-core installed). Returns the violations. */
   runAxe(): Promise<A11yViolation[]>;
+  /** Console errors + uncaught page exceptions observed since launch (for config.failOn / --fail-on-console). */
+  consoleErrors(): string[];
+  /** 5xx responses observed since launch, excluding config.network stubs and failOn.ignore (for --fail-on-5xx). */
+  failedResponses(): FailedResponse[];
   /** Stop the Playwright trace and write it to `path` (a .zip openable in the trace viewer). No-op if tracing wasn't started. */
   saveTrace(path: string): Promise<void>;
   /** Full-page screenshot to `path`. */
@@ -73,6 +85,12 @@ export interface A11yViolation {
   nodes: number;
 }
 
+export interface FailedResponse {
+  url: string;
+  status: number;
+  method: string;
+}
+
 const ACTION_TIMEOUT_MS = () => Number.parseInt(process.env.WINDUP_ACTION_TIMEOUT_MS ?? "10000", 10) || 10_000;
 
 class PlaywrightSession implements Browser {
@@ -80,6 +98,41 @@ class PlaywrightSession implements Browser {
     private readonly context: BrowserContext,
     private readonly page: Page,
   ) {}
+
+  private readonly consoleErrs: string[] = [];
+  private readonly failedResps: FailedResponse[] = [];
+
+  /**
+   * Attach passive listeners for console errors, uncaught exceptions and 5xx
+   * responses. Called once at launch. A 5xx that config.network stubbed (a
+   * deliberate test of the error state) is excluded, as is anything matching
+   * failOn.ignore. `requestfailed` is intentionally NOT listened to — a
+   * config.network `abort` triggers it, which would be a false positive.
+   */
+  captureDiagnostics(): void {
+    const cfg = (() => { try { return getContext().config; } catch { return undefined; } })();
+    const ignore = cfg?.failOn?.ignore ?? [];
+    const ignored = (url: string) => ignore.some((s) => url.includes(s));
+    const isStub = (url: string, method: string) => Boolean(cfg?.network?.length && matchRule(cfg.network, url, method));
+    this.page.on("console", (m) => { if (m.type() === "error") this.consoleErrs.push(m.text()); });
+    this.page.on("pageerror", (e) => this.consoleErrs.push(e.message));
+    this.page.on("response", (r) => {
+      const status = r.status();
+      if (status < 500) return;
+      const url = r.url();
+      const method = r.request().method();
+      if (isStub(url, method) || ignored(url)) return;
+      this.failedResps.push({ url, status, method });
+    });
+  }
+
+  consoleErrors(): string[] {
+    return this.consoleErrs;
+  }
+
+  failedResponses(): FailedResponse[] {
+    return this.failedResps;
+  }
 
   /**
    * Targeting policy: the first VISIBLE match, not the first in the DOM.
@@ -178,6 +231,29 @@ class PlaywrightSession implements Browser {
 
   async inputValue(selector: string): Promise<string> {
     return this.visible(selector).inputValue({ timeout: ACTION_TIMEOUT_MS() });
+  }
+
+  async textContent(selector: string): Promise<string> {
+    return (await this.visible(selector).textContent({ timeout: ACTION_TIMEOUT_MS() })) ?? "";
+  }
+
+  async count(selector: string): Promise<number> {
+    // Raw locator (no visible filter): a count assertion means "how many match".
+    return this.page.locator(selector).count();
+  }
+
+  async getAttribute(selector: string, name: string): Promise<string | null> {
+    return this.visible(selector).getAttribute(name, { timeout: ACTION_TIMEOUT_MS() });
+  }
+
+  async waitForHidden(selector: string, timeoutMs: number): Promise<boolean> {
+    try {
+      // "hidden" resolves when the element is hidden OR detached — the negative of visible.
+      await this.page.locator(selector).first().waitFor({ state: "hidden", timeout: timeoutMs });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   url(): string {
@@ -390,7 +466,9 @@ export async function launchBrowser(opts: { storageState?: unknown; trace?: bool
     }
   }
   const page = await context.newPage();
-  return new PlaywrightSession(context, page);
+  const session = new PlaywrightSession(context, page);
+  session.captureDiagnostics(); // passive console/5xx listeners for config.failOn / --fail-on-*
+  return session;
 }
 
 /** The active windup config, or undefined when no context is set (e.g. isolated unit tests). */

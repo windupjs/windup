@@ -121,4 +121,28 @@ describe("validatePlan", () => {
     plan.actions = Array.from({ length: 31 }, (_, i) => ({ ...template, id: `a${i + 1}` }));
     expect(validatePlan(plan).ok).toBe(false);
   });
+
+  it("accepts richer expect kinds on the final action", () => {
+    for (const expectField of [
+      { text_contains: { selector: "#status", text: "Active" } },
+      { count: { selector: ".row", equals: 3 } },
+      { count: { selector: ".row", min: 1, max: 10 } },
+      { not_visible: "#error" },
+      { attribute: { selector: "#email", name: "aria-invalid", value: "false" } },
+    ]) {
+      const plan = examplePlan();
+      plan.actions[2].expect = expectField;
+      const result = validatePlan(plan);
+      expect(result.errors).toEqual([]);
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("does NOT reject a plan whose only final assertion is a new kind", () => {
+    const plan = examplePlan();
+    plan.actions[2].expect = { count: { selector: ".inventory_item", equals: 6 } };
+    const result = validatePlan(plan);
+    expect(result.ok).toBe(true);
+    expect(result.errors.join()).not.toContain("final action");
+  });
 });

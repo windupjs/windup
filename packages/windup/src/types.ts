@@ -10,10 +10,36 @@ export interface ExpectSelectorValue {
   value: string;
 }
 
+export interface ExpectTextContains {
+  selector: string;
+  text: string;
+}
+
+export interface ExpectCount {
+  selector: string;
+  equals?: number;
+  min?: number;
+  max?: number;
+}
+
+export interface ExpectAttribute {
+  selector: string;
+  name: string;
+  value: string;
+}
+
 export interface Expect {
   selector?: string;
   url?: string;
   selector_value?: ExpectSelectorValue;
+  /** A selector's visible text CONTAINS this string. */
+  text_contains?: ExpectTextContains;
+  /** How many elements match a selector (equals / min / max — at least one). */
+  count?: ExpectCount;
+  /** A selector is absent or hidden (the negative of `selector`). */
+  not_visible?: string;
+  /** A selector's attribute equals this value. */
+  attribute?: ExpectAttribute;
 }
 
 export interface Action {
@@ -147,7 +173,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden" | "diagnostics";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 
@@ -205,6 +231,8 @@ export interface RunMetrics {
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
   /** #a11y — accessibility violations on the final page (axe-core), when `--a11y` ran. Informational; never fails the run. */
   a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
+  /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. */
+  diagnostics?: { console_errors?: string[]; failed_responses?: Array<{ url: string; status: number; method: string }> };
   /** --trace — paths (relative to the report dir) to a saved Playwright trace / screenshot captured on a FAILED run. */
   artifacts?: { trace?: string; screenshot?: string };
   /** Executed plan (diagnostic; absent if generation failed before a plan existed). */

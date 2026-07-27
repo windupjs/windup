@@ -39,7 +39,11 @@ export async function verify(
   timeoutMs: number,
 ): Promise<VerifyResult> {
   const started = Date.now();
-  if (!expect || (!expect.selector && !expect.url && !expect.selector_value)) {
+  if (
+    !expect ||
+    (!expect.selector && !expect.url && !expect.selector_value &&
+      !expect.text_contains && !expect.count && !expect.not_visible && !expect.attribute)
+  ) {
     return { ok: true, verify_ms: 0, failed_condition: null };
   }
 
@@ -80,6 +84,65 @@ export async function verify(
       if (actual === value) break;
       if (Date.now() + POLL_INTERVAL_MS > deadline) {
         return fail(`selector_value: ${selector} expected "${value}", got "${actual ?? "(missing)"}"`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+  }
+
+  if (expect.text_contains) {
+    const { selector, text } = expect.text_contains;
+    while (true) {
+      let actual = "";
+      try {
+        actual = await browser.textContent(selector);
+      } catch {
+        actual = "";
+      }
+      if (actual.includes(text)) break;
+      if (Date.now() + POLL_INTERVAL_MS > deadline) {
+        return fail(`text_contains: ${selector} expected to contain "${text}", got "${actual.slice(0, 80)}"`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+  }
+
+  if (expect.count) {
+    const { selector, equals, min, max } = expect.count;
+    const ok = (n: number) => (equals === undefined || n === equals) && (min === undefined || n >= min) && (max === undefined || n <= max);
+    while (true) {
+      let n = -1;
+      try {
+        n = await browser.count(selector);
+      } catch {
+        n = -1;
+      }
+      if (n >= 0 && ok(n)) break;
+      if (Date.now() + POLL_INTERVAL_MS > deadline) {
+        const want = [equals !== undefined ? `=${equals}` : "", min !== undefined ? `>=${min}` : "", max !== undefined ? `<=${max}` : ""].filter(Boolean).join(" ");
+        return fail(`count: ${selector} expected ${want}, got ${n < 0 ? "(error)" : n}`);
+      }
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+  }
+
+  if (expect.not_visible) {
+    if (!(await browser.waitForHidden(expect.not_visible, remaining()))) {
+      return fail(`not_visible: ${expect.not_visible} is still visible`);
+    }
+  }
+
+  if (expect.attribute) {
+    const { selector, name, value } = expect.attribute;
+    while (true) {
+      let actual: string | null = null;
+      try {
+        actual = await browser.getAttribute(selector, name);
+      } catch {
+        actual = null;
+      }
+      if (actual === value) break;
+      if (Date.now() + POLL_INTERVAL_MS > deadline) {
+        return fail(`attribute: ${selector}[${name}] expected "${value}", got "${actual ?? "(missing)"}"`);
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
