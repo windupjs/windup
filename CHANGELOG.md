@@ -4,6 +4,9 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.59.0
+- **`windup record` — author a scenario by demonstration.** Opens a **headful** browser at your app; you click through the flow, mark the verification with a floating toolbar ("◉ marcar verificação" then click the element to assert), and hit "■ finalizar" (or Ctrl-C). Windup writes the **scenario file** *and* **caches the recorded plan**, so `windup run <id>` replays it **$0, no LLM** — and if the cache ever invalidates, it re-plans from the task like any scenario. The inverse of `windup new`: show it instead of describing it. Captured selectors mirror the engine's own priority (`#id → [data-testid] → [name] → type → role/text`) with an accessible `description` fallback; a typed **password never lands in the plan** — it's registered to `.env.local` (gitignored) and emitted as a `value_ref`. Verification is either the element you mark (visible / text-contains) or, if you mark nothing, the final page's URL. It's a local dev tool (interactive, headful) — needs a TTY, not CI. Validated end-to-end: a real login recording replays at $0 (cache hit) with the password as a `value_ref`. New module `record.ts`; `Browser.startRecording`; `writeScenarioFile` extracted from authoring for reuse.
+
 ## 0.58.0
 Runtime realism — test at real device viewports and gate on real page performance. Both tested and validated live (real-browser).
 

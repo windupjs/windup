@@ -75,6 +75,8 @@ export interface Browser {
   failedResponses(): FailedResponse[];
   /** Final-page web vitals (navigation timing + FCP + observed LCP/CLS). LCP/CLS are 0/null unless observers were injected at launch. */
   webVitals(): Promise<import("./vitals.js").WebVitals>;
+  /** Install the interactive recorder (`windup record`): a floating toolbar + capture listeners that report each interaction. Call BEFORE the first goto. */
+  startRecording(onEvent: (e: import("./record.js").RecordEvent) => void): Promise<void>;
   /** Stop the Playwright trace and write it to `path` (a .zip openable in the trace viewer). No-op if tracing wasn't started. */
   saveTrace(path: string): Promise<void>;
   /** Full-page screenshot to `path`. */
@@ -141,6 +143,14 @@ class PlaywrightSession implements Browser {
   async webVitals(): Promise<import("./vitals.js").WebVitals> {
     const { READ_VITALS_SCRIPT } = await import("./vitals.js");
     return this.page.evaluate(READ_VITALS_SCRIPT) as Promise<import("./vitals.js").WebVitals>;
+  }
+
+  async startRecording(onEvent: (e: import("./record.js").RecordEvent) => void): Promise<void> {
+    const { RECORD_INIT_SCRIPT } = await import("./record.js");
+    // The exposed binding + init script must be in place BEFORE navigation so the
+    // injected listeners can call back on the very first page.
+    await this.context.exposeBinding("__windupRecord", (_src, ev) => onEvent(ev as import("./record.js").RecordEvent));
+    await this.context.addInitScript(RECORD_INIT_SCRIPT);
   }
 
   /**

@@ -192,6 +192,20 @@ npx windup new "log in and create a cost center named Marketing" --validate
 #   ✓ validated in 2 attempts — the plan is cached
 ``` **Credentials in the instruction never land in the scenario file**: they are auto-registered as a named account (values in `.env.local`, mapping in `windup.credentials.json`) and the task references the account — see Test credentials below. Flags: `--id <id>`, `--force` (overwrite), `--llm <provider[:model]>`. The output is a file for **you to review, edit and commit** — authoring is assisted, the test remains yours. One LLM call (~$0.001), recorded in the `windup costs` ledger under `authoring`.
 
+### Author by demonstration (`windup record`)
+
+The inverse of `windup new`: instead of *describing* the flow, **show it**.
+
+```bash
+npx windup record --url http://localhost:3000
+```
+
+Windup opens a **headful** browser at your app. Click through the flow; a small floating toolbar sits at the bottom:
+- **◉ marcar verificação** — then click the element the test should verify (its visibility, or its text). Mark nothing and Windup verifies the final page's URL.
+- **■ finalizar** — stop (Ctrl-C also saves).
+
+On finish it writes the **scenario file** *and* **caches the recorded plan**, so `npx windup run <id>` replays it immediately at **$0, no LLM**. If the cache later invalidates (a real UI change), it self-heals by re-planning from the task, like any scenario. Recorded selectors follow the engine's own priority (`#id → [data-testid] → [name] → type → role/text`) with an accessible description as fallback — a starting point you can edit. A **typed password never enters the plan**: it's registered to `.env.local` (gitignored) and the action stores a `value_ref`. It's a local dev tool — interactive and headful, so it needs a TTY (not CI). Flags: `--url <start>` (defaults to `config.baseUrl`), `--id <id>`, `--force`, `--no-llm` (skip the one-call task summary — a task is synthesized from the flow).
+
 ## Test credentials
 
 A scenario says *"log in as the admin account"* — never the password. Credentials never live in scenario files, plans, the cache or git; only **references** do. Where things are stored:
@@ -410,6 +424,7 @@ Example GitHub Actions step:
 |---|---|
 | `windup init` | Create `windup.config.ts`, `.windup/` (gitignored) and an example scenario |
 | `windup new "<instruction>" [--id x] [--force] [--depends-on ids] [--validate]` | Generate a scenario from a rough instruction; `--validate` runs and refines it until it passes (≤3 attempts) |
+| `windup record [id] [--url <start>] [--force] [--no-llm]` | Author by demonstration: drive a headful browser, mark a verification with the toolbar, finish — writes the scenario + caches the recorded plan ($0 replay). Needs a TTY |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |
 | `windup run --all` | Run every scenario — CI mode |
 | `windup run --all --changed` / `--since <ref>` | Incremental CI: run only scenarios a change affects (working tree vs `HEAD`, or vs a git ref). Falls back to the full suite when impact can't be proven — never a silent false green |

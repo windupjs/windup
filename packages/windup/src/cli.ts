@@ -421,6 +421,20 @@ program
   });
 
 program
+  .command("record [id]")
+  .description("Author by demonstration: open a headful browser, click through the flow, mark a verification with the toolbar, finish — Windup writes the scenario + caches the recorded plan ($0 replay)")
+  .option("--url <start>", "start URL (default: config.baseUrl)")
+  .option("--force", "overwrite if a scenario with the same id exists")
+  .option("--no-llm", "don't call an LLM to summarize the task (a task is synthesized from the flow)")
+  .option("--llm <provider[:model]>", "LLM used only to summarize the task from the recorded flow")
+  .action(async (id: string | undefined, opts: { url?: string; force?: boolean; llm?: string | boolean }) => {
+    if (typeof opts.llm === "string") process.env.WINDUP_LLM = opts.llm;
+    if (!process.stdout.isTTY) { console.error("windup record needs an interactive terminal (it opens a browser you drive)."); process.exitCode = 2; return; }
+    const { runRecord } = await import("./record.js");
+    await runRecord({ url: opts.url, id, force: opts.force, useLlm: opts.llm !== false });
+  });
+
+program
   .command("new <instruction...>")
   .description("Generate a scenario from a rough instruction — the LLM acts as a test author, enriching it with site-map knowledge and the project manifest")
   .option("--id <id>", "scenario id (default: derived from the flow)")

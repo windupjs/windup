@@ -103,7 +103,7 @@ ${knowledgeSection}${manifestSection}${credsSection}${existingSection}
 Respond only with the scenario JSON.`;
 }
 
-function kebab(text: string): string {
+export function kebab(text: string): string {
   return text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -111,6 +111,41 @@ function kebab(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
+}
+
+/** Scenario ids already on disk (filenames minus `.json`). */
+async function existingScenarioIds(): Promise<string[]> {
+  try {
+    return (await readdir(getContext().paths.scenariosDir)).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Writes a scenario JSON to the scenarios dir (pretty, trailing newline). Shared
+ * by `windup new` and `windup record`. Unless `uniquify` is false, the id gets a
+ * `-N` suffix to avoid colliding with an existing file; `force` allows overwrite.
+ * Returns the written path.
+ */
+export async function writeScenarioFile(
+  scenario: AuthoredScenario,
+  opts: { force?: boolean; uniquify?: boolean; existingIds?: string[] } = {},
+): Promise<string> {
+  const ctx = getContext();
+  await mkdir(ctx.paths.scenariosDir, { recursive: true });
+  if (opts.uniquify !== false && !opts.force) {
+    const existing = opts.existingIds ?? (await existingScenarioIds());
+    let candidate = scenario.scenario_id;
+    for (let n = 2; existing.includes(candidate); n++) candidate = `${scenario.scenario_id}-${n}`;
+    scenario.scenario_id = candidate;
+  }
+  const file = path.join(ctx.paths.scenariosDir, `${scenario.scenario_id}.json`);
+  if (existsSync(file) && !opts.force) {
+    throw new WindupError(`scenario "${scenario.scenario_id}" already exists (${file}) \u2014 use --force to overwrite or --id for another name`);
+  }
+  await writeFile(file, `${JSON.stringify(scenario, null, 2)}\n`);
+  return file;
 }
 
 /**
@@ -277,18 +312,8 @@ export async function generateScenario(
     scenario.start_url = "/";
   }
   if (scenario.hints && scenario.hints.length === 0) delete scenario.hints;
-  if (!opts.force && !opts.id) {
-    let candidate = scenario.scenario_id;
-    for (let n = 2; existingIds.includes(candidate); n++) candidate = `${scenario.scenario_id}-${n}`;
-    scenario.scenario_id = candidate;
-  }
-
-  await mkdir(ctx.paths.scenariosDir, { recursive: true });
-  const file = path.join(ctx.paths.scenariosDir, `${scenario.scenario_id}.json`);
-  if (existsSync(file) && !opts.force) {
-    throw new WindupError(`scenario "${scenario.scenario_id}" already exists (${file}) — use --force to overwrite or --id for another name`);
-  }
-  await writeFile(file, `${JSON.stringify(scenario, null, 2)}\n`);
+  // uniquify only when the id was NOT pinned by --id (mirrors the prior behavior).
+  const file = await writeScenarioFile(scenario, { force: opts.force, uniquify: !opts.id, existingIds });
 
   // Authoring spend goes into the SAME ledger (windup costs), like the scan.
   const cost = estimateCostUsd(tokens, llm.model, llm.provider);
