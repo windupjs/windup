@@ -4,6 +4,14 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.57.0
+Two more from the backlog — a ledger-history view and a flaky-quarantine gate — each tested and validated end-to-end.
+
+- **`windup trends [scenario]`** — historical **pass-rate, cost and duration** per scenario, straight from the run ledger (no LLM). No argument → a per-scenario table sorted **worst pass-rate first** (problems at the top) with a pass/fail sparkline of recent runs; a scenario id → its runs **over time** (chronological), `--last N` to trim. Joins the read-only diagnostic family (`why`/`explain`/`diff`/`badge`), all built on the shared `ledger.ts` reader.
+- **Flaky quarantine — `scenario.quarantine: true`.** Mark a known-flaky scenario and it still **runs and reports**, but its failure **does not fail the suite** (non-zero exit) — so one persistent flake stops blocking the build while you fix it, instead of the usual bad choices (delete the test, or let it redden every run). Surfaced, never hidden: a `🔶 N quarantined scenario(s) failed but did NOT fail the build` line on the console, a `QUARANTINED` badge in the HTML report, and `quarantined: true` in the JSON. New `Scenario.quarantine`, `RunMetrics.quarantined`.
+
+New modules `trends.ts`; `Scenario.quarantine` / `RunMetrics.quarantined`; `quarantinedScenarioIds()`.
+
 ## 0.56.0
 Verificação mais forte + inteligência de cobertura — três recursos, cada um testado e validado ao vivo (real-browser).
 

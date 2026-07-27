@@ -149,6 +149,8 @@ export interface Scenario {
   on_dialog?: "accept" | "dismiss";
   /** Force one interaction per action: tell the planner never to combine a reveal/expand click with the action it uncovers (multi-click flows behind accordions/menus). */
   atomic_steps?: boolean;
+  /** Quarantine a known-flaky scenario: it still runs and reports, but its failure does NOT fail the suite (non-zero exit). Surfaced prominently so it isn't forgotten. */
+  quarantine?: boolean;
 }
 
 export type CacheStatus = "active" | "stale";
@@ -258,6 +260,8 @@ export interface RunMetrics {
   attempts?: number;
   /** `--retries` — true when the scenario ultimately PASSED but needed more than one attempt (a flake worth surfacing). */
   flaky?: boolean;
+  /** `scenario.quarantine` — a failure here is reported but does NOT fail the suite (non-blocking). */
+  quarantined?: boolean;
 }
 
 export const DEFAULT_TIMEOUT_MS = 5000;

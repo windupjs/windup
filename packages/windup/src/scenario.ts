@@ -63,6 +63,9 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (scenario.on_dialog !== undefined && scenario.on_dialog !== "accept" && scenario.on_dialog !== "dismiss") {
     throw new WindupError(`scenario "${id}": "on_dialog" must be "accept" or "dismiss"`);
   }
+  if (scenario.quarantine !== undefined && typeof scenario.quarantine !== "boolean") {
+    throw new WindupError(`scenario "${id}": "quarantine" must be a boolean`);
+  }
   if (scenario.seed !== undefined) {
     const seed = scenario.seed as { localStorage?: unknown; sessionStorage?: unknown; origin?: unknown };
     const okMap = (v: unknown) => v === undefined || (typeof v === "object" && v !== null && Object.values(v).every((x) => typeof x === "string"));
@@ -148,6 +151,21 @@ export async function scenarioTagsById(): Promise<Map<string, string[]>> {
     }
   }
   return map;
+}
+
+/** Set of scenario_ids marked `quarantine: true` (their failures don't fail the suite). */
+export async function quarantinedScenarioIds(): Promise<Set<string>> {
+  const dir = getContext().paths.scenariosDir;
+  const set = new Set<string>();
+  for (const file of await listScenarioFiles(dir)) {
+    try {
+      const s = JSON.parse(await readFile(file, "utf8")) as Scenario;
+      if (s.scenario_id && s.quarantine) set.add(s.scenario_id);
+    } catch {
+      // unreadable/invalid — skip
+    }
+  }
+  return set;
 }
 
 /** Map scenario_id → absolute path of its file (for change-impact selection). */

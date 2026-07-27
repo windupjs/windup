@@ -41,7 +41,7 @@ function printRun(metrics: RunMetrics): void {
       `cost=$${metrics.estimated_cost_usd}`,
   );
   if (metrics.failure) {
-    console.log(`      failure [${metrics.failure.kind}] action=${metrics.failure.action_id ?? "-"}: ${metrics.failure.message}`);
+    console.log(`      failure [${metrics.failure.kind}] action=${metrics.failure.action_id ?? "-"}: ${metrics.failure.message}${metrics.quarantined ? "  (quarantined — not blocking)" : ""}`);
   }
   if (metrics.a11y) {
     const v = metrics.a11y.violations;
@@ -313,7 +313,22 @@ program
     if (flakyCount > 0 && !opts.stream) {
       console.log(`\n↻ ${flakyCount} scenario(s) passed only on retry (flaky): ${results.filter((m) => m.flaky).map((m) => m.scenario_id).join(", ")}`);
     }
+
+    // Mark quarantined results (scenario.quarantine): they run and report, but a
+    // failure here does NOT fail the suite — surfaced, never silently dropped.
+    try {
+      const { quarantinedScenarioIds } = await import("./scenario.js");
+      const q = await quarantinedScenarioIds();
+      for (const m of results) if (q.has(m.scenario_id)) m.quarantined = true;
+    } catch {
+      // best-effort — no quarantine info means nothing is quarantined
+    }
     const failures = results.filter((m) => m.result !== "passed").length;
+    const blockingFailures = results.filter((m) => m.result !== "passed" && !m.quarantined).length;
+    const quarantinedFailures = failures - blockingFailures;
+    if (quarantinedFailures > 0 && !opts.stream) {
+      console.warn(`\n🔶 ${quarantinedFailures} quarantined scenario(s) failed but did NOT fail the build: ${results.filter((m) => m.result !== "passed" && m.quarantined).map((m) => m.scenario_id).join(", ")} — fix or un-quarantine them.`);
+    }
 
     // Attach each result's module (its folder) for the suite report + grouping.
     try {
@@ -347,7 +362,7 @@ program
       const file = await writeReport(results, opts.reporter as "junit" | "json" | "html", opts.reportFile, suiteOpts);
       console.log(`report (${opts.reporter}): ${file}`);
     }
-    process.exitCode = failures === 0 && skipped === 0 ? 0 : 1;
+    process.exitCode = blockingFailures === 0 && skipped === 0 ? 0 : 1;
     } finally {
       await runSuiteTeardown(); // always — even if a scenario/reporter threw
     }
@@ -615,6 +630,18 @@ program
     const d = await buildDiff(scenario);
     if (opts.json) console.log(JSON.stringify(d, null, 2));
     else printDiff(d);
+  });
+
+program
+  .command("trends [scenario]")
+  .description("Historical pass-rate, cost and duration per scenario from the run ledger (worst first); pass a scenario id for its runs over time. No LLM")
+  .option("--last <n>", "with a scenario: only the last N runs")
+  .option("--json", "machine-readable output")
+  .action(async (scenario: string | undefined, opts: { last?: string; json?: boolean }) => {
+    const { buildTrends, printTrends } = await import("./trends.js");
+    const report = await buildTrends({ scenario, last: opts.last ? Number.parseInt(opts.last, 10) : undefined });
+    if (opts.json) console.log(JSON.stringify(report, null, 2));
+    else printTrends(report);
   });
 
 program
