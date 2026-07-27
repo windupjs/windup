@@ -431,7 +431,7 @@ program
   .option("--llm <provider[:model]>", "LLM used only to summarize the task from the recorded flow")
   .action(async (id: string | undefined, opts: { url?: string; force?: boolean; llm?: string | boolean }) => {
     if (typeof opts.llm === "string") process.env.WINDUP_LLM = opts.llm;
-    if (!process.stdout.isTTY) { console.error("windup record needs an interactive terminal (it opens a browser you drive)."); process.exitCode = 2; return; }
+    if (!process.stdout.isTTY) { console.error("windup record needs an interactive terminal (it opens a browser you drive).\n  Under an agent/wrapper with no TTY, allocate a PTY:  script -q /dev/null npx windup record"); process.exitCode = 2; return; }
     const { runRecord } = await import("./record.js");
     await runRecord({ url: opts.url, id, force: opts.force, useLlm: opts.llm !== false });
   });

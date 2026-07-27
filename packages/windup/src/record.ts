@@ -9,9 +9,9 @@ import { resolveStartUrl, startPath } from "./start-url.js";
 import type { Action, Plan, Scenario } from "./types.js";
 
 export type RecordEvent =
-  | { kind: "click"; selector: string; description: string; url: string }
-  | { kind: "fill"; selector: string; description: string; value?: string; value_ref?: string; secret?: boolean; url: string }
-  | { kind: "assert"; selector: string; description: string; text?: string; url: string }
+  | { kind: "click"; selector: string; description: string; url: string; unstable?: boolean }
+  | { kind: "fill"; selector: string; description: string; value?: string; value_ref?: string; secret?: boolean; url: string; unstable?: boolean }
+  | { kind: "assert"; selector: string; description: string; text?: string; url: string; unstable?: boolean }
   | { kind: "finish" };
 
 /**
@@ -27,29 +27,57 @@ export const RECORD_INIT_SCRIPT = `(() => {
   var assertMode = false;
   var send = function (e) { try { window.__windupRecord(e); } catch (_) {} };
 
+  // Text that carries a dynamic value (a count, a price) must never become a text anchor — "1Seu carrinhoR$ 35,00Ver carrinho" breaks the moment the value changes.
+  function looksDynamic(t) { return /\\d{2,}|[R$€£]\\s*\\d|\\d+[.,]\\d/.test(t); }
+  // The element's OWN direct text, not the concatenated textContent of its descendants (which pulls in sibling counts/prices).
+  function ownText(el) {
+    var direct = "";
+    for (var i = 0; i < el.childNodes.length; i++) { var n = el.childNodes[i]; if (n.nodeType === 3) direct += n.textContent; }
+    direct = direct.replace(/\\s+/g, " ").trim();
+    return direct || (el.textContent || "").replace(/\\s+/g, " ").trim();
+  }
+  function isUnique(sel, target) { try { var m = document.querySelectorAll(sel); return m.length === 1 && m[0] === target; } catch (_) { return false; } }
+  // "tag >> text=…" is Playwright syntax, not CSS — querySelectorAll can't validate it, so count same-tag elements whose own text matches.
+  function uniqueByText(tag, txt, target) {
+    try { var all = document.querySelectorAll(tag), hits = []; for (var i = 0; i < all.length; i++) { if (ownText(all[i]).slice(0, 40) === txt) hits.push(all[i]); } return hits.length === 1 && hits[0] === target; } catch (_) { return false; }
+  }
+  // A short structural path (nearest ancestor id, else tag:nth-of-type chain) — a last resort, always flagged unstable.
+  function structural(el) {
+    var parts = []; var node = el;
+    for (var d = 0; node && node.nodeType === 1 && node !== document.body && d < 5; d++) {
+      if (node.id) { parts.unshift("#" + CSS.escape(node.id)); return parts.join(" > "); }
+      var seg = node.tagName.toLowerCase(); var p = node.parentNode;
+      if (p) { var same = 0, idx = 0; for (var j = 0; j < p.children.length; j++) { if (p.children[j].tagName === node.tagName) { same++; if (p.children[j] === node) idx = same; } } if (same > 1) seg += ":nth-of-type(" + idx + ")"; }
+      parts.unshift(seg); node = node.parentNode;
+    }
+    return parts.join(" > ");
+  }
+  // Returns { selector, unstable }. Tries strong anchors first (id/testid/name/aria-label/placeholder/clean text), accepting the first that UNIQUELY identifies this element; falls back to type-only or a structural path, flagging both unstable so the author knows to add a data-testid.
   function selectorFor(el) {
-    if (!el || el === document.body) return "body";
-    if (el.id) return "#" + CSS.escape(el.id);
-    var dt = el.getAttribute("data-testid");
-    if (dt) return "[data-testid=\\"" + dt + "\\"]";
-    var dt2 = el.getAttribute("data-test");
-    if (dt2) return "[data-test=\\"" + dt2 + "\\"]";
-    var nm = el.getAttribute("name");
-    if (nm) return el.tagName.toLowerCase() + "[name=\\"" + nm + "\\"]";
-    var ph = el.getAttribute("placeholder");
-    if (ph) return el.tagName.toLowerCase() + "[placeholder=\\"" + ph + "\\"]";
+    if (!el || el === document.body) return { selector: "body", unstable: false };
     var tag = el.tagName.toLowerCase();
-    if ((tag === "input" || tag === "button") && el.getAttribute("type")) return tag + "[type=\\"" + el.getAttribute("type") + "\\"]";
-    var txt = (el.textContent || "").trim();
-    if (txt && txt.length <= 40 && (tag === "button" || tag === "a")) return tag + " >> text=\\"" + txt.replace(/"/g, "") + "\\"";
-    return tag;
+    var strong = [];
+    if (el.id) strong.push("#" + CSS.escape(el.id));
+    var dt = el.getAttribute("data-testid"); if (dt) strong.push("[data-testid=\\"" + dt + "\\"]");
+    var dt2 = el.getAttribute("data-test"); if (dt2) strong.push("[data-test=\\"" + dt2 + "\\"]");
+    var nm = el.getAttribute("name"); if (nm) strong.push(tag + "[name=\\"" + nm + "\\"]");
+    var al = el.getAttribute("aria-label"); if (al) strong.push(tag + "[aria-label=\\"" + al.replace(/"/g, "") + "\\"]");
+    var ph = el.getAttribute("placeholder"); if (ph) strong.push(tag + "[placeholder=\\"" + ph + "\\"]");
+    for (var i = 0; i < strong.length; i++) { if (isUnique(strong[i], el)) return { selector: strong[i], unstable: false }; }
+    // Clean, non-dynamic, unique text on an actionable element is a stable anchor (validated by text count, not querySelectorAll).
+    var txt = ownText(el).slice(0, 40);
+    if (txt && !looksDynamic(txt) && (tag === "button" || tag === "a" || el.getAttribute("role") === "button") && uniqueByText(tag, txt, el)) return { selector: tag + " >> text=\\"" + txt.replace(/"/g, "") + "\\"", unstable: false };
+    // Weak: type-only, accepted only if it happens to be unique — still flagged unstable.
+    var ty = el.getAttribute("type"); if ((tag === "input" || tag === "button") && ty) { var w = tag + "[type=\\"" + ty + "\\"]"; if (isUnique(w, el)) return { selector: w, unstable: true }; }
+    var st = structural(el);
+    return { selector: st || strong[0] || tag, unstable: true };
   }
   function describe(el) {
     var aria = el.getAttribute("aria-label");
     if (aria) return aria.trim().slice(0, 60);
-    if (el.id) { var lab = document.querySelector('label[for="' + el.id + '"]'); if (lab && lab.textContent) return lab.textContent.trim().slice(0, 60); }
+    if (el.id) { var lab = document.querySelector('label[for="' + el.id + '"]'); if (lab && lab.textContent) return lab.textContent.replace(/\\s+/g, " ").trim().slice(0, 60); }
     var ph = el.getAttribute("placeholder"); if (ph) return ph.trim().slice(0, 60);
-    var txt = (el.textContent || "").trim(); if (txt) return txt.slice(0, 60);
+    var t = ownText(el); if (t) return t.slice(0, 60);
     return el.getAttribute("name") || el.id || el.tagName.toLowerCase();
   }
   function isUi(el) { return !!(el && el.closest && el.closest("[data-windup-ui]")); }
@@ -58,9 +86,10 @@ export const RECORD_INIT_SCRIPT = `(() => {
     var el = ev.target; if (isUi(el)) return;
     var act = el.closest && el.closest("button, a, [role=button], input[type=submit], input[type=checkbox], input[type=radio]");
     var target = act || el;
-    var payload = { selector: selectorFor(target), description: describe(target), url: location.href };
-    if (assertMode) { assertMode = false; updateBar(); send({ kind: "assert", selector: payload.selector, description: payload.description, text: (target.textContent || "").trim().slice(0, 60) || undefined, url: payload.url }); return; }
-    send({ kind: "click", selector: payload.selector, description: payload.description, url: payload.url });
+    var s = selectorFor(target);
+    var payload = { selector: s.selector, description: describe(target), url: location.href, unstable: s.unstable };
+    if (assertMode) { assertMode = false; updateBar(); send({ kind: "assert", selector: payload.selector, description: payload.description, text: ownText(target).slice(0, 60) || undefined, url: payload.url, unstable: s.unstable }); return; }
+    send({ kind: "click", selector: payload.selector, description: payload.description, url: payload.url, unstable: s.unstable });
   }, true);
 
   document.addEventListener("change", function (ev) {
@@ -68,7 +97,8 @@ export const RECORD_INIT_SCRIPT = `(() => {
     var tag = el.tagName ? el.tagName.toLowerCase() : "";
     if (tag !== "input" && tag !== "textarea" && tag !== "select") return;
     if (el.type === "checkbox" || el.type === "radio" || el.type === "submit" || el.type === "button") return;
-    send({ kind: "fill", selector: selectorFor(el), description: describe(el), value: String(el.value == null ? "" : el.value), secret: el.type === "password", url: location.href });
+    var s = selectorFor(el);
+    send({ kind: "fill", selector: s.selector, description: describe(el), value: String(el.value == null ? "" : el.value), secret: el.type === "password", url: location.href, unstable: s.unstable });
   }, true);
 
   var bar, assertBtn;
@@ -165,6 +195,15 @@ export async function runRecord(opts: { url?: string; id?: string; force?: boole
     }
   }
 
+  // Warn about interactions with no stable anchor (the app exposes no id/testid/name/aria-label there) — these are the ones a DOM shift will break, and exactly where a screen reader would also struggle.
+  const unstable = cleaned.filter((e): e is Extract<RecordEvent, { kind: "click" | "fill" }> => (e.kind === "click" || e.kind === "fill") && e.unstable === true);
+  if (unstable.length) {
+    console.log(`\n⚠ ${unstable.length} interaction(s) have no stable anchor (a11y gap in the app — no id/testid/name/aria-label):`);
+    for (const e of unstable.slice(0, 8)) console.log(`    ${e.selector}${e.description ? `  — ${e.description}` : ""}`);
+    if (unstable.length > 8) console.log(`    … and ${unstable.length - 8} more`);
+    console.log(`  These may break if the DOM shifts. Add a data-testid to those elements, or edit the selector in the scenario/plan.`);
+  }
+
   const baseId = kebab(opts.id ?? deriveId(cleaned, finalUrl)) || "recorded-flow";
   const nInteractions = cleaned.filter((e) => e.kind === "click" || e.kind === "fill").length;
   const assertion = cleaned.some((e) => e.kind === "assert");
@@ -191,10 +230,30 @@ function deriveId(events: RecordEvent[], finalUrl: string): string {
   return `record-${path || "flow"}`;
 }
 
-async function deriveTask(events: RecordEvent[], finalUrl: string, useLlm: boolean): Promise<string> {
-  const steps = events.filter((e) => e.kind === "click" || e.kind === "fill").length;
+/**
+ * A readable task synthesized from the VISIBLE LABELS of what was clicked/filled
+ * (not "14 interaction(s)") — so a recorded scenario survives a cache invalidation:
+ * the self-heal re-plans from a description of the actual flow instead of a blind
+ * interaction count. Pure. Consecutive duplicate steps are collapsed; capped so a
+ * long flow stays one sentence.
+ */
+export function synthTask(events: RecordEvent[], finalUrl: string): string {
+  const steps = events.filter((e): e is Extract<RecordEvent, { kind: "click" | "fill" }> => e.kind === "click" || e.kind === "fill");
+  const phrases: string[] = [];
+  for (const e of steps) {
+    const label = (e.description || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    const phrase = e.kind === "fill" ? (label ? `fill "${label}"` : "fill a field") : label ? `click "${label}"` : "click";
+    if (phrases[phrases.length - 1] !== phrase) phrases.push(phrase); // collapse consecutive repeats
+  }
+  const capped = phrases.slice(0, 12);
+  const more = phrases.length > capped.length ? ` (+${phrases.length - capped.length} more)` : "";
   const assertDesc = [...events].reverse().find((e): e is Extract<RecordEvent, { kind: "assert" }> => e.kind === "assert")?.description;
-  const synth = `Recorded flow: ${steps} interaction(s) ending at ${safePathname(finalUrl)}${assertDesc ? `, verifying "${assertDesc}"` : ""}.`;
+  const seq = capped.length ? capped.join(" → ") : `${steps.length} interaction(s)`;
+  return `Recorded flow: ${seq}${more}${assertDesc ? `, verifying "${assertDesc}"` : ""} (ends at ${safePathname(finalUrl)}).`;
+}
+
+async function deriveTask(events: RecordEvent[], finalUrl: string, useLlm: boolean): Promise<string> {
+  const synth = synthTask(events, finalUrl);
   if (!useLlm) return synth;
   try {
     const { createLlmClient } = await import("./llm.js");

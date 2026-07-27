@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPlanFromEvents, type RecordEvent } from "../src/record.js";
+import { buildPlanFromEvents, synthTask, type RecordEvent } from "../src/record.js";
 import { normalizeActions, sanitizePlan } from "../src/planner.js";
 import { validatePlan } from "../src/schema.js";
 import type { Plan } from "../src/types.js";
@@ -49,5 +49,44 @@ describe("buildPlanFromEvents", () => {
     const plan = finalize([]);
     expect(validatePlan(plan).ok).toBe(true);
     expect(plan.actions).toHaveLength(1);
+  });
+});
+
+describe("synthTask — readable task from visible labels (#12)", () => {
+  it("names each step by its label instead of counting interactions", () => {
+    const events: RecordEvent[] = [
+      { kind: "click", selector: "a#tickets", description: "Ver ingressos", url: "http://x/e" },
+      { kind: "click", selector: "button#d27", description: "27 R$ 20", url: "http://x/e" },
+      { kind: "fill", selector: "#qty", description: "Quantidade", value: "2", url: "http://x/e" },
+      { kind: "click", selector: "a#cart", description: "Ver carrinho", url: "http://x/cart" },
+      { kind: "click", selector: "#continue", description: "Continuar", url: "http://x/checkout" },
+      { kind: "assert", selector: "#step2", description: "Continuar", url: "http://x/checkout/identificacao" },
+    ];
+    const task = synthTask(events, "http://x/checkout/identificacao");
+    expect(task).toContain('click "Ver ingressos"');
+    expect(task).toContain('fill "Quantidade"');
+    expect(task).toContain('click "Continuar"');
+    expect(task).toContain('verifying "Continuar"');
+    expect(task).toContain("ends at /checkout/identificacao");
+    expect(task).not.toMatch(/^Recorded flow: \d+ interaction/); // not the empty count form
+  });
+
+  it("collapses consecutive duplicate steps", () => {
+    const events: RecordEvent[] = Array.from({ length: 5 }, () => ({ kind: "click", selector: "#b", description: "Next", url: "http://x/a" } as RecordEvent));
+    const task = synthTask(events, "http://x/done");
+    expect((task.match(/click "Next"/g) ?? []).length).toBe(1); // 5 identical → one phrase
+  });
+
+  it("caps a long flow of distinct steps with an overflow marker", () => {
+    const events: RecordEvent[] = Array.from({ length: 20 }, (_, i) => ({ kind: "click", selector: `#b${i}`, description: `Step ${i}`, url: "http://x/a" } as RecordEvent));
+    const task = synthTask(events, "http://x/done");
+    expect(task).toContain('click "Step 0"');
+    expect(task).toContain("more)"); // 20 distinct → capped at 12 + overflow
+  });
+
+  it("falls back to a count only when there are no labels at all", () => {
+    const events: RecordEvent[] = [{ kind: "click", selector: "div", description: "", url: "http://x/a" }];
+    const task = synthTask(events, "http://x/done");
+    expect(task).toContain("click"); // still names the verb, not a bare count
   });
 });
