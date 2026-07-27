@@ -77,6 +77,7 @@ export function jsonReport(results: RunMetrics[], opts: { wall_ms?: number; conc
     ...(r.summary ? { summary: r.summary.text } : {}),
     ...(r.suggestion ? { suggestion: r.suggestion.text } : {}),
     ...(r.diagnostics ? { diagnostics: r.diagnostics } : {}),
+    ...(r.web_vitals ? { web_vitals: r.web_vitals } : {}),
     ...(r.quarantined ? { quarantined: true } : {}),
   }));
   return `${JSON.stringify({ summary, cases }, null, 2)}\n`;
@@ -174,6 +175,15 @@ ${r.actions
         : "";
       const flaky = r.flaky ? ` <span class="badge flaky" title="passed only after ${(r.attempts ?? 2) - 1} retry(ies) — a flake to investigate">FLAKY ${r.attempts}×</span>` : "";
       const quarantined = r.quarantined ? ` <span class="badge flaky" title="quarantined — a failure here does not fail the build; fix or un-quarantine">QUARANTINED</span>` : "";
+      const vitals = r.web_vitals
+        ? `<div class="a11y-ok">web vitals: ${[
+            r.web_vitals.ttfb_ms != null ? `TTFB ${r.web_vitals.ttfb_ms}ms` : "",
+            r.web_vitals.fcp_ms != null ? `FCP ${r.web_vitals.fcp_ms}ms` : "",
+            r.web_vitals.lcp_ms != null ? `LCP ${r.web_vitals.lcp_ms}ms` : "",
+            r.web_vitals.load_ms != null ? `load ${r.web_vitals.load_ms}ms` : "",
+            r.web_vitals.cls != null ? `CLS ${r.web_vitals.cls}` : "",
+          ].filter(Boolean).join(" · ")}</div>`
+        : "";
       const diag = r.diagnostics && ((r.diagnostics.console_errors?.length ?? 0) + (r.diagnostics.failed_responses?.length ?? 0) > 0)
         ? `<details class="a11y"><summary>runtime: ${(r.diagnostics.console_errors?.length ?? 0)} console error(s), ${(r.diagnostics.failed_responses?.length ?? 0)} failed response(s)</summary><div class="bkleg">${[
             ...(r.diagnostics.console_errors ?? []).map((t) => `console: ${esc(t.slice(0, 200))}`),
@@ -182,7 +192,7 @@ ${r.actions
         : "";
       return `<tr class="${ok ? "" : "row-failed"}">
 <td><span class="badge ${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}</span>${flaky}${quarantined}</td>
-<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${diag}${actions}</td>
+<td class="scenario">${esc(r.scenario_id)}${deps}${requires}${failure}${artifacts}${suggestion}${summary}${breakdown}${a11y}${diag}${vitals}${actions}</td>
 <td>${esc(r.cache)}</td>
 <td class="n">${r.llm_calls}</td>
 <td class="model">${esc(llm)}</td>

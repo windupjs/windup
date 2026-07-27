@@ -175,7 +175,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden" | "diagnostics";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden" | "diagnostics" | "budget";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 
@@ -235,6 +235,8 @@ export interface RunMetrics {
   a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
   /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. */
   diagnostics?: { console_errors?: string[]; failed_responses?: Array<{ url: string; status: number; method: string }> };
+  /** #web-vitals — final-page performance (TTFB/FCP/LCP/DCL/load/CLS), captured under --web-vitals or config.budgets. Fails only when a config.budgets threshold is exceeded. */
+  web_vitals?: { ttfb_ms: number | null; fcp_ms: number | null; lcp_ms: number | null; dcl_ms: number | null; load_ms: number | null; cls: number | null };
   /** --trace — paths (relative to the report dir) to a saved Playwright trace / screenshot captured on a FAILED run. */
   artifacts?: { trace?: string; screenshot?: string };
   /** Executed plan (diagnostic; absent if generation failed before a plan existed). */

@@ -4,6 +4,14 @@ All notable changes to `windupjs` are documented here. The project is in the
 `0.x` line (pre-1.0): it is usable and tested, but the API may still change
 between minor versions. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 0.58.0
+Runtime realism — test at real device viewports and gate on real page performance. Both tested and validated live (real-browser).
+
+- **Device emulation — `run --device "<preset>"` / `config.device`.** Run a scenario at a Playwright **device preset** (`"iPhone 14"`, `"Pixel 7"`, `"iPad Pro 11"`, …) — viewport, user-agent, scale, mobile/touch. Cached plans are **keyed per device**, so mobile and desktop keep **separate trajectories** and never overwrite each other's plan (with no device the cache path is unchanged). Mobile emulation needs chromium. Validated live: the same page reports a 390 px touch viewport under `iPhone 14` and 1280 px non-touch without it.
+- **Web vitals + performance budgets — `run --web-vitals` / `config.budgets`.** Capture the final page's **TTFB / FCP / LCP / DCL / load / CLS** (via buffered PerformanceObservers injected before first paint) and report them (console, HTML, JSON) — informational under `--web-vitals`. Set `config.budgets` (`{ lcp_ms, cls, load_ms, … }`) and a breach **fails the scenario** with a new `budget` failure kind. Timing varies run-to-run, so set budgets with headroom. Validated live: `load_ms: 1` fails with "budget exceeded", a generous budget passes, and capture-only records the metrics.
+
+New modules `device.ts` / `vitals.ts`; `config.device` / `config.budgets`; `RunMetrics.web_vitals`; `FailureKind` `"budget"`; `Browser.webVitals()`; per-device cache keying.
+
 ## 0.57.0
 Two more from the backlog — a ledger-history view and a flaky-quarantine gate — each tested and validated end-to-end.
 

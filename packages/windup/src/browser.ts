@@ -1,8 +1,10 @@
 import { chromium, firefox, webkit, type Browser as PWBrowser, type BrowserContext, type BrowserContextOptions, type BrowserType, type Page } from "playwright-core";
 import { clockInitScript, frozenNowMs } from "./clock.js";
 import { getContext } from "./context.js";
+import { resolveDeviceContext } from "./device.js";
 import { WindupError } from "./errors.js";
 import { matchRule } from "./network.js";
+import { VITALS_INIT_SCRIPT } from "./vitals.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
 import { computeSignature, type RawElement } from "./signature.js";
 
@@ -71,6 +73,8 @@ export interface Browser {
   consoleErrors(): string[];
   /** 5xx responses observed since launch, excluding config.network stubs and failOn.ignore (for --fail-on-5xx). */
   failedResponses(): FailedResponse[];
+  /** Final-page web vitals (navigation timing + FCP + observed LCP/CLS). LCP/CLS are 0/null unless observers were injected at launch. */
+  webVitals(): Promise<import("./vitals.js").WebVitals>;
   /** Stop the Playwright trace and write it to `path` (a .zip openable in the trace viewer). No-op if tracing wasn't started. */
   saveTrace(path: string): Promise<void>;
   /** Full-page screenshot to `path`. */
@@ -132,6 +136,11 @@ class PlaywrightSession implements Browser {
 
   failedResponses(): FailedResponse[] {
     return this.failedResps;
+  }
+
+  async webVitals(): Promise<import("./vitals.js").WebVitals> {
+    const { READ_VITALS_SCRIPT } = await import("./vitals.js");
+    return this.page.evaluate(READ_VITALS_SCRIPT) as Promise<import("./vitals.js").WebVitals>;
   }
 
   /**
@@ -436,15 +445,20 @@ function getEngine(): Promise<PWBrowser> {
 export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean } = {}): Promise<Browser> {
   const browser = await getEngine();
   const cfg = currentConfig();
+  // config.device / --device — a Playwright device preset (viewport, UA, scale, mobile/touch).
+  const device = resolveDeviceContext(); // throws on an unknown preset name
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     // Playwright accepts the storageState object directly; typed loosely at our boundary.
     ...(opts.storageState ? { storageState: opts.storageState as BrowserContextOptions["storageState"] } : {}),
     ...(cfg?.clock?.timezone ? { timezoneId: cfg.clock.timezone } : {}),
+    ...(device ?? {}), // device viewport/UA overrides the default
   });
   // config.clock — freeze Date/now before any page script (every navigation).
   const nowMs = frozenNowMs(cfg?.clock);
   if (nowMs !== null) await context.addInitScript(clockInitScript(nowMs));
+  // --web-vitals / config.budgets — observe LCP+CLS from the first paint (every navigation).
+  if (process.env.WINDUP_WEB_VITALS === "1" || cfg?.budgets) await context.addInitScript(VITALS_INIT_SCRIPT);
   // config.network — deterministic stubs for matched requests; author-declared, never cached.
   if (cfg?.network?.length) {
     const rules = cfg.network;

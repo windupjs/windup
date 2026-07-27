@@ -30,6 +30,7 @@ class LabelBrowser implements Browser {
   async waitForHidden(): Promise<boolean> { return true; }
   consoleErrors(): string[] { return []; }
   failedResponses(): { url: string; status: number; method: string }[] { return []; }
+  async webVitals(): Promise<import("../src/vitals.js").WebVitals> { return { ttfb_ms: null, fcp_ms: null, lcp_ms: null, dcl_ms: null, load_ms: null, cls: null }; }
   async snapshotTree(): Promise<string> { return ""; }
   async interactiveElements(): Promise<string[]> { return []; }
   async interactiveElementsRaw(): Promise<RawPageElement[]> { return [{ tag: "input" } as RawPageElement]; }

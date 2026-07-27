@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 import type { CacheEntry, Plan, Scenario } from "./types.js";
 import { getContext } from "./context.js";
+import { deviceSuffix } from "./device.js";
 import { startPath } from "./start-url.js";
 
 /** Trajectory cache directory, resolved from the active context. */
@@ -13,8 +14,15 @@ const CACHE_VERSION = "0.2";
 const PLAN_VERSION = "0.1";
 const MAX_STALE_FILES = 3;
 
+/** Cache slot = scenario id, namespaced by the active device (`id@iphone-14`) so
+ *  viewports keep SEPARATE trajectories and never overwrite each other's plan.
+ *  With no device the suffix is empty — paths are byte-identical to before. */
+function slot(scenarioId: string): string {
+  return `${scenarioId}${deviceSuffix()}`;
+}
+
 function entryPath(scenarioId: string): string {
-  return path.join(cacheDir(), `${scenarioId}.json`);
+  return path.join(cacheDir(), `${slot(scenarioId)}.json`);
 }
 
 /**
@@ -54,7 +62,7 @@ async function staleFiles(scenarioId: string): Promise<string[]> {
     return [];
   }
   return files
-    .filter((f) => f.startsWith(`${scenarioId}.stale-`) && f.endsWith(".json"))
+    .filter((f) => f.startsWith(`${slot(scenarioId)}.stale-`) && f.endsWith(".json"))
     .sort() // ISO timestamp in the name: lexicographic order = chronological
     .map((f) => path.join(cacheDir(), f));
 }
@@ -115,7 +123,7 @@ export async function invalidate(entry: CacheEntry): Promise<void> {
   entry.stats.replay_failures += 1;
   const scenarioId = entry.key.scenario_id;
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const staleFile = path.join(cacheDir(), `${scenarioId}.stale-${timestamp}.json`);
+  const staleFile = path.join(cacheDir(), `${slot(scenarioId)}.stale-${timestamp}.json`);
   await writeFile(entryPath(scenarioId), JSON.stringify(entry, null, 2));
   await rename(entryPath(scenarioId), staleFile);
 

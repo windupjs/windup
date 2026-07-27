@@ -158,6 +158,22 @@ export interface WindupConfig {
    * The CLI flags `--fail-on-console` / `--fail-on-5xx` force these on for a run.
    */
   failOn?: { consoleErrors?: boolean; http5xx?: boolean; ignore?: string[] };
+  /**
+   * Device emulation (#device): a Playwright device-preset NAME (e.g. "iPhone 14",
+   * "Pixel 7", "iPad Pro 11") applied to every run — viewport, user-agent, scale,
+   * mobile/touch. Also `--device <name>` (wins over this). Cached plans are keyed
+   * per device, so mobile and desktop keep separate trajectories. Mobile emulation
+   * needs chromium.
+   */
+  device?: string;
+  /**
+   * Performance budgets (#web-vitals): fail a scenario when the final page's
+   * metric exceeds the threshold — `ttfb_ms`, `fcp_ms`, `lcp_ms`, `dcl_ms`,
+   * `load_ms` (milliseconds) or `cls` (unitless). Setting any budget turns on
+   * web-vitals capture (also `--web-vitals`, which captures without gating).
+   * Timing varies run-to-run — set budgets with headroom.
+   */
+  budgets?: { ttfb_ms?: number; fcp_ms?: number; lcp_ms?: number; dcl_ms?: number; load_ms?: number; cls?: number };
 }
 
 export interface NetworkRule {

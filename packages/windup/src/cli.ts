@@ -54,6 +54,17 @@ function printRun(metrics: RunMetrics): void {
     if (ce.length) console.log(`      console errors: ${ce.length} — ${ce.slice(0, 3).map((t) => t.slice(0, 80)).join(" | ")}${ce.length > 3 ? " …" : ""}`);
     if (fr.length) console.log(`      failed responses: ${fr.slice(0, 5).map((r) => `${r.status} ${r.url}`).join(", ")}${fr.length > 5 ? " …" : ""}`);
   }
+  if (metrics.web_vitals) {
+    const v = metrics.web_vitals;
+    const parts = [
+      v.ttfb_ms != null ? `TTFB ${v.ttfb_ms}ms` : "",
+      v.fcp_ms != null ? `FCP ${v.fcp_ms}ms` : "",
+      v.lcp_ms != null ? `LCP ${v.lcp_ms}ms` : "",
+      v.load_ms != null ? `load ${v.load_ms}ms` : "",
+      v.cls != null ? `CLS ${v.cls}` : "",
+    ].filter(Boolean);
+    if (parts.length) console.log(`      web vitals: ${parts.join(" · ")}`);
+  }
   if (metrics.requires?.length && metrics.result === "failed") {
     console.log(`      requires (data): ${metrics.requires.join("; ")}`);
   }
@@ -92,10 +103,14 @@ program
   .option("--no-prewarm", "disable pre-warming the next scenario's browser off the critical path (sequential --all)")
   .option("--fail-on-console", "fail a scenario if the page logged a console error or threw an uncaught exception during the run")
   .option("--fail-on-5xx", "fail a scenario if any request got a 5xx response during the run (config.network stubs are excluded)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean; failOnConsole?: boolean; failOn5xx?: boolean }) => {
+  .option("--device <name>", "emulate a Playwright device preset (e.g. \"iPhone 14\", \"Pixel 7\") — viewport/UA; cached plans are keyed per device")
+  .option("--web-vitals", "capture final-page web vitals (TTFB/FCP/LCP/CLS) and report them (gate them with config.budgets)")
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean; failOnConsole?: boolean; failOn5xx?: boolean; device?: string; webVitals?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.failOnConsole) process.env.WINDUP_FAIL_ON_CONSOLE = "1";
     if (opts.failOn5xx) process.env.WINDUP_FAIL_ON_5XX = "1";
+    if (opts.device) process.env.WINDUP_DEVICE = opts.device;
+    if (opts.webVitals) process.env.WINDUP_WEB_VITALS = "1";
     if (opts.trace) process.env.WINDUP_TRACE = "1";
     if (opts.headed) process.env.HEADLESS = "false";
     if (opts.slowmo) process.env.SLOWMO_MS = opts.slowmo;
@@ -181,8 +196,10 @@ program
       const { getContext } = await import("./context.js");
       const { validateNetwork } = await import("./network.js");
       const { validateClock } = await import("./clock.js");
+      const { validateBudgets } = await import("./vitals.js");
       const cfg = getContext().config;
-      const cfgErrors = [...validateNetwork(cfg.network), ...validateClock(cfg.clock)];
+      const cfgErrors = [...validateNetwork(cfg.network), ...validateClock(cfg.clock), ...validateBudgets(cfg.budgets)];
+      try { const { resolveDeviceContext } = await import("./device.js"); resolveDeviceContext(); } catch (e) { cfgErrors.push(e instanceof Error ? e.message : String(e)); }
       if (cfgErrors.length) { console.error(`invalid config:\n${cfgErrors.map((e) => `  - ${e}`).join("\n")}`); process.exitCode = 2; return; }
     }
 

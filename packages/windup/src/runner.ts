@@ -356,6 +356,23 @@ export async function runScenario(
       // diagnostics are best-effort — a capture glitch never crashes the run
     }
 
+    // #web-vitals — final-page performance, captured under --web-vitals or config.budgets.
+    // Recorded always (informational); flips to failed only when a config.budgets threshold is exceeded.
+    if (process.env.WINDUP_WEB_VITALS === "1" || getContext().config.budgets) {
+      try {
+        const vitals = await browser.webVitals();
+        metrics.web_vitals = vitals;
+        const { budgetViolations } = await import("./vitals.js");
+        const violations = budgetViolations(vitals, getContext().config.budgets);
+        if (metrics.result === "passed" && violations.length > 0) {
+          metrics.result = "failed";
+          metrics.failure = { kind: "budget", action_id: null, message: `performance budget exceeded: ${violations.join("; ")}` };
+        }
+      } catch {
+        // web-vitals are best-effort — a capture glitch never crashes the run
+      }
+    }
+
     // Capture this scenario's own exit state so its dependents can restore it.
     if (metrics.result === "passed" && opts.useCache) {
       try { await saveSnapshot(scenario.scenario_id, await browser.storageState(), browser.url()); } catch { /* best-effort */ }
