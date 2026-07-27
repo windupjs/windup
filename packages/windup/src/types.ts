@@ -240,8 +240,8 @@ export interface RunMetrics {
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
   /** #a11y — accessibility violations on the final page (axe-core), when `--a11y` ran. Informational; never fails the run. */
   a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
-  /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. */
-  diagnostics?: { console_errors?: string[]; failed_responses?: Array<{ url: string; status: number; method: string }> };
+  /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. Each console error carries its originating `url` and a `js`/`resource` kind. */
+  diagnostics?: { console_errors?: Array<{ message: string; url?: string; kind?: "js" | "resource" }>; failed_responses?: Array<{ url: string; status: number; method: string }> };
   /** #web-vitals — final-page performance (TTFB/FCP/LCP/DCL/load/CLS), captured under --web-vitals or config.budgets. Fails only when a config.budgets threshold is exceeded. */
   web_vitals?: { ttfb_ms: number | null; fcp_ms: number | null; lcp_ms: number | null; dcl_ms: number | null; load_ms: number | null; cls: number | null };
   /** --trace — paths (relative to the report dir) to a saved Playwright trace / screenshot captured on a FAILED run. */

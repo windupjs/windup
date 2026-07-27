@@ -28,7 +28,7 @@ class FakeBrowser implements Browser {
   async count(): Promise<number> { return 0; }
   async getAttribute(): Promise<string | null> { return null; }
   async waitForHidden(): Promise<boolean> { return true; }
-  consoleErrors(): string[] { return []; }
+  consoleErrors() { return []; }
   failedResponses(): { url: string; status: number; method: string }[] { return []; }
   async webVitals(): Promise<import("../src/vitals.js").WebVitals> { return { ttfb_ms: null, fcp_ms: null, lcp_ms: null, dcl_ms: null, load_ms: null, cls: null }; }
   async startRecording(): Promise<void> {}

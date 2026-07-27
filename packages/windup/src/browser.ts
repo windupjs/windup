@@ -4,6 +4,7 @@ import { getContext } from "./context.js";
 import { resolveDeviceContext } from "./device.js";
 import { WindupError } from "./errors.js";
 import { matchRule } from "./network.js";
+import { classifyConsoleError, matchesIgnore } from "./diagnostics.js";
 import type { NetworkRule } from "./config.js";
 import { VITALS_INIT_SCRIPT } from "./vitals.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
@@ -70,8 +71,8 @@ export interface Browser {
   seedStorage(seed: { localStorage?: Record<string, string>; sessionStorage?: Record<string, string>; origin?: string }): Promise<void>;
   /** Run an axe-core accessibility audit on the current page (needs axe-core installed). Returns the violations. */
   runAxe(): Promise<A11yViolation[]>;
-  /** Console errors + uncaught page exceptions observed since launch (for config.failOn / --fail-on-console). */
-  consoleErrors(): string[];
+  /** Console errors + uncaught page exceptions observed since launch (for config.failOn / --fail-on-console / --fail-on-resource), each with its originating URL and a `js`/`resource` kind. Excludes anything matching failOn.ignore (by message OR url). */
+  consoleErrors(): ConsoleError[];
   /** 5xx responses observed since launch, excluding config.network stubs and failOn.ignore (for --fail-on-5xx). */
   failedResponses(): FailedResponse[];
   /** Final-page web vitals (navigation timing + FCP + observed LCP/CLS). LCP/CLS are 0/null unless observers were injected at launch. */
@@ -98,6 +99,15 @@ export interface FailedResponse {
   method: string;
 }
 
+export interface ConsoleError {
+  /** The console/exception text (e.g. "Failed to load resource: the server responded with a status of 404 ()"). */
+  message: string;
+  /** The URL the error originated from — the failing resource for a resource error, the script for a JS exception. Absent for `pageerror` (no location). */
+  url?: string;
+  /** `resource` = a sub-resource that failed to load (img/font/script/xhr — the noisy 4xx kind); `js` = a JS exception, console.error, or CSP/other page error. */
+  kind: "js" | "resource";
+}
+
 const ACTION_TIMEOUT_MS = () => Number.parseInt(process.env.WINDUP_ACTION_TIMEOUT_MS ?? "10000", 10) || 10_000;
 
 class PlaywrightSession implements Browser {
@@ -108,24 +118,36 @@ class PlaywrightSession implements Browser {
     private readonly network?: NetworkRule[],
   ) {}
 
-  private readonly consoleErrs: string[] = [];
+  private readonly consoleErrs: ConsoleError[] = [];
   private readonly failedResps: FailedResponse[] = [];
 
   /**
    * Attach passive listeners for console errors, uncaught exceptions and 5xx
    * responses. Called once at launch. A 5xx that config.network stubbed (a
    * deliberate test of the error state) is excluded, as is anything matching
-   * failOn.ignore. `requestfailed` is intentionally NOT listened to — a
-   * config.network `abort` triggers it, which would be a false positive.
+   * failOn.ignore — matched against the message AND the originating URL, so a
+   * resource 404 (whose console text is the generic "Failed to load resource …"
+   * with no URL in it) can still be silenced by its host. `requestfailed` is
+   * intentionally NOT listened to — a config.network `abort` triggers it, which
+   * would be a false positive.
    */
   captureDiagnostics(): void {
     const cfg = (() => { try { return getContext().config; } catch { return undefined; } })();
     const ignore = cfg?.failOn?.ignore ?? [];
-    const ignored = (url: string) => ignore.some((s) => url.includes(s));
+    const ignored = (...parts: Array<string | undefined>) => matchesIgnore(ignore, ...parts);
     const stubs = this.network; // effective (scenario + config) rules for this session
     const isStub = (url: string, method: string) => Boolean(stubs?.length && matchRule(stubs, url, method));
-    this.page.on("console", (m) => { if (m.type() === "error") this.consoleErrs.push(m.text()); });
-    this.page.on("pageerror", (e) => this.consoleErrs.push(e.message));
+    this.page.on("console", (m) => {
+      if (m.type() !== "error") return;
+      const message = m.text();
+      const url = m.location()?.url || undefined;
+      if (ignored(message, url)) return;
+      this.consoleErrs.push({ message, url, kind: classifyConsoleError(message) });
+    });
+    this.page.on("pageerror", (e) => {
+      if (ignored(e.message)) return;
+      this.consoleErrs.push({ message: e.message, kind: "js" });
+    });
     this.page.on("response", (r) => {
       const status = r.status();
       if (status < 500) return;
@@ -136,7 +158,7 @@ class PlaywrightSession implements Browser {
     });
   }
 
-  consoleErrors(): string[] {
+  consoleErrors(): ConsoleError[] {
     return this.consoleErrs;
   }
 

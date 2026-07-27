@@ -347,6 +347,8 @@ export async function runScenario(
     try {
       const consoleErrs = browser.consoleErrors();
       const failed5xx = browser.failedResponses();
+      const jsErrs = consoleErrs.filter((e) => e.kind === "js");
+      const resourceErrs = consoleErrs.filter((e) => e.kind === "resource");
       if (consoleErrs.length || failed5xx.length) {
         metrics.diagnostics = {
           ...(consoleErrs.length ? { console_errors: consoleErrs.slice(0, 20) } : {}),
@@ -355,11 +357,14 @@ export async function runScenario(
       }
       if (metrics.result === "passed") {
         const failCfg = getContext().config.failOn;
-        const failConsole = (process.env.WINDUP_FAIL_ON_CONSOLE === "1" || failCfg?.consoleErrors) && consoleErrs.length > 0;
+        // consoleErrors gates JS health only (exceptions/console.error/CSP); resource 4xx loads have their own gate so they don't drown it.
+        const failConsole = (process.env.WINDUP_FAIL_ON_CONSOLE === "1" || failCfg?.consoleErrors) && jsErrs.length > 0;
+        const failResource = (process.env.WINDUP_FAIL_ON_RESOURCE === "1" || failCfg?.resourceErrors) && resourceErrs.length > 0;
         const fail5xx = (process.env.WINDUP_FAIL_ON_5XX === "1" || failCfg?.http5xx) && failed5xx.length > 0;
-        if (failConsole || fail5xx) {
+        if (failConsole || failResource || fail5xx) {
           const parts: string[] = [];
-          if (failConsole) parts.push(`${consoleErrs.length} console error(s)`);
+          if (failConsole) parts.push(`${jsErrs.length} console error(s)`);
+          if (failResource) parts.push(`${resourceErrs.length} resource error(s)`);
           if (fail5xx) parts.push(`${failed5xx.length} failed response(s) [${failed5xx.map((r) => r.status).join(", ")}]`);
           metrics.result = "failed";
           metrics.failure = { kind: "diagnostics", action_id: null, message: `runtime health check: ${parts.join(" and ")} during the run` };

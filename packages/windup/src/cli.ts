@@ -51,7 +51,7 @@ function printRun(metrics: RunMetrics): void {
   if (metrics.diagnostics) {
     const ce = metrics.diagnostics.console_errors ?? [];
     const fr = metrics.diagnostics.failed_responses ?? [];
-    if (ce.length) console.log(`      console errors: ${ce.length} — ${ce.slice(0, 3).map((t) => t.slice(0, 80)).join(" | ")}${ce.length > 3 ? " …" : ""}`);
+    if (ce.length) console.log(`      console errors: ${ce.length} — ${ce.slice(0, 3).map((e) => `${e.message.slice(0, 80)}${e.url ? ` [${e.url}]` : ""}`).join(" | ")}${ce.length > 3 ? " …" : ""}`);
     if (fr.length) console.log(`      failed responses: ${fr.slice(0, 5).map((r) => `${r.status} ${r.url}`).join(", ")}${fr.length > 5 ? " …" : ""}`);
   }
   if (metrics.web_vitals) {
@@ -101,13 +101,15 @@ program
   .option("--max-wall <seconds>", "with --all: stop starting new scenarios once the suite's wall-clock exceeds this many seconds (a CI time budget); exits non-zero if the cap is hit")
   .option("--bail", "with --all: stop starting new scenarios after the first failure (fast feedback in PR checks)")
   .option("--no-prewarm", "disable pre-warming the next scenario's browser off the critical path (sequential --all)")
-  .option("--fail-on-console", "fail a scenario if the page logged a console error or threw an uncaught exception during the run")
+  .option("--fail-on-console", "fail a scenario if the page threw a JS exception, logged a console.error, or hit a CSP violation during the run")
+  .option("--fail-on-resource", "fail a scenario if a sub-resource (img/font/script/xhr) failed to load (a 4xx) during the run — separate from --fail-on-console so broken images don't drown JS errors")
   .option("--fail-on-5xx", "fail a scenario if any request got a 5xx response during the run (config.network stubs are excluded)")
   .option("--device <name>", "emulate a Playwright device preset (e.g. \"iPhone 14\", \"Pixel 7\") — viewport/UA; cached plans are keyed per device")
   .option("--web-vitals", "capture final-page web vitals (TTFB/FCP/LCP/CLS) and report them (gate them with config.budgets)")
-  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean; failOnConsole?: boolean; failOn5xx?: boolean; device?: string; webVitals?: boolean }) => {
+  .action(async (scenarioId: string | undefined, opts: { all?: boolean; changed?: boolean; since?: string; cache: boolean; map: boolean; repeat: string; headed?: boolean; slowmo?: string; baseUrl?: string; browser?: string; llm?: string; verbose?: boolean; stream?: boolean; summary?: boolean; suggest?: boolean; concurrency?: string; reporter?: string; reportFile?: string; shard?: string; tag?: string; a11y?: boolean; watch?: boolean; trace?: boolean; github?: boolean; retries?: string; maxWall?: string; bail?: boolean; prewarm?: boolean; failOnConsole?: boolean; failOnResource?: boolean; failOn5xx?: boolean; device?: string; webVitals?: boolean }) => {
     if (opts.a11y) process.env.WINDUP_A11Y = "1";
     if (opts.failOnConsole) process.env.WINDUP_FAIL_ON_CONSOLE = "1";
+    if (opts.failOnResource) process.env.WINDUP_FAIL_ON_RESOURCE = "1";
     if (opts.failOn5xx) process.env.WINDUP_FAIL_ON_5XX = "1";
     if (opts.device) process.env.WINDUP_DEVICE = opts.device;
     if (opts.webVitals) process.env.WINDUP_WEB_VITALS = "1";

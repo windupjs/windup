@@ -186,7 +186,7 @@ ${r.actions
         : "";
       const diag = r.diagnostics && ((r.diagnostics.console_errors?.length ?? 0) + (r.diagnostics.failed_responses?.length ?? 0) > 0)
         ? `<details class="a11y"><summary>runtime: ${(r.diagnostics.console_errors?.length ?? 0)} console error(s), ${(r.diagnostics.failed_responses?.length ?? 0)} failed response(s)</summary><div class="bkleg">${[
-            ...(r.diagnostics.console_errors ?? []).map((t) => `console: ${esc(t.slice(0, 200))}`),
+            ...(r.diagnostics.console_errors ?? []).map((e) => `${e.kind === "resource" ? "resource" : "console"}: ${esc(e.message.slice(0, 200))}${e.url ? ` <span style="color:var(--muted)">${esc(e.url)}</span>` : ""}`),
             ...(r.diagnostics.failed_responses ?? []).map((x) => `${x.status} ${esc(x.method)} ${esc(x.url)}`),
           ].join("<br>")}</div></details>`
         : "";
