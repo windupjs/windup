@@ -164,10 +164,12 @@ export interface WindupConfig {
    * a third-party 500 you don't own) — matched against BOTH the message and the
    * originating URL, so a resource error whose console text carries no URL is still
    * silenceable by its host. Requests answered by `config.network` are always
-   * excluded (a deliberate stub is not a real failure). CLI flags
-   * `--fail-on-console` / `--fail-on-resource` / `--fail-on-5xx` force these on for a run.
+   * excluded (a deliberate stub is not a real failure — global OR per-scenario,
+   * matched by URL against the run's effective rules). Also settable per scenario
+   * (`Scenario.failOn`, merged over this — booleans win, `ignore` concatenated).
+   * CLI flags `--fail-on-console` / `--fail-on-resource` / `--fail-on-5xx` force these on for a run.
    */
-  failOn?: { consoleErrors?: boolean; resourceErrors?: boolean; http5xx?: boolean; ignore?: string[] };
+  failOn?: FailOn;
   /**
    * Device emulation (#device): a Playwright device-preset NAME (e.g. "iPhone 14",
    * "Pixel 7", "iPad Pro 11") applied to every run — viewport, user-agent, scale,
@@ -203,6 +205,18 @@ export interface NetworkRule {
   contentType?: string;
   /** Extra response headers. */
   headers?: Record<string, string>;
+}
+
+/** Runtime-health gates (#diagnostics). Settable globally and per scenario (scenario merged over global; `ignore` concatenated). */
+export interface FailOn {
+  /** Fail on a JS error — uncaught exception, console.error, CSP violation. */
+  consoleErrors?: boolean;
+  /** Fail on a sub-resource 4xx load (img/font/script/xhr) — the noisy kind, gated separately from JS. */
+  resourceErrors?: boolean;
+  /** Fail on a 5xx response. */
+  http5xx?: boolean;
+  /** Substrings that silence known noise, matched against the console message OR the originating URL. */
+  ignore?: string[];
 }
 
 export const DEFAULT_CONFIG: WindupConfig = {

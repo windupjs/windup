@@ -94,6 +94,14 @@ export async function loadScenario(id: string): Promise<ResolvedScenario> {
   if (netErrs.length) throw new WindupError(`scenario "${id}": ${netErrs.join("; ").replace(/config\.network/g, '"network"')}`);
   const clkErrs = validateClock(scenario.clock);
   if (clkErrs.length) throw new WindupError(`scenario "${id}": ${clkErrs.join("; ").replace(/config\.clock/g, '"clock"')}`);
+  if (scenario.failOn !== undefined) {
+    const f = scenario.failOn as Record<string, unknown>;
+    const okBool = (k: string) => f[k] === undefined || typeof f[k] === "boolean";
+    const okIgnore = f.ignore === undefined || (Array.isArray(f.ignore) && f.ignore.every((x) => typeof x === "string"));
+    if (typeof f !== "object" || f === null || !okBool("consoleErrors") || !okBool("resourceErrors") || !okBool("http5xx") || !okIgnore) {
+      throw new WindupError(`scenario "${id}": "failOn" must be { consoleErrors?: boolean, resourceErrors?: boolean, http5xx?: boolean, ignore?: string[] }`);
+    }
+  }
   const continueFromDependency = !scenario.start_url && (scenario.depends_on?.length ?? 0) > 0;
   scenario.start_url = resolveStartUrl(scenario.start_url);
   return Object.assign(scenario, { continue_from_dependency: continueFromDependency }) as ResolvedScenario;

@@ -13,6 +13,7 @@ import type { NetworkRule } from "./config.js";
 import type { ClockConfig } from "./clock.js";
 import { effectiveNetwork } from "./network.js";
 import { effectiveClock } from "./clock.js";
+import { effectiveFailOn } from "./diagnostics.js";
 import { progress, streamEvent } from "./progress.js";
 import { runHooks } from "./hooks.js";
 
@@ -170,11 +171,13 @@ export async function runScenario(
   // Per-scenario determinism (network/clock) merged over the global config, applied
   // at context creation. detOpts is empty unless the scenario declares its own.
   const gCfg = getContext().config;
-  const detOpts: { network?: NetworkRule[]; clock?: ClockConfig } = {
+  const effFailOn = effectiveFailOn(scenario.failOn, gCfg?.failOn);
+  const detOpts: { network?: NetworkRule[]; clock?: ClockConfig; ignore?: string[] } = {
     ...(scenario.network ? { network: effectiveNetwork(scenario.network, gCfg?.network) } : {}),
     ...(scenario.clock ? { clock: effectiveClock(scenario.clock, gCfg?.clock) } : {}),
+    ...(scenario.failOn?.ignore?.length ? { ignore: effFailOn?.ignore } : {}),
   };
-  const hasDetOverride = Boolean(scenario.network || scenario.clock);
+  const hasDetOverride = Boolean(scenario.network || scenario.clock || scenario.failOn?.ignore?.length);
   // A pre-warmed session (fresh context, launched off the critical path) is
   // usable only when this run needs no snapshot storageState AND no per-scenario
   // network/clock (the prewarmed context was built with the global config only);
@@ -356,7 +359,7 @@ export async function runScenario(
         };
       }
       if (metrics.result === "passed") {
-        const failCfg = getContext().config.failOn;
+        const failCfg = effFailOn; // scenario failOn merged over global (booleans: scenario wins)
         // consoleErrors gates JS health only (exceptions/console.error/CSP); resource 4xx loads have their own gate so they don't drown it.
         const failConsole = (process.env.WINDUP_FAIL_ON_CONSOLE === "1" || failCfg?.consoleErrors) && jsErrs.length > 0;
         const failResource = (process.env.WINDUP_FAIL_ON_RESOURCE === "1" || failCfg?.resourceErrors) && resourceErrs.length > 0;

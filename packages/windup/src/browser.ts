@@ -3,8 +3,8 @@ import { clockInitScript, frozenNowMs, type ClockConfig } from "./clock.js";
 import { getContext } from "./context.js";
 import { resolveDeviceContext } from "./device.js";
 import { WindupError } from "./errors.js";
-import { matchRule } from "./network.js";
-import { classifyConsoleError, matchesIgnore } from "./diagnostics.js";
+import { matchRule, stubMatchesUrl } from "./network.js";
+import { classifyConsoleError, matchesIgnore, resourceStatus } from "./diagnostics.js";
 import type { NetworkRule } from "./config.js";
 import { VITALS_INIT_SCRIPT } from "./vitals.js";
 import { installChromium, isMissingBrowserError } from "./ensure-browser.js";
@@ -114,8 +114,10 @@ class PlaywrightSession implements Browser {
   constructor(
     private readonly context: BrowserContext,
     private readonly page: Page,
-    /** Effective network stubs for THIS session (scenario merged over config) — captureDiagnostics uses these to exclude deliberately-stubbed 5xx. */
+    /** Effective network stubs for THIS session (scenario merged over config) — captureDiagnostics uses these to exclude deliberately-stubbed 5xx / resource errors. */
     private readonly network?: NetworkRule[],
+    /** Effective failOn.ignore for THIS session (scenario merged over config) — captureDiagnostics silences these by message or url. */
+    private readonly ignore?: string[],
   ) {}
 
   private readonly consoleErrs: ConsoleError[] = [];
@@ -133,16 +135,19 @@ class PlaywrightSession implements Browser {
    */
   captureDiagnostics(): void {
     const cfg = (() => { try { return getContext().config; } catch { return undefined; } })();
-    const ignore = cfg?.failOn?.ignore ?? [];
+    const ignore = this.ignore ?? cfg?.failOn?.ignore ?? []; // effective (scenario + config) ignore for this session
     const ignored = (...parts: Array<string | undefined>) => matchesIgnore(ignore, ...parts);
     const stubs = this.network; // effective (scenario + config) rules for this session
     const isStub = (url: string, method: string) => Boolean(stubs?.length && matchRule(stubs, url, method));
+    const isStubbedUrl = (url: string | undefined) => Boolean(url && stubs?.length && stubMatchesUrl(stubs, url));
     this.page.on("console", (m) => {
       if (m.type() !== "error") return;
       const message = m.text();
       const url = m.location()?.url || undefined;
       if (ignored(message, url)) return;
-      this.consoleErrs.push({ message, url, kind: classifyConsoleError(message) });
+      if (isStubbedUrl(url)) return; // a deliberately-stubbed endpoint (global OR per-scenario) is not a real failure
+      const status = resourceStatus(message);
+      this.consoleErrs.push({ message, url, kind: classifyConsoleError(message), ...(status !== undefined ? { status } : {}) });
     });
     this.page.on("pageerror", (e) => {
       if (ignored(e.message)) return;
@@ -478,7 +483,7 @@ function getEngine(): Promise<PWBrowser> {
  * `storageState` (a prior session snapshot) to seed cookies/localStorage into
  * the fresh context — restoring auth without re-running the login flow.
  */
-export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean; network?: NetworkRule[]; clock?: ClockConfig } = {}): Promise<Browser> {
+export async function launchBrowser(opts: { storageState?: unknown; trace?: boolean; network?: NetworkRule[]; clock?: ClockConfig; ignore?: string[] } = {}): Promise<Browser> {
   const browser = await getEngine();
   const cfg = currentConfig();
   // Per-scenario network/clock (already merged over config by the caller) win; else the global config.
@@ -519,7 +524,7 @@ export async function launchBrowser(opts: { storageState?: unknown; trace?: bool
     }
   }
   const page = await context.newPage();
-  const session = new PlaywrightSession(context, page, network);
+  const session = new PlaywrightSession(context, page, network, opts.ignore);
   session.captureDiagnostics(); // passive console/5xx listeners for config.failOn / --fail-on-*
   return session;
 }

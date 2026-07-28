@@ -3,6 +3,7 @@
  * Kept out of browser.ts so the classification and ignore-matching are unit-
  * testable without a real Playwright page.
  */
+import type { FailOn } from "./config.js";
 
 /**
  * A Chromium sub-resource load failure logs the generic
@@ -14,6 +15,28 @@
  */
 export function classifyConsoleError(message: string): "js" | "resource" {
   return /failed to load resource/i.test(message) ? "resource" : "js";
+}
+
+/**
+ * Merge a scenario's `failOn` over the global config: the boolean gates
+ * (consoleErrors/resourceErrors/http5xx) take the scenario value when set, else
+ * the global; `ignore` lists are CONCATENATED (global noise + scenario-specific),
+ * so opening an exception for one scenario doesn't blind the others.
+ */
+export function effectiveFailOn(scenario: FailOn | undefined, global: FailOn | undefined): FailOn | undefined {
+  if (!scenario) return global;
+  return {
+    consoleErrors: scenario.consoleErrors ?? global?.consoleErrors,
+    resourceErrors: scenario.resourceErrors ?? global?.resourceErrors,
+    http5xx: scenario.http5xx ?? global?.http5xx,
+    ignore: [...(global?.ignore ?? []), ...(scenario.ignore ?? [])],
+  };
+}
+
+/** The HTTP status embedded in a Chromium resource-load error message, e.g. "…status of 404 ()" → 404. */
+export function resourceStatus(message: string): number | undefined {
+  const m = message.match(/status of (\d{3})\b/);
+  return m ? Number(m[1]) : undefined;
 }
 
 /**

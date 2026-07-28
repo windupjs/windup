@@ -36,6 +36,15 @@ export function effectiveNetwork(
   return [...scenarioRules, ...(globalRules ?? [])];
 }
 
+/**
+ * True when any stub rule matches this URL, IGNORING method — for excluding a
+ * console "Failed to load resource" error (which carries a URL but no HTTP method)
+ * from the failOn gate: a deliberately-stubbed endpoint is not a real failure.
+ */
+export function stubMatchesUrl(rules: NetworkRule[], url: string): boolean {
+  return rules.some((r) => urlMatches(r.url, url));
+}
+
 /** The first rule whose method (if any) and url (substring or glob) match the request — or null. */
 export function matchRule(rules: NetworkRule[], url: string, method: string): NetworkRule | null {
   for (const rule of rules) {

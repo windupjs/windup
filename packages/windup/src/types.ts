@@ -1,4 +1,4 @@
-import type { NetworkRule } from "./config.js";
+import type { NetworkRule, FailOn } from "./config.js";
 import type { ClockConfig } from "./clock.js";
 
 export type ActionType = "goto" | "click" | "fill" | "wait_for" | "use";
@@ -158,6 +158,8 @@ export interface Scenario {
   network?: NetworkRule[];
   /** Per-scenario frozen clock / timezone, field-merged over `config.clock` (scenario fields win). Applied every run, never cached. */
   clock?: ClockConfig;
+  /** Per-scenario runtime-health gate, merged over `config.failOn` (scenario booleans win; `ignore` concatenated) — open an exception (e.g. `{ "resourceErrors": false }` or a scenario-only `ignore`) for THIS run without blinding the whole suite. */
+  failOn?: FailOn;
 }
 
 export type CacheStatus = "active" | "stale";
@@ -240,8 +242,8 @@ export interface RunMetrics {
   failure: { kind: FailureKind; action_id: string | null; message: string } | null;
   /** #a11y — accessibility violations on the final page (axe-core), when `--a11y` ran. Informational; never fails the run. */
   a11y?: { violations: Array<{ id: string; impact: string; help: string; nodes: number }> };
-  /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. Each console error carries its originating `url` and a `js`/`resource` kind. */
-  diagnostics?: { console_errors?: Array<{ message: string; url?: string; kind?: "js" | "resource" }>; failed_responses?: Array<{ url: string; status: number; method: string }> };
+  /** #diagnostics — console errors / 5xx responses observed during the run. Recorded when present; fails the run only under config.failOn / --fail-on-*. Each console error carries its originating `url`, a `js`/`resource` kind, and (for a resource error) the HTTP `status`. */
+  diagnostics?: { console_errors?: Array<{ message: string; url?: string; kind?: "js" | "resource"; status?: number }>; failed_responses?: Array<{ url: string; status: number; method: string }> };
   /** #web-vitals — final-page performance (TTFB/FCP/LCP/DCL/load/CLS), captured under --web-vitals or config.budgets. Fails only when a config.budgets threshold is exceeded. */
   web_vitals?: { ttfb_ms: number | null; fcp_ms: number | null; lcp_ms: number | null; dcl_ms: number | null; load_ms: number | null; cls: number | null };
   /** --trace — paths (relative to the report dir) to a saved Playwright trace / screenshot captured on a FAILED run. */
