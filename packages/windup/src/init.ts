@@ -1,5 +1,5 @@
 import { intro, outro, text, isCancel, cancel, note } from "@clack/prompts";
-import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -45,7 +45,10 @@ export default defineConfig({
   await writeFile(configFile, config);
 
   await mkdir(path.join(cwd, ".windup"), { recursive: true });
-  await ensureGitignore(cwd, ".windup/");
+  // Version the plan cache + site map (the "plan once, replay $0 anywhere" artifact) — an
+  // internal .gitignore ignores only the ephemeral/sensitive dirs (auth cookies, per-run
+  // ledger, reports), so the cache commits by default and replays run with no LLM in CI.
+  await writeFile(path.join(cwd, ".windup", ".gitignore"), "# Ephemeral / sensitive — do NOT commit. The plan cache (cache/) and site map (map/) ARE committed: that's what makes replays $0 with no LLM anywhere.\nstate/\nruns/\nreports/\n");
 
   const scenariosPath = path.join(cwd, scenariosDir);
   await mkdir(scenariosPath, { recursive: true });
@@ -66,12 +69,17 @@ export default defineConfig({
     );
   }
 
-  outro(`Created windup.config.ts, ${scenariosDir}/example.json and .windup/ (gitignored).
+  outro(`Created windup.config.ts, ${scenariosDir}/example.json and .windup/.
+
+  The plan cache (.windup/cache) and site map (.windup/map) are meant to be COMMITTED —
+  that's what makes replays run $0, with no LLM and no Claude CLI, in CI and on any machine.
+  Only .windup/state (auth cookies), runs and reports are gitignored.
 
   Next steps:
     1. Add GOOGLE_GENERATIVE_AI_API_KEY to your .env.local (or .env)
     2. npx windup scan          index your project's routes into the site map
-    3. Write a scenario in ${scenariosDir}/ and run: npx windup run <scenario-id>`);
+    3. Write a scenario in ${scenariosDir}/ and run: npx windup run <scenario-id>
+    4. Commit .windup/ so CI and teammates replay without an LLM`);
 }
 
 async function ask(message: string, defaultValue: string): Promise<string> {
@@ -115,13 +123,3 @@ async function detectFramework(cwd: string): Promise<string | null> {
   }
 }
 
-async function ensureGitignore(cwd: string, entry: string): Promise<void> {
-  const file = path.join(cwd, ".gitignore");
-  try {
-    const content = await readFile(file, "utf8");
-    if (content.split("\n").some((l) => l.trim() === entry || l.trim() === entry.replace(/\/$/, ""))) return;
-    await appendFile(file, `\n${entry}\n`);
-  } catch {
-    await writeFile(file, `${entry}\n`);
-  }
-}

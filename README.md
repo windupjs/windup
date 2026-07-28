@@ -41,11 +41,16 @@ Windup turns it into a schema-validated JSON plan of browser actions, executes i
 npm i -D windupjs        # Chromium provisioned automatically
 npx windup init          # 3 questions → windup.config.ts
 npx windup scan          # index your app's routes & elements from source
+
+# author a test — describe it…
 npx windup new "log in as admin and create an invoice"   # LLM-assisted authoring
+# …or demonstrate it:
+npx windup record --url http://localhost:3000            # click the flow, mark a check, done
+
 npx windup run checkout  # 1st run: the LLM plans · after that: ~1s replay, $0
 ```
 
-Requirements: Node ≥ 20 and a `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or `.env`. Full documentation — commands, config, CI reporters, environments, the vitest adapter — lives in [`packages/windup/README.md`](packages/windup/README.md).
+Requirements: Node ≥ 20 and a `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or `.env`. Full documentation — commands, config, CI reporters, environments, the vitest adapter — lives in [`packages/windup/README.md`](packages/windup/README.md) and at [windup.run/docs](https://windup.run/docs).
 
 ## How it works
 

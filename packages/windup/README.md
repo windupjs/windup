@@ -45,7 +45,7 @@ npm i -D windupjs
 
 # 2. Initialize — 3 questions (base URL, model, scenarios dir)
 npx windup init
-#    → windup.config.ts + e2e/scenarios/ + .windup/ (gitignored)
+#    → windup.config.ts + e2e/scenarios/ + .windup/ (cache & map committed; state/runs/reports gitignored)
 
 # 3. Index your app from source — before anything ever runs
 npx windup scan
@@ -380,6 +380,7 @@ Its own client auth is off by default; set `CLAUDE_CODE_API_KEY` only if you ena
 npx windup run --all --reporter junit --report-file reports/windup.xml
 ```
 
+- **Commit the plan cache so CI needs no LLM (the whole point).** A replay is `$0` because it uses the *cached plan* instead of the planner — so for CI (and any machine without your planner's CLI/key) the plan cache must be **committed**. `windup init` sets this up for you: it versions `.windup/cache/` (plans) and `.windup/map/` (site map) and gitignores only `.windup/state/` (auth cookies), `.windup/runs/` and `.windup/reports/`. Plan the suite once locally, `git add .windup`, and CI replays every scenario at $0 with **no LLM and no Claude CLI**. Plans are portable and secret-free (selectors + `value_ref`, never resolved values). When a **new** scenario (or a real UI change) causes a `cache=miss`, that one needs the planner — regenerate locally and commit, or give CI a **non-interactive** planner (`--llm google`/`--llm openai` with an API key, or `claude-code-openai-wrapper` via `WINDUP_CLAUDE_CODE_URL`). *(Upgrading from an older project? If your root `.gitignore` has a blanket `.windup/`, narrow it to `.windup/state/`, `.windup/runs/`, `.windup/reports/` and commit `.windup/cache/`.)*
 - `--all` runs every scenario in the directory (one warm browser for the whole suite).
 - **Suite summary & module grouping.** `--all` (or a multi-scenario run) prints a suite line — pass rate, cache-hit rate, re-plans, LLM calls, cost, and **wall-clock time** (real elapsed; the inflated sum-of-totals is shown alongside with the concurrency, e.g. `wall 130s (sum 512s · concurrency 4)`) — plus a per-**module** (folder) breakdown. The HTML report groups by module, leads with the wall-clock, and gives each scenario a duration breakdown bar that reconciles to its total; JUnit emits one `<testsuite>` per module; JSON carries the full summary (`wall_ms`, `concurrency`, `by_module`, `flaky`) and a per-case `duration_breakdown`.
 - **Flake score + root-cause hint.** `--repeat <n>` aggregates per scenario — one that passes some-but-not-all of its runs is listed flaky (`passed X/N`), with a **hint** at the likely cause drawn from its runs (start-page signature drift → hydration race; a network failure; always-same-action → an unstable selector; cache churn → non-deterministic replay) — so data-dependent flakiness surfaces, and points somewhere, before you commit a green.
@@ -430,7 +431,7 @@ Example GitHub Actions step:
 
 | Command | Description |
 |---|---|
-| `windup init` | Create `windup.config.ts`, `.windup/` (gitignored) and an example scenario |
+| `windup init` | Create `windup.config.ts`, `.windup/` (cache & map committed; state/runs/reports gitignored) and an example scenario |
 | `windup new "<instruction>" [--id x] [--force] [--depends-on ids] [--validate]` | Generate a scenario from a rough instruction; `--validate` runs and refines it until it passes (≤3 attempts) |
 | `windup record [id] [--url <start>] [--force] [--no-llm]` | Author by demonstration: drive a headful browser, mark a verification with the toolbar, finish — writes the scenario + caches the recorded plan ($0 replay). Needs a TTY |
 | `windup run [scenario]` | Run one scenario (replay when cached, plan on miss) |

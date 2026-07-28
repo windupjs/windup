@@ -308,9 +308,13 @@ function claudeCliError(err: unknown): WindupError {
   const msg = err instanceof Error ? err.message : String(err);
   if (/ENOENT/.test(msg)) {
     return new WindupError(
-      `the "claude" CLI was not found on PATH. Install it (npm i -g @anthropic-ai/claude-code) and log in ` +
-        `(run "claude", then /login with your Claude plan), or run the claude-code-openai-wrapper and point ` +
-        `providers["claude-code"].baseUrl / WINDUP_CLAUDE_CODE_URL at it instead.`,
+      `the "claude" CLI was not found on PATH — the planner can't run here (a cache MISS needs an LLM).\n` +
+        `For CI or a machine without the CLI, you have two options:\n` +
+        `  1. Commit the plan cache: run the suite once where the CLI is available, then commit .windup/cache/ ` +
+        `(and .windup/map/) — replays then need NO LLM and NO CLI ($0, on any machine).\n` +
+        `  2. Use a non-interactive planner: --llm google (GOOGLE_GENERATIVE_AI_API_KEY) or --llm openai (OPENAI_API_KEY), ` +
+        `or run claude-code-openai-wrapper and set providers["claude-code"].baseUrl / WINDUP_CLAUDE_CODE_URL.\n` +
+        `Or install the CLI: npm i -g @anthropic-ai/claude-code, then "claude" → /login with your Claude plan.`,
     );
   }
   return new WindupError(`could not run the claude CLI: ${msg}`);
