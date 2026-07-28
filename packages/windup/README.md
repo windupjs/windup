@@ -2,7 +2,7 @@
 
 **Natural-language E2E tests with deterministic replay — the LLM plans once, replays run without it.**
 
-**[windup.run](https://windup.run)** · [npm](https://www.npmjs.com/package/windupjs)
+**[windup.run](https://windup.run/?utm_source=npm&utm_medium=readme&utm_campaign=windup)** · [npm](https://www.npmjs.com/package/windupjs)
 
 ![Windup demo: a plain-English test runs once with the LLM, then replays deterministically with zero LLM calls and $0](https://raw.githubusercontent.com/windupjs/windup/main/assets/windup-demo.gif)
 
@@ -631,4 +631,4 @@ MIT
 
 ---
 
-Built by **[Orbital Tecnologia](https://orbitaldev.com.br)** — developed by **Kallef** ([@prhost](https://github.com/prhost)).
+Built by **[Orbital Tecnologia](https://orbitaldev.com.br/?utm_source=npm&utm_medium=readme&utm_campaign=windup)** — developed by **Kallef** ([@prhost](https://github.com/prhost)).

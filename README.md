@@ -14,7 +14,7 @@
 [![CI](https://github.com/windupjs/windup/actions/workflows/ci.yml/badge.svg)](https://github.com/windupjs/windup/actions/workflows/ci.yml)
 [![engine: Playwright](https://img.shields.io/badge/engine-Playwright-2EAD33)](https://playwright.dev)
 
-[windup.run](https://windup.run) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Why Windup](#why-windup) · [User docs](packages/windup/README.md) · [Specification](docs/specs/SPEC.md)
+[windup.run](https://windup.run/?utm_source=github&utm_medium=readme&utm_campaign=windup) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Why Windup](#why-windup) · [User docs](packages/windup/README.md) · [Specification](docs/specs/SPEC.md)
 
 </div>
 
@@ -50,7 +50,7 @@ npx windup record --url http://localhost:3000            # click the flow, mark 
 npx windup run checkout  # 1st run: the LLM plans · after that: ~1s replay, $0
 ```
 
-Requirements: Node ≥ 20 and a `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or `.env`. Full documentation — commands, config, CI reporters, environments, the vitest adapter — lives in [`packages/windup/README.md`](packages/windup/README.md) and at [windup.run/docs](https://windup.run/docs).
+Requirements: Node ≥ 20 and a `GOOGLE_GENERATIVE_AI_API_KEY` in `.env.local` or `.env`. Full documentation — commands, config, CI reporters, environments, the vitest adapter — lives in [`packages/windup/README.md`](packages/windup/README.md) and at [windup.run/docs](https://windup.run/docs?utm_source=github&utm_medium=readme&utm_campaign=windup).
 
 ## How it works
 
@@ -125,6 +125,6 @@ Page content is fed to the LLM as untrusted data; plans are schema-validated and
 
 <div align="center">
 
-Built by **[Orbital Tecnologia](https://orbitaldev.com.br)** — developed by **Kallef** ([@prhost](https://github.com/prhost))
+Built by **[Orbital Tecnologia](https://orbitaldev.com.br/?utm_source=github&utm_medium=readme&utm_campaign=windup)** — developed by **Kallef** ([@prhost](https://github.com/prhost))
 
 </div>
