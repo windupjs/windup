@@ -628,3 +628,7 @@ The full living specification ships in the repository at `docs/specs/SPEC.md`.
 ## License
 
 MIT
+
+---
+
+Built by **[Orbital Tecnologia](https://orbitaldev.com.br)** — developed by **Kallef** ([@prhost](https://github.com/prhost)).

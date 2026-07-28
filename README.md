@@ -62,15 +62,10 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
              └──▶ subsequent runs: zero LLM, ~1s, $0
 ```
 
-- **Plans are data, not code** — schema-validated JSON; no generated scripts, no conditionals, no flaky "agent improvisation" at run time.
-- **Cheap verification** — DOM/URL postconditions after every action. A failed verification invalidates the cached plan and triggers an automatic re-plan.
-- **Site map** — every execution feeds a graph of pages and transitions; `windup scan` seeds it straight from your source code (Next.js, react-router, TanStack Router), so the planner uses your app's *real* selectors instead of guessing.
-- **Fragments** — proven action blocks (e.g. login) the planner composes instead of regenerating.
-- **Environment-portable** — start URLs resolve per environment (`--base-url` / `WINDUP_BASE_URL`); the plan cache is keyed by path, so plans generated on `localhost` replay on staging and CI for free.
-- **CI-ready** — `windup run --all --reporter junit`, non-zero exit on failure, AI-spend ledger via `windup costs`.
-- **Assisted authoring** — `windup new "rough instruction"` turns a one-liner into a precise, verifiable scenario grounded in your app's real screens (site map) and accounts (manifest) — a file you review and commit.
-- **Bring your LLM** — Google Gemini and OpenAI in-box, several configured at once, picked per run (`--llm openai:gpt-5-mini`); spend tracked per provider and model.
-- **Zero hardcoded site knowledge** — the engine knows frameworks and the web platform, never *your* site.
+- **Plans are data, not code** — schema-validated JSON; no generated scripts, no conditionals, no "agent improvisation" at run time.
+- **Cheap verification** — DOM/URL postconditions after every action. A failed verification invalidates the cached plan and triggers an automatic re-plan (self-healing).
+- **Zero hardcoded site knowledge** — the engine knows frameworks and the web platform, never *your* site; everything about your app enters via the site map, scenarios and config.
+- **Commit the plan cache → $0 CI with no LLM.** `windup init` versions `.windup/cache/` (plans) and `.windup/map/` (site map); plans are portable and secret-free, so a committed cache replays every scenario in CI **with no LLM and no CLI**.
 
 ## Why Windup
 
@@ -81,6 +76,28 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 | Run speed | fast | slow (model in the loop) | ~1s replay |
 | Determinism | high | low — improvises each time | high — same plan every replay |
 | App changed | you fix the script | may silently do something else | verification fails → auto re-plan |
+
+## Features
+
+**Authoring**
+- **`windup new`** — describe a flow in one line; the LLM writes a precise, verifiable scenario grounded in your app's real screens (site map) and accounts (manifest). `--validate` runs and refines it until it passes.
+- **`windup record`** — author by *demonstration*: drive a headful browser, mark what to verify with a floating toolbar, finish. Windup writes the scenario **and** caches the recorded plan (a $0 replay). A typed password never enters the plan (it becomes an `ENV` `value_ref`).
+- **`windup scan`** — index your routes and elements straight from source (Next.js, react-router, TanStack Router). **Fragments** let the planner compose proven blocks (e.g. login) instead of regenerating.
+
+**Determinism & realism**
+- **Request stubbing (`config.network`)** — force a 500, an empty list, or a dropped call, per run and per scenario, without touching the backend.
+- **Frozen clock (`config.clock`)** — pin `now`/timezone for date-dependent tests. **Device emulation (`--device`)** — run at an `iPhone 14`/`Pixel 7` viewport, with the cache keyed per device.
+- **Richer assertions** — `text_contains`, element `count`, `not_visible`, `attribute` — not just "a selector exists". **Dynamic values (`config.resolve`)** — OTP/magic-link fetched at run time; **`seed`** injects client-side state; **session snapshots** restore auth so a login flow isn't re-run per dependent.
+
+**CI & guard-rails**
+- **Reporters** — JUnit, JSON and a self-contained HTML report; non-zero exit on failure; **`--changed`/`--since`** incremental runs, **`--shard`**, **`--tag`**, **`--github`** annotations.
+- **Resilience** — **`--retries`** (surface flakes, never swallow them), **`--max-wall`** time budget, **`--bail`**, and per-scenario **`quarantine`** (runs and reports without failing the build).
+- **Runtime health gates** — fail a run that threw a JS error, failed to load a resource, or got a silent 5xx (`--fail-on-console`/`--fail-on-resource`/`--fail-on-5xx`). **Performance budgets** — `--web-vitals` captures TTFB/FCP/LCP/CLS and fails on a `config.budgets` breach.
+- **Safety denylist (`config.forbid`)** — abort before a run touches a forbidden selector/URL (change-password, delete). Secrets never reach the LLM, cache, scenarios or git.
+
+**Diagnostics** — `windup trends` (per-scenario pass-rate history), `why`/`explain`/`diff`, `badge`, `coverage` (routes with no test), `suggest-scenarios` (LLM drafts one per uncovered route), `costs` (AI spend), `doctor` (preflight), `--a11y` (free axe-core audit).
+
+**Portable** — start URLs resolve per environment (`--base-url`); bring your LLM (Google Gemini + OpenAI, several configured, picked per run with `--llm`); cross-browser (`--browser firefox|webkit`); a vitest/jest adapter.
 
 ## Repository layout
 
@@ -94,7 +111,7 @@ natural-language task ──▶ planner (LLM, 1 call) ──▶ JSON action plan
 
 ## Status
 
-**Stable (`1.0`)** — the public CLI and programmatic API are committed to under semver; breaking changes wait for a major bump. All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. **Replay reliability: 60/60 cached replays passed with zero flakes and `llm_calls=0`** across four scenarios (login, multi-step checkout, add/remove, a second site), 15 replays each. Plan generation ≥ 4/5 first-try without hints; automatic recovery from broken selectors. Engine: Playwright (trusted input events). Planner LLMs: Google Gemini and OpenAI, selectable per run; default `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
+**Stable (`1.x`)** — the public CLI and programmatic API are committed to under semver; breaking changes wait for a major bump. All planned phases (SPEC-001 E1–E5, SPEC-002 P1–P5) implemented and measured. **Replay reliability: 60/60 cached replays passed with zero flakes and `llm_calls=0`** across four scenarios (login, multi-step checkout, add/remove, a second site), 15 replays each. Plan generation ≥ 4/5 first-try without hints; automatic recovery from broken selectors. Engine: Playwright (trusted input events). Planner LLMs: Google Gemini and OpenAI, selectable per run; default `gemini-3.1-flash-lite` (~$0.0025/generation). Dogfooded on a real 106-route production app. CI on every push.
 
 ## Security
 
@@ -103,3 +120,11 @@ Page content is fed to the LLM as untrusted data; plans are schema-validated and
 ## License
 
 [MIT](LICENSE)
+
+---
+
+<div align="center">
+
+Built by **[Orbital Tecnologia](https://orbitaldev.com.br)** — developed by **Kallef** ([@prhost](https://github.com/prhost))
+
+</div>
