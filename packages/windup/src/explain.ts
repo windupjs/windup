@@ -1,5 +1,6 @@
 import { getCached } from "./cache.js";
 import { loadScenario } from "./scenario.js";
+import { trivialExpect } from "./schema.js";
 import type { Action } from "./types.js";
 
 export interface Explanation {
@@ -8,6 +9,8 @@ export interface Explanation {
   task?: string;
   start_url?: string;
   steps: string[];
+  /** Set when the cached plan's final postcondition proves nothing (asserts only a landmark) — a green run that is not evidence. */
+  warning?: string;
 }
 
 /** One human-readable line per action — never a fill's VALUE (secrets/OTP stay out; a `value_ref` shows as its name). */
@@ -36,6 +39,14 @@ function verifyLine(action: Action): string | null {
   if (e.url) parts.push(`the URL matches ${e.url}`);
   if (e.selector) parts.push(`${e.selector} is visible`);
   if (e.selector_value) parts.push(`${e.selector_value.selector} equals "${e.selector_value.value}"`);
+  if (e.text_contains) parts.push(`${e.text_contains.selector} contains "${e.text_contains.text}"`);
+  if (e.count) {
+    const c = e.count;
+    const how = c.equals !== undefined ? `exactly ${c.equals}` : [c.min !== undefined ? `at least ${c.min}` : "", c.max !== undefined ? `at most ${c.max}` : ""].filter(Boolean).join(" and ");
+    parts.push(`${how} ${c.selector} match`);
+  }
+  if (e.not_visible) parts.push(`${e.not_visible} is gone`);
+  if (e.attribute) parts.push(`${e.attribute.selector}'s ${e.attribute.name} equals "${e.attribute.value}"`);
   return parts.length ? `verify ${parts.join(" and ")}` : null;
 }
 
@@ -52,7 +63,14 @@ export async function explainPlan(scenarioId: string): Promise<Explanation> {
     const v = verifyLine(action);
     if (v) steps.push(`  ↳ ${v}`);
   }
-  return { scenario_id: scenarioId, planned: true, task: cached.plan.task ?? scenario.task, start_url: scenario.start_url, steps };
+  // Plans cached before this check existed can still hold a vacuous postcondition.
+  // explain is where a careful user looks, so flag it here rather than let a green
+  // run keep looking like evidence.
+  const last = cached.plan.actions[cached.plan.actions.length - 1];
+  const warning = last && last.type !== "use" && trivialExpect(last.expect)
+    ? `this plan's final check only asserts "${last.expect?.selector ?? last.expect?.not_visible}" — a landmark present on every page, so the test passes even if the feature is broken. Sharpen the task (name the exact text to verify), then re-run: the plan will be rejected and re-planned.`
+    : undefined;
+  return { scenario_id: scenarioId, planned: true, task: cached.plan.task ?? scenario.task, start_url: scenario.start_url, steps, ...(warning ? { warning } : {}) };
 }
 
 export function printExplain(e: Explanation): void {
@@ -67,4 +85,5 @@ export function printExplain(e: Explanation): void {
     if (step.startsWith("  ↳")) console.log(`     ${step.trim()}`);
     else console.log(`  ${++n}. ${step}`);
   }
+  if (e.warning) console.log(`\n  ⚠ weak verification: ${e.warning}`);
 }

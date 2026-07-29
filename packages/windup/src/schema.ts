@@ -1,6 +1,6 @@
 import { Ajv2020 as Ajv } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import type { Plan } from "./types.js";
+import type { Expect, Plan } from "./types.js";
 
 /**
  * Full JSON Schema of the v0.1 plan (doc 04) — local authority, validated with Ajv.
@@ -176,6 +176,36 @@ export interface ValidationResult {
 }
 
 /**
+ * Layout/landmark selectors that exist on essentially every page. Asserting only
+ * that one of them is visible proves nothing beyond "the page loaded", so a plan
+ * whose FINAL postcondition is just this can never fail — a green run that looks
+ * exactly like evidence while being none. These are web-platform facts (never
+ * site knowledge), so the engine may know them.
+ */
+const LANDMARK_SELECTORS = new Set([
+  "body", "html", ":root", "main", "#root", "#app", "#__next", "#___gatsby",
+  "[role=main]", '[role="main"]', "div", "span", "section", "article",
+  "header", "footer", "nav", "form", "ul", "ol", "table",
+]);
+
+function isLandmark(selector: string): boolean {
+  return LANDMARK_SELECTORS.has(selector.trim().toLowerCase());
+}
+
+/**
+ * True when a postcondition asserts nothing that discriminates a fulfilled task
+ * from a merely-loaded page. Any content/value/count/attribute/URL assertion
+ * discriminates; bare visibility (or absence) of a landmark does not.
+ */
+export function trivialExpect(expect: Expect | undefined): boolean {
+  if (!expect) return true;
+  if (expect.url || expect.selector_value || expect.text_contains || expect.count || expect.attribute) return false;
+  if (expect.not_visible) return isLandmark(expect.not_visible);
+  if (expect.selector) return isLandmark(expect.selector);
+  return true;
+}
+
+/**
  * Full validation: structural (Ajv) + semantic (doc 04).
  */
 export function validatePlan(data: unknown): ValidationResult {
@@ -222,6 +252,16 @@ export function validatePlan(data: unknown): ValidationResult {
     lastExpect.text_contains || lastExpect.count || lastExpect.not_visible || lastExpect.attribute;
   if (last.type !== "use" && !hasAnyExpect) {
     errors.push(`action ${last.id}: the final action must declare expect (selector, url, selector_value, text_contains, count, not_visible or attribute)`);
+  } else if (last.type !== "use" && trivialExpect(last.expect)) {
+    // A vacuous postcondition is worse than a missing one: it PASSES while
+    // proving nothing. Reject it so the planner re-plans (same path as any
+    // invalid plan) instead of caching a test that cannot fail.
+    errors.push(
+      `action ${last.id}: the final postcondition is trivial ("${lastExpect.selector ?? lastExpect.not_visible}" is a landmark that exists on every page) — ` +
+        `it passes as long as the page loads, so the test can never fail. Assert something specific to the task instead: ` +
+        `text_contains (the exact text the task names), count, attribute, selector_value, an expect.url glob, ` +
+        `or a selector that identifies real content (not body/html/main/div/#root).`,
+    );
   }
 
   return { ok: errors.length === 0, errors };

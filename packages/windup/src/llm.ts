@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { getContext } from "./context.js";
 import { WindupError } from "./errors.js";
+import { PRICING } from "./metrics.js";
 
 /**
  * Multi-provider boundary with LLMs. Everything that talks to a model (planner,
@@ -102,10 +103,22 @@ export function resolveLlm(preferred?: string): { provider: ProviderName; model:
   return { provider, model: config.model ?? defaultModelFor(provider) };
 }
 
+/**
+ * Which env var holds this provider's API key. Precedence: the provider's own
+ * `llm.providers.<name>.apiKeyEnv` > the `llm.apiKeyEnv` shorthand (accepted at
+ * the top level because that is where the generated config's comment sits, and
+ * where everyone reaches for it first) > the provider default. Shared by the
+ * client and `windup doctor` so the diagnosis can never diverge from runtime.
+ */
+export function resolveApiKeyEnv(provider: ProviderName): string {
+  const llm = getContext().config.llm;
+  return llm.providers?.[provider]?.apiKeyEnv ?? llm.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
+}
+
 export function createLlmClient(preferred?: string): LlmClient {
   const { provider, model } = resolveLlm(preferred);
   const providerCfg = getContext().config.llm.providers?.[provider];
-  const apiKeyEnv = providerCfg?.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
+  const apiKeyEnv = resolveApiKeyEnv(provider);
   const apiKey = process.env[apiKeyEnv];
   if (!apiKey && !PROVIDER_DEFAULTS[provider].apiKeyOptional) {
     throw new WindupError(
@@ -127,6 +140,25 @@ export function createLlmClient(preferred?: string): LlmClient {
   return googleClient(model, apiKey!);
 }
 
+/**
+ * A provider "model not found" (404) is a CONFIG mistake — a typo in
+ * `--llm <provider>:<model>` or in windup.config — not a broken test. Translate
+ * the raw provider JSON into an actionable WindupError so it is reported as a
+ * config failure (never retried) instead of a cryptic `plan_invalid`.
+ * Returns null when the error is something else (left to the normal paths).
+ */
+function modelNotFoundError(err: unknown, provider: ProviderName, model: string): WindupError | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const looksLikeModel404 = /\b404\b/.test(msg) && /model/i.test(msg);
+  if (!looksLikeModel404) return null;
+  const known = Object.keys(PRICING.models).filter((m) => m.startsWith(model.split("-")[0]));
+  return new WindupError(
+    `the model "${model}" does not exist for provider "${provider}" (the API answered 404). Check the name — ` +
+      `it is a config mistake, not a test failure.${known.length ? ` Known ${model.split("-")[0]}* models: ${known.slice(0, 6).join(", ")}.` : ""} ` +
+      `Set it with --llm ${provider}:<model> or llm.model in windup.config.`,
+  );
+}
+
 function googleClient(model: string, apiKey: string): LlmClient {
   let ai: import("@google/genai").GoogleGenAI | null = null;
   return {
@@ -137,20 +169,24 @@ function googleClient(model: string, apiKey: string): LlmClient {
         const { GoogleGenAI } = await import("@google/genai");
         ai = new GoogleGenAI({ apiKey });
       }
-      const response = await ai.models.generateContent({
-        model,
-        contents: req.prompt,
-        config: {
-          ...(req.schema ? { responseMimeType: "application/json", responseSchema: req.schema } : {}),
-          // Planning is transcribing a task into actions, not long reasoning:
-          // thinking disabled cuts ~10x of latency and cost on flash.
-          // The *pro* models do not accept budget 0 — they use the minimum (128).
-          thinkingConfig: { thinkingBudget: model.includes("pro") ? 128 : 0 },
-          maxOutputTokens: req.maxOutputTokens,
-          temperature: req.temperature,
-          ...(req.seed !== undefined ? { seed: req.seed } : {}),
-        },
-      });
+      const response = await ai.models
+        .generateContent({
+          model,
+          contents: req.prompt,
+          config: {
+            ...(req.schema ? { responseMimeType: "application/json", responseSchema: req.schema } : {}),
+            // Planning is transcribing a task into actions, not long reasoning:
+            // thinking disabled cuts ~10x of latency and cost on flash.
+            // The *pro* models do not accept budget 0 — they use the minimum (128).
+            thinkingConfig: { thinkingBudget: model.includes("pro") ? 128 : 0 },
+            maxOutputTokens: req.maxOutputTokens,
+            temperature: req.temperature,
+            ...(req.seed !== undefined ? { seed: req.seed } : {}),
+          },
+        })
+        .catch((err: unknown) => {
+          throw modelNotFoundError(err, "google", model) ?? err;
+        });
       return {
         text: response.text ?? "",
         tokens: {
@@ -199,7 +235,8 @@ function openaiClient(model: string, apiKey: string, baseUrl?: string): LlmClien
       });
       if (!response.ok) {
         const detail = (await response.text().catch(() => "")).slice(0, 500);
-        throw new Error(`OpenAI API error ${response.status}: ${detail}`);
+        const raw = `OpenAI API error ${response.status}: ${detail}`;
+        throw modelNotFoundError(raw, "openai", model) ?? new Error(raw);
       }
       const data = (await response.json()) as {
         choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;

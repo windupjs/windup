@@ -30,9 +30,12 @@ export default defineConfig({
   llm: {
     provider: "google",
     model: ${JSON.stringify(model)},
+    // API keys come from GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY. Already have
+    // the key under another name? Point at it (no need to duplicate the secret):
+    // apiKeyEnv: "GEMINI_API_KEY",
     // Several providers at once — pick one per run with \`windup run --llm openai[:model]\`.
-    // API keys come from GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY (override with apiKeyEnv).
-    // providers: { openai: { model: "gpt-5-mini" } },
+    // Per-provider settings (a key name / endpoint just for that provider) go nested:
+    // providers: { openai: { model: "gpt-5-mini", apiKeyEnv: "MY_OPENAI_KEY" } },
   },
   scenarios: ${JSON.stringify(scenariosDir)},
   framework: ${JSON.stringify(framework)},

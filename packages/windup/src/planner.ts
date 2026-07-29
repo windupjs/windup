@@ -147,6 +147,17 @@ messages, which vanish after a few seconds and make the verification a race.
 "not_visible": "#error-banner" (a selector is gone/hidden — good for "the error disappears"); \
 "attribute": { "selector": "#email", "name": "aria-invalid", "value": "false" }. Combine with \
 selector/url as needed; they all must hold (AND).
+- THE FINAL "expect" MUST BE ABLE TO FAIL — this is the single most important rule. \
+A postcondition on a landmark that exists on every page (body, html, main, div, section, #root, #app) \
+verifies only that the page loaded: the test then passes even when the feature is completely broken, \
+which is worse than no test at all. Such a plan is REJECTED by validation. \
+When the task names a text, assert THAT TEXT with text_contains. Examples:
+  BAD  (rejected): "expect": { "selector": "body" }
+  BAD  (rejected): "expect": { "selector": "main" }
+  GOOD (task: "verify 'Popular parking' is visible"): "expect": { "text_contains": { "selector": "main", "text": "Popular parking" } }
+  GOOD (task: "verify the order confirmation appears"): "expect": { "text_contains": { "selector": "[data-testid=confirmation]", "text": "Order confirmed" } }
+  GOOD (task: "verify 3 rows are listed"): "expect": { "count": { "selector": ".order-row", "equals": 3 } }
+  GOOD (task: "verify it goes to the dashboard"): "expect": { "url": "**/dashboard", "selector": "#dashboard-title" }
 - Do NOT include fields that do not apply to the action — never use an empty string as a value. \
 click has no value/value_ref/url. The action's "url" field exists ONLY on goto (navigation destination). \
 The URL expected after the action goes in expect.url (accepts glob).
@@ -235,6 +246,10 @@ export class LlmPlanner implements Planner {
     const tokens = { input: 0, output: 0 };
     let llmCalls = 0;
     let lastErrors: string[] = [];
+    // WHY each extra LLM call happened. A re-plan can cost several calls (2 semantic
+    // attempts × 3 transient re-calls); without this the user only sees `llm_calls=4`
+    // and a minute of wall-clock with no explanation.
+    const retryReasons: string[] = [];
     let prompt = buildPrompt(scenario, pageTree, interactive, siteKnowledge, fragmentsCatalog, failureContext, opts.skipGoto === true);
     const promptChars = prompt.length;
 
@@ -257,6 +272,7 @@ export class LlmPlanner implements Planner {
           const message = err instanceof Error ? err.message : String(err);
           if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|timeout|429|500|502|503/i.test(message)) {
             lastErrors = [`network/quota failure calling ${client.provider}: ${message}`];
+            retryReasons.push("network/quota");
             await new Promise((r) => setTimeout(r, apiTry * 2000));
             continue;
           }
@@ -273,6 +289,7 @@ export class LlmPlanner implements Planner {
         }
         if (response.truncated) {
           lastErrors = ["degenerate/truncated response at the token limit — transient API failure"];
+          retryReasons.push("truncated response");
           continue;
         }
         try {
@@ -282,6 +299,7 @@ export class LlmPlanner implements Planner {
           if (plan?.actions && fragments.length) plan = dropFragmentEchoes(plan, fragments);
         } catch {
           lastErrors = ["response was not valid JSON — transient API failure"];
+          retryReasons.push("invalid JSON");
         }
       }
 
@@ -310,9 +328,15 @@ export class LlmPlanner implements Planner {
           plan.generated_by = { model: `${client.provider}/${client.model}`, at: new Date().toISOString() };
           progress(scenario.scenario_id, `plan valid ✓ (${llmCalls} llm call(s), ${plan.actions.length} actions)`);
           streamEvent(scenario.scenario_id, "plan", { actions: plan.actions.length, llm_calls: llmCalls });
-          return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, start_sig: startSig, prompt_chars: promptChars };
+          if (retryReasons.length) {
+            progress(scenario.scenario_id, `planner retried ${retryReasons.length}× — ${retryReasons.join("; ")}`);
+          }
+          return { plan, llm_calls: llmCalls, model: client.model, provider: client.provider, planning_mode: "full", tokens, semantic_retries: attempt - 1, retry_reasons: retryReasons, start_sig: startSig, prompt_chars: promptChars };
         }
         lastErrors = validation.errors;
+        // The most informative reason: WHAT the model got wrong (trivial postcondition,
+        // invented value_ref, missing selector…). Shortened for the one-line report.
+        retryReasons.push(`invalid plan: ${validation.errors[0]?.slice(0, 120) ?? "schema"}`);
         if (process.env.LOG_LEVEL === "debug") {
           console.error(`[planner] attempt ${attempt} invalid: ${lastErrors.join("; ")}\n${JSON.stringify(plan, null, 2)}`);
         }

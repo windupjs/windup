@@ -43,6 +43,12 @@ function printRun(metrics: RunMetrics): void {
   if (metrics.failure) {
     console.log(`      failure [${metrics.failure.kind}] action=${metrics.failure.action_id ?? "-"}: ${metrics.failure.message}${metrics.quarantined ? "  (quarantined — not blocking)" : ""}`);
   }
+  // Why planning cost more than one call — otherwise `llm_calls=4` after a 60s
+  // re-plan is unexplained (and looks like the tool is just slow).
+  const rr = metrics.plan_retry_reasons;
+  if (rr?.length) {
+    console.log(`      planner retried ${rr.length}× — ${rr.slice(0, 3).join("; ")}${rr.length > 3 ? " …" : ""}`);
+  }
   if (metrics.a11y) {
     const v = metrics.a11y.violations;
     if (v.length === 0) console.log("      a11y: no violations ✓");

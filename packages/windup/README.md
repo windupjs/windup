@@ -63,7 +63,7 @@ npx windup new "log in with the admin account and create an invoice for ACME"
 #    → e2e/scenarios/create-invoice-acme.json — precise task grounded in
 #      your real screens, account referenced by name, final verification
 
-# 6. First run — the LLM plans once (~3s, ~$0.002)
+# 6. First run — the LLM plans once (~3-5s, ~$0.002 on the default model)
 npx windup run create-invoice-acme
 #    PASS  create-invoice-acme  cache=miss llm_calls=1 ... cost=$0.0024
 
@@ -77,6 +77,8 @@ npx windup costs                   # AI spend: totals, per provider/model
 ```
 
 If a run fails after an app change, the cached plan is invalidated and re-planned automatically on the next run — you edit scenarios, not selectors.
+
+> **A first plan is one call (~3-5s, ~$0.002). A re-plan can cost more.** Self-healing re-plans carry failure context, and the planner retries when a plan comes back invalid or the API degenerates — so a hard case can take several calls and tens of seconds. Windup prints why: `planner retried 2× — invalid plan: …`. Keep the authoring loop cheap by fixing the *task* (name what to verify) rather than re-running and hoping.
 
 ## Scenarios
 
@@ -93,6 +95,7 @@ A scenario is a JSON file in your scenarios directory (default `e2e/scenarios/`)
 
 - `start_url` is **optional** (defaults to `/`) and should stay environment-free: a path, resolved against the effective base URL.
 - End the task with **what to verify** — that becomes the plan's final postcondition. Beyond "an element is visible" or "the URL is X", the plan can assert **richer conditions**: text contains a string, an element **count** (`equals`/`min`/`max`), a selector is **gone** (not visible), or an **attribute** equals a value — so "verify 3 orders appear", "verify the error banner disappears" or "verify the field is marked valid" become precise checks. Phrase the task that way and the planner emits the matching `expect`.
+- **A verification that cannot fail is rejected.** If the plan's final check only asserts that a *landmark* is visible (`body`, `html`, `main`, `div`, `section`, `#root`, …), it passes as long as the page loads — a green run that proves nothing. Windup **rejects** such a plan at validation and re-plans, telling the model to assert something specific instead. So **name the thing to verify in the task** ("…and verify the text 'Popular parking' appears", "…and verify 3 rows are listed") — that's what turns into a real assertion. Content assertions are fine on any selector: `text_contains: { selector: "main", text: "Popular parking" }` passes, because what it asserts is the text. Already-cached plans keep replaying untouched; run [`windup explain <id>`](#commands) to spot a weak verification you already have (it prints `⚠ weak verification: …`).
 - Never put secrets in tasks. Reference accounts from the project manifest (below); the plan will use `value_ref: "ENV:VAR"` and the real value is resolved only at runtime, never cached.
 - **Native dialogs & non-toast verification.** Windup handles native browser dialogs (`window.confirm`/`alert`/`prompt`) that guard destructive actions (archive, delete, cancel): the planner adds `"dialog": "accept"` (or `"dismiss"` to cancel) to the action that opens the dialog — otherwise the dialog is auto-dismissed and the action silently does nothing. It also steers the final verification toward a **persistent** signal (a row that disappears, a changed label, a URL) over an ephemeral toast/snackbar that vanishes in seconds.
 - **Dialog default for the whole scenario (`on_dialog`).** If a flow triggers the *same* confirmation on several steps (bulk delete, "leave page?" guards), set `"on_dialog": "accept"` (or `"dismiss"`) once on the scenario and a **persistent** handler answers every native dialog for the entire run — no per-action `dialog` needed. The per-action `dialog` still works for one-offs; when `on_dialog` is set it takes over.
@@ -300,6 +303,7 @@ The planner is provider-agnostic. Google Gemini and OpenAI are supported; config
 llm: {
   provider: "google",                       // default for runs without --llm
   model: "gemini-3.1-flash-lite",
+  // apiKeyEnv: "GEMINI_API_KEY",           // already have the key under another name? point at it
   providers: {
     openai: { model: "gpt-5-mini" },        // default model when --llm openai is used
     // openai: { apiKeyEnv: "MY_OPENAI_KEY", baseUrl: "https://my-proxy/v1" },
@@ -315,7 +319,8 @@ WINDUP_LLM=openai:gpt-5-mini npx windup run --all   # same thing via env (CI)
 ```
 
 - `--llm` works on `run`, `bench` (compare providers on the same scenario) and `scan` (LLM-assist layer).
-- API keys: `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` by default; override the env-var name with `apiKeyEnv`.
+- API keys: `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` by default. To reuse a key your project already stores under another name, point at it with **`apiKeyEnv`** — either at the `llm` level (`llm.apiKeyEnv: "GEMINI_API_KEY"`, applies to whichever provider has no override) or per provider (`llm.providers.openai.apiKeyEnv`, which wins). No need to duplicate the secret. `windup doctor` reports the exact variable it expects.
+- A **wrong model name** is caught as a config error, not a test failure: the provider's 404 becomes an actionable message naming known models, the run fails with `kind: config` (never retried by `--retries`), and `windup doctor` warns up-front when the configured model isn't in the known-model table.
 - `baseUrl` (OpenAI only) points at any OpenAI-compatible endpoint — Azure, a proxy, or a local model server.
 - Switching providers never invalidates the plan cache: plans are data, replays are LLM-free regardless of who planned them.
 - **Self-heal keeps your provider:** when a cached plan fails and re-plans, Windup reuses the provider that originally made it (recorded in the plan) before the config default — so a scenario planned with `--llm claude-code` re-plans with claude-code even if the later run didn't pass the flag. Explicit `--llm` always wins.

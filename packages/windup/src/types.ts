@@ -171,6 +171,8 @@ export interface CacheEntry {
     start_url: string;
     /** Structural signature of the initial page at plan time (E1). */
     start_sig?: string;
+    /** Hash of the scenario fields that shape the plan (task, hints, atomic_steps, depends_on, like) — editing any of them is a cache miss. Absent on entries written before 1.5.0 (they still hit). */
+    scenario_sig?: string;
   };
   plan: Plan;
   status: CacheStatus;
@@ -184,7 +186,7 @@ export interface CacheEntry {
   };
 }
 
-export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden" | "diagnostics" | "budget";
+export type FailureKind = "network" | "verification" | "plan_invalid" | "dependency" | "setup" | "forbidden" | "diagnostics" | "budget" | "config";
 
 export type CacheOutcome = "hit" | "miss" | "invalidated";
 
@@ -220,6 +222,8 @@ export interface RunMetrics {
   planning_mode: "full" | "incremental" | null;
   /** The planner's semantic retries (doc 03 allows ≤1); null if it did not plan. */
   plan_semantic_retries: number | null;
+  /** WHY the planner needed extra LLM calls, in order — so a multi-call, slow re-plan is explainable instead of just `llm_calls=4`. */
+  plan_retry_reasons?: string[];
   /**
    * E1, lenient policy: true if the initial page's sig diverged from the one
    * recorded in the cache (the replay proceeds anyway); null when there was no comparable sig.

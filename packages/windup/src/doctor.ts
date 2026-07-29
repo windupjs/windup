@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { getCached } from "./cache.js";
 import { getContext } from "./context.js";
 import { expandPlan, loadFragments } from "./fragments.js";
-import { PROVIDER_DEFAULTS, resolveLlm } from "./llm.js";
+import { PROVIDER_DEFAULTS, resolveApiKeyEnv, resolveLlm } from "./llm.js";
+import { PRICING } from "./metrics.js";
 import { discoverScenarioIds, loadScenario } from "./scenario.js";
 import { SiteMapStore } from "./sitemap.js";
 
@@ -25,11 +26,20 @@ export async function runDoctor(): Promise<Check[]> {
 
   // 1. LLM key for the active provider. Replays never need it; planning does.
   try {
-    const { provider } = resolveLlm();
-    const env = ctx.config.llm.providers?.[provider]?.apiKeyEnv ?? PROVIDER_DEFAULTS[provider].apiKeyEnv;
+    const { provider, model } = resolveLlm();
+    const env = resolveApiKeyEnv(provider); // same precedence the client uses (incl. the llm.apiKeyEnv shorthand)
     if (PROVIDER_DEFAULTS[provider].apiKeyOptional) checks.push({ name: "llm", status: "ok", detail: `provider "${provider}" (no API key needed)` });
     else if (process.env[env]) checks.push({ name: "llm", status: "ok", detail: `provider "${provider}", ${env} is set` });
     else checks.push({ name: "llm", status: "warn", detail: `provider "${provider}": ${env} not set — cached replays still run ($0), but planning a cache miss will fail` });
+    // A typo'd model name only surfaces as a provider 404 mid-run; flag it here (offline: against the known-model table).
+    if (!PRICING.models[model]) {
+      const known = Object.keys(PRICING.models).filter((m) => m.startsWith(model.split("-")[0]));
+      checks.push({
+        name: "llm model",
+        status: "warn",
+        detail: `"${model}" is not in the known-model table (as of ${PRICING.asOf}) — if the name is wrong, planning fails with a provider 404; cost is estimated with fallback rates either way${known.length ? `. Known ${model.split("-")[0]}* models: ${known.slice(0, 6).join(", ")}` : ""}`,
+      });
+    }
   } catch (e) {
     checks.push({ name: "llm", status: "warn", detail: `could not resolve provider: ${e instanceof Error ? e.message : e}` });
   }

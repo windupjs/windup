@@ -7,6 +7,7 @@ import { expandPlan, loadFragments } from "./fragments.js";
 import { instantiatePlan } from "./isomorph.js";
 import { dropSnapshot, getSnapshot, saveSnapshot } from "./session-cache.js";
 import { estimateCostUsd, writeRunMetrics } from "./metrics.js";
+import { WindupError } from "./errors.js";
 import { SiteMapStore } from "./sitemap.js";
 import type { FailureKind, Plan, RunMetrics, Scenario } from "./types.js";
 import type { NetworkRule } from "./config.js";
@@ -27,6 +28,8 @@ export interface PlanGeneration {
   tokens: { input: number; output: number };
   /** Semantic retries used (plan rejected by validation); excludes transient re-calls. */
   semantic_retries: number;
+  /** WHY the planner made extra calls, in order (invalid plan / truncated response / invalid JSON / network) — surfaced so a 4-call, 60s re-plan is explainable. */
+  retry_reasons?: string[];
   /** Signature of the initial page captured in the planning snapshot (E1). */
   start_sig?: string;
   /** Planning prompt size in chars (required by the E2 criterion). */
@@ -552,8 +555,14 @@ async function generateAndExecute(
       metrics.tokens.input += err.tokens.input;
       metrics.tokens.output += err.tokens.output;
     }
+    // A misconfiguration (missing API key, planner CLI absent, bad model name →
+    // provider 404) is NOT a broken test: reporting it as `plan_invalid` buried an
+    // actionable config message under a test failure — and made `--retries` repeat
+    // it as if it were a flake. Classify it as `config`: never retried, surfaced as
+    // the actionable message it already is.
+    const isConfig = err instanceof WindupError;
     metrics.failure = {
-      kind: "plan_invalid",
+      kind: isConfig ? "config" : "plan_invalid",
       action_id: null,
       message: err instanceof Error ? err.message : String(err),
     };
@@ -565,6 +574,9 @@ async function generateAndExecute(
   metrics.llm_provider = generation.provider ?? null;
   metrics.planning_mode = generation.planning_mode;
   metrics.plan_semantic_retries = generation.semantic_retries;
+  if (generation.retry_reasons?.length) {
+    metrics.plan_retry_reasons = [...(metrics.plan_retry_reasons ?? []), ...generation.retry_reasons];
+  }
   metrics.prompt_chars = generation.prompt_chars ?? null;
   metrics.tokens.input += generation.tokens.input;
   metrics.tokens.output += generation.tokens.output;

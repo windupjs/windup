@@ -1,4 +1,5 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { CacheEntry, Plan, Scenario } from "./types.js";
 import { getContext } from "./context.js";
@@ -26,8 +27,29 @@ function entryPath(scenarioId: string): string {
 }
 
 /**
- * Hit = file exists + status active + compatible versions + same start_url.
- * Anything else is a miss (doc 04).
+ * Hash of the scenario fields that SHAPE THE GENERATED PLAN. Editing any of them
+ * means the cached plan came from different input, so it must be re-planned.
+ * `task` was always checked; `hints` — which is precisely how an author steers a
+ * bad plan — silently did NOT invalidate before, so hint edits appeared to have
+ * no effect (the planner was never called).
+ * Runtime-only fields (seed, network, clock, failOn, tags, on_dialog, setup, …)
+ * are deliberately excluded: they change how a run BEHAVES, not how it is
+ * PLANNED, so editing one must never cost a re-plan.
+ */
+export function scenarioSig(scenario: Scenario): string {
+  const shaping = {
+    task: scenario.task,
+    hints: scenario.hints ?? [], // ORDER matters — it reaches the prompt verbatim
+    atomic_steps: scenario.atomic_steps ?? false,
+    depends_on: scenario.depends_on ?? [],
+    like: scenario.like ?? null,
+  };
+  return createHash("sha256").update(JSON.stringify(shaping)).digest("hex").slice(0, 16);
+}
+
+/**
+ * Hit = file exists + status active + compatible versions + same start_url +
+ * same plan-shaping scenario fields. Anything else is a miss (doc 04).
  */
 export async function getCached(scenario: Scenario): Promise<CacheEntry | null> {
   const entry = await readEntry(entryPath(scenario.scenario_id));
@@ -42,7 +64,11 @@ export async function getCached(scenario: Scenario): Promise<CacheEntry | null> 
     startPath(entry.key?.start_url ?? "/") === startPath(scenario.start_url ?? "/") &&
     // An edited task = a different test: the old plan no longer applies (a
     // miss, not an invalidation — the new plan's save overwrites normally).
-    (entry.plan.task === undefined || entry.plan.task === scenario.task);
+    (entry.plan.task === undefined || entry.plan.task === scenario.task) &&
+    // Same for hints and the other plan-shaping fields. Tolerant by design:
+    // entries written before this field existed have no sig and still hit, so
+    // upgrading never forces a paid re-plan of an already-committed cache.
+    (entry.key?.scenario_sig === undefined || entry.key.scenario_sig === scenarioSig(scenario));
   return compatible ? entry : null;
 }
 
@@ -91,6 +117,7 @@ export async function saveCached(scenario: Scenario, plan: Plan, startSig?: stri
       // environment-independent identity
       start_url: startPath(scenario.start_url ?? "/"),
       ...(startSig ? { start_sig: startSig } : {}),
+      scenario_sig: scenarioSig(scenario),
     },
     plan,
     status: "active",

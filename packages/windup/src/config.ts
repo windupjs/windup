@@ -1,5 +1,6 @@
 import { loadConfig as c12LoadConfig } from "c12";
 import path from "node:path";
+import { WindupError } from "./errors.js";
 import type { ClockConfig } from "./clock.js";
 
 /**
@@ -14,6 +15,13 @@ export interface WindupConfig {
     /** Provider active by default; switch per run with --llm / WINDUP_LLM. */
     provider: "google" | "openai" | "claude-code";
     model: string;
+    /**
+     * Shorthand: name of the env var holding the API key, applied to whichever
+     * provider does not declare its own `providers.<name>.apiKeyEnv`. Use it when
+     * your project already stores the key under a different name (e.g. GEMINI_API_KEY)
+     * and you don't want to duplicate the secret. Provider-specific wins over this.
+     */
+    apiKeyEnv?: string;
     /**
      * Several providers configured AT THE SAME TIME — each one's default model
      * and key. Per-run selection (`--llm openai[:model]`) uses these
@@ -241,14 +249,33 @@ export interface LoadedConfig {
  * (c12 + jiti: TS without a build, without depending on the user's tsconfig).
  */
 export async function loadWindupConfig(cwd: string = process.cwd()): Promise<LoadedConfig> {
-  const { config, configFile } = await c12LoadConfig<WindupConfig>({
-    name: "windup",
-    cwd,
-    defaults: DEFAULT_CONFIG,
-  });
+  // Load windup.config.ts with OUR jiti (v2), passed explicitly. c12 declares jiti
+  // as an optional PEER, so left to itself it resolves whatever sits hoisted at the
+  // root of node_modules — in any Tailwind 3 project that is jiti@1 (a direct
+  // tailwindcss dependency), which has no `createJiti` export, and config loading
+  // died with a bare "createJiti is not a function". Our own jiti is nested where
+  // c12 never looks, so we hand it over via the `import` hook instead.
+  let result: { config?: WindupConfig; configFile?: string };
+  try {
+    const { createJiti } = await import("jiti");
+    const jiti = createJiti(path.join(cwd, "windup.config"), { interopDefault: true, moduleCache: false });
+    result = await c12LoadConfig<WindupConfig>({
+      name: "windup",
+      cwd,
+      defaults: DEFAULT_CONFIG,
+      import: (id: string) => jiti.import(id),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new WindupError(
+      `could not load your windup config from ${cwd}: ${msg}\n` +
+        `  If this mentions jiti/createJiti, your project hoists an incompatible jiti — rename windup.config.ts to windup.config.mjs (no jiti needed) as a workaround.`,
+    );
+  }
+  const configFile = result.configFile;
   const file = configFile && configFile !== "windup.config" ? configFile : null;
   return {
-    config: config ?? DEFAULT_CONFIG,
+    config: result.config ?? DEFAULT_CONFIG,
     root: file ? path.dirname(file) : cwd,
     configFile: file,
   };
