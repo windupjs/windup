@@ -193,6 +193,19 @@ function isLandmark(selector: string): boolean {
 }
 
 /**
+ * The selector of a BARE VISIBILITY assertion — one that checks only that an
+ * element exists, with no text/count/attribute/value/url alongside it. Returns
+ * null for anything else. This is the only shape the live match-count check
+ * applies to: `h2` is worthless when the page has five of them, but
+ * `text_contains` on `h2` is fine because the assertion is the text.
+ */
+export function bareSelectorAssertion(expect: Expect | undefined): string | null {
+  if (!expect?.selector) return null;
+  if (expect.text_contains || expect.count || expect.attribute || expect.selector_value || expect.url) return null;
+  return expect.selector;
+}
+
+/**
  * True when a postcondition asserts nothing that discriminates a fulfilled task
  * from a merely-loaded page. Any content/value/count/attribute/URL assertion
  * discriminates; bare visibility (or absence) of a landmark does not.

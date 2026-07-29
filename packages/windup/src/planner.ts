@@ -1,7 +1,7 @@
 import type { Browser } from "./browser.js";
 import { createLlmClient, type LlmClient } from "./llm.js";
 import { progress, progressStart, streamEvent } from "./progress.js";
-import { PLAN_GEMINI_SCHEMA, validatePlan } from "./schema.js";
+import { PLAN_GEMINI_SCHEMA, bareSelectorAssertion, trivialExpect, validatePlan } from "./schema.js";
 import type { Action, Fragment, Plan, Scenario } from "./types.js";
 import { PlanGenerationError, type PlanGeneration, type Planner } from "./runner.js";
 import { getContext } from "./context.js";
@@ -304,7 +304,37 @@ export class LlmPlanner implements Planner {
       }
 
       if (plan) {
+        // Deterministic repair BEFORE validating: if the task names the text to
+        // verify and the plan's final check is vacuous, assert that text instead —
+        // but only after confirming the page really contains it (evidence, not a guess),
+        // so the repair can never manufacture a test that fails.
+        const literal = taskLiteral(scenario.task);
+        if (literal && trivialExpect(plan.actions[plan.actions.length - 1]?.expect)) {
+          const pageText = await browser.textContent("body").catch(() => "");
+          if (pageText.includes(literal)) {
+            plan = assertTaskLiteral(plan, literal);
+            progress(scenario.scenario_id, `weak final check → asserting the task's text "${literal}" (no extra LLM call)`);
+          }
+        }
         const validation = validatePlan(plan);
+        // Evidence beats a blocklist: a BARE visibility assertion on a selector that
+        // matches MORE THAN ONE element on the live page says nothing about which one
+        // (`h2` on a page with five headings survives deleting the whole section).
+        // Landmark names are only the cheap offline half of this check.
+        if (validation.ok) {
+          const last = plan.actions[plan.actions.length - 1];
+          const sel = bareSelectorAssertion(last?.expect);
+          if (sel) {
+            const matches = await browser.count(sel).catch(() => 1);
+            if (matches > 1) {
+              validation.ok = false;
+              validation.errors.push(
+                `action ${last.id}: the final postcondition "${sel}" matches ${matches} elements on this page — asserting that one of them is visible proves nothing about the task. ` +
+                  `Use text_contains with the exact text the task names, a count, an attribute, or a selector unique to the content being verified.`,
+              );
+            }
+          }
+        }
         // An invented value_ref is the most expensive error (only blows up at
         // runtime): validate against the ENVs actually mentioned in the input.
         if (validation.ok) {
@@ -358,6 +388,7 @@ ${lastErrors.join("\n")}
 - click/fill/wait_for require target.selector and target.description; goto requires url.
 - fill requires value OR value_ref (exactly one); do not use empty fields or fields that do not apply.
 - The LAST action must have the "expect" field (selector, url, text_contains, count, not_visible and/or attribute) proving the task was fulfilled.
+- That final "expect" MUST BE ABLE TO FAIL. Do NOT reuse the action's own target.selector, and do NOT assert a selector that matches many elements (body, main, div, section, h1/h2, li, a, button…). If the task names a text, the answer is: "expect": { "text_contains": { "selector": "body", "text": "<that exact text>" } }.
 - scenario_id "${scenario.scenario_id}", start_url "${scenario.start_url}", plan_version "0.1".
 
 Return the complete corrected plan. Respond ONLY with the plan JSON.`;
@@ -497,6 +528,46 @@ export function dropFragmentEchoes(plan: Plan, fragments: Fragment[]): Plan {
  * legitimate — but warns: in a login, the test will fail far from the cause.
  * Exported for testing.
  */
+/**
+ * The literal string a task asks to verify, taken from its quotes:
+ * "verify the text 'Popular parking' appears" → `Popular parking`.
+ * The LONGEST quoted run wins (the most specific one; a task often also quotes a
+ * short token like 'R$'). Returns null when the task quotes nothing usable —
+ * anything too short, or that looks like a selector/URL/flag rather than page copy.
+ */
+export function taskLiteral(task: string): string | null {
+  const found = [...task.matchAll(/["'“”‘’]([^"'“”‘’]{4,80})["'“”‘’]/g)].map((m) => m[1].trim());
+  const usable = found.filter((s) => s.length >= 4 && !/^[#.[/]|^https?:|^--|[{}<>]/.test(s));
+  if (!usable.length) return null;
+  return usable.sort((a, b) => b.length - a.length)[0];
+}
+
+/**
+ * Deterministic repair — no model call. When the task NAMES the text to verify and
+ * the plan's final assertion doesn't actually check it, rewrite that assertion into
+ * a `text_contains` on the literal. This is nearly always what the author meant, and
+ * it converts the planner's most common failure (a bare landmark selector) into a
+ * real assertion instead of burning retries on a model that keeps reaching for `body`.
+ * Only applied when the current postcondition is trivial, so a good one is never
+ * overwritten; the caller confirms the literal is actually on the page first.
+ */
+export function assertTaskLiteral(plan: Plan, literal: string): Plan {
+  const last = plan.actions[plan.actions.length - 1];
+  if (!last || last.type === "use") return plan;
+  const e = last.expect ?? {};
+  // Act only on BARE VISIBILITY (or nothing at all) — a postcondition that already
+  // checks text/count/attribute/value/url is a real one and is never overwritten.
+  const bareVisibility = Boolean(e.selector) && !e.text_contains && !e.count && !e.attribute && !e.selector_value && !e.url;
+  if (!bareVisibility && !trivialExpect(e)) return plan;
+  // A landmark (body/main/div…) proves nothing on its own, so it is dropped; a more
+  // specific selector is KEPT and the text check is ANDed onto it (strictly stronger).
+  // The text itself is scoped to the page — "the text appears" is a page-level fact,
+  // and a narrower element could exclude the very node that carries it.
+  const keepSelector = !trivialExpect(e) && e.selector ? { selector: e.selector } : {};
+  last.expect = { ...keepSelector, text_contains: { selector: "body", text: literal } };
+  return plan;
+}
+
 export function inventedPasswordFills(plan: Plan, scenario: Scenario): string[] {
   const texts = [scenario.task, ...(scenario.hints ?? [])];
   for (const fields of Object.values(getContext().config.context?.credentials ?? {})) {

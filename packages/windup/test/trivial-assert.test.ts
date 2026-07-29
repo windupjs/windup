@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trivialExpect, validatePlan } from "../src/schema.js";
+import { bareSelectorAssertion, trivialExpect, validatePlan } from "../src/schema.js";
 import type { Plan } from "../src/types.js";
 
 const planWith = (finalExpect: unknown): Plan => ({
@@ -35,6 +35,23 @@ describe("trivialExpect — a postcondition that cannot fail (#1)", () => {
   });
   it("treats a missing expect as trivial", () => {
     expect(trivialExpect(undefined)).toBe(true);
+  });
+});
+
+describe("bareSelectorAssertion — what the live match-count check applies to", () => {
+  it("returns the selector for a bare visibility assertion (the h2 hole)", () => {
+    expect(bareSelectorAssertion({ selector: "h2" } as never)).toBe("h2");
+    expect(bareSelectorAssertion({ selector: "li" } as never)).toBe("li");
+    expect(bareSelectorAssertion({ selector: "#unique" } as never)).toBe("#unique"); // counted too — the page decides
+  });
+  it("returns null when a real assertion rides along (the text is what's checked)", () => {
+    expect(bareSelectorAssertion({ selector: "h2", text_contains: { selector: "h2", text: "X" } } as never)).toBeNull();
+    expect(bareSelectorAssertion({ selector: "h2", count: { selector: ".r", equals: 2 } } as never)).toBeNull();
+    expect(bareSelectorAssertion({ selector: "h2", url: "**/x" } as never)).toBeNull();
+  });
+  it("returns null when there is no selector at all", () => {
+    expect(bareSelectorAssertion(undefined)).toBeNull();
+    expect(bareSelectorAssertion({ url: "**/x" } as never)).toBeNull();
   });
 });
 
