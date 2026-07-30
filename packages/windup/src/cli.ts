@@ -811,11 +811,16 @@ claude
   .description("Show whether the claude CLI is installed and logged into your Claude plan (which account is active here)")
   .option("--profile <name>", "check a named account profile instead of the active one")
   .action(async (opts: { profile?: string }) => {
-    const { checkClaudeReadiness, readinessLine, isReady, profileConfigDir, listProfiles } = await import("./claude-cli.js");
+    const { checkClaudeReadiness, readinessLine, isReady, isAnonymousSession, profileConfigDir, listProfiles } = await import("./claude-cli.js");
     if (opts.profile) process.env.CLAUDE_CONFIG_DIR = profileConfigDir(opts.profile);
     const active = process.env.CLAUDE_CONFIG_DIR;
     const r = await checkClaudeReadiness();
     console.log(`${readinessLine(r)}${opts.profile ? `  [profile: ${opts.profile}]` : ""}`);
+    // A session with no identity can't answer "which account is this?" — say how to fix it.
+    if (isAnonymousSession(r)) {
+      const p = opts.profile ? ` --profile ${opts.profile}` : "";
+      console.log(`  the CLI reports no account email for this config dir — to record which account it is:  npx windup claude logout${p} && npx windup claude login${p}`);
+    }
     if (!opts.profile && active) console.log(`  config dir: ${active}`);
     // Which named profiles exist, and which one this directory resolves to.
     const profiles = listProfiles();
@@ -825,6 +830,47 @@ claude
     }
     // Non-zero when not ready, so scripts/CI can gate on `windup claude status`.
     if (!isReady(r)) process.exitCode = 1;
+  });
+claude
+  .command("logout")
+  .description("Sign out — of the account active here, or of a named profile (--profile). Its stored credential is cleared; other profiles are untouched")
+  .option("--profile <name>", "sign out of a named profile instead of the active account")
+  .option("--remove", "with --profile: also delete the profile's config dir, so the profile is gone entirely")
+  .action(async (opts: { profile?: string; remove?: boolean }) => {
+    const { checkClaudeReadiness, readinessLine, isReady, runInteractive, profileConfigDir } = await import("./claude-cli.js");
+    if (opts.remove && !opts.profile) {
+      console.error(`--remove deletes a PROFILE's config dir; pass --profile <name>. (The default ~/.claude is never removed.)`);
+      process.exitCode = 2;
+      return;
+    }
+    const dir = opts.profile ? profileConfigDir(opts.profile) : undefined;
+    if (dir) process.env.CLAUDE_CONFIG_DIR = dir;
+
+    const before = await checkClaudeReadiness();
+    if (!isReady(before)) {
+      console.log(`nothing to sign out of${opts.profile ? ` in profile "${opts.profile}"` : ""} — ${readinessLine(before)}`);
+    } else {
+      // Name whose session is being dropped before dropping it.
+      console.log(`signing out of ${before.auth?.email ?? "this session"}${opts.profile ? ` (profile "${opts.profile}")` : ""}...`);
+      const code = await runInteractive("claude", ["auth", "logout"]);
+      if (code !== 0) {
+        console.error(`logout did not complete (claude auth logout exited ${code}). Run it directly:  claude auth logout`);
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`signed out.`);
+    }
+
+    if (opts.remove && dir) {
+      const { rmSync, existsSync } = await import("node:fs");
+      if (existsSync(dir)) {
+        rmSync(dir, { recursive: true, force: true });
+        console.log(`removed ${dir} — profile "${opts.profile}" is gone.`);
+        console.log(`any project still binding it in .envrc will fall back to a fresh (logged-out) dir — update or drop that line.`);
+      } else {
+        console.log(`${dir} does not exist — nothing to remove.`);
+      }
+    }
   });
 claude
   .command("login")

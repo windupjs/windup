@@ -363,6 +363,8 @@ npx windup claude status                 # which account is active here (email +
 npx windup claude status --profile acme  # check a named profile without switching to it
 npx windup claude login --profile acme --force  # point this project at another profile (rebinds .envrc)
 npx windup claude login --force          # switch the ACTIVE account (signs out first, saying whose)
+npx windup claude logout --profile acme  # sign that profile out (other profiles untouched)
+npx windup claude logout --profile acme --remove   # …and delete its config dir: profile retired
 ```
 
 Two things worth knowing: a project's `.claude/settings.json` **cannot** switch the account (the config dir is resolved before those settings load) — that's why the binding lives in `.envrc`; and **cached replays call no LLM at all**, so with `.windup/cache/` committed a suite runs at `$0` without touching any account.
@@ -482,7 +484,8 @@ Example GitHub Actions step:
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |
 | `windup secret remove <account>` | Remove an account: drops the mapping and its `.env.local` values (alias: `rm`) |
 | `windup claude login [--profile <name>] [--force]` | Connect the `claude` CLI to your Claude subscription for `--llm claude-code` (installs it if missing, then signs in). `--profile` gives that account its own config dir and binds this project to it; `--force` switches the active account |
-| `windup claude status [--profile <name>]` | Which account is active here — email + plan (non-zero exit when not ready) |
+| `windup claude status [--profile <name>]` | Which account is active here — email + plan, plus the profiles on this machine (non-zero exit when not ready) |
+| `windup claude logout [--profile <name>] [--remove]` | Sign out of the active account or a named profile; `--remove` also deletes that profile's config dir (never the default `~/.claude`) |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |

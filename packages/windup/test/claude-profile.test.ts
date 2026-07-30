@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ensureEnvrc, listProfiles, profileConfigDir, profileSlug } from "../src/claude-cli.js";
+import { ensureEnvrc, isAnonymousSession, listProfiles, profileConfigDir, profileSlug, readinessLine } from "../src/claude-cli.js";
 
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(path.join(tmpdir(), "windup-profile-")); });
@@ -76,6 +76,26 @@ describe("ensureEnvrc (binds a project to a profile, never clobbers)", () => {
   it("replace on a fresh/absent binding behaves like create/append", async () => {
     expect(ensureEnvrc(dir, "/home/k/.claude-acme", { replace: true }).outcome).toBe("created");
     expect(ensureEnvrc(dir, "/home/k/.claude-acme", { replace: true }).outcome).toBe("already");
+  });
+});
+
+describe("readinessLine / isAnonymousSession (which account is this?)", () => {
+  const ready = (auth: Record<string, unknown>) => ({ installed: true, version: "2.1.0", auth } as never);
+
+  it("names the account when the CLI reports it", () => {
+    const r = ready({ loggedIn: true, email: "qa@acme.test", subscriptionType: "max" });
+    expect(readinessLine(r)).toBe("claude CLI: ready — qa@acme.test (max plan)");
+    expect(isAnonymousSession(r)).toBe(false);
+  });
+
+  it("says the identity is unknown instead of implying one, when no email is reported", () => {
+    const r = ready({ loggedIn: true, subscriptionType: "pro" });
+    expect(readinessLine(r)).toBe("claude CLI: ready — account email not reported (pro plan)");
+    expect(isAnonymousSession(r)).toBe(true); // the caller prints how to repopulate it
+  });
+
+  it("a logged-out session is not 'anonymous', it's just logged out", () => {
+    expect(isAnonymousSession(ready({ loggedIn: false }))).toBe(false);
   });
 });
 

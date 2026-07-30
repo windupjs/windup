@@ -4,6 +4,12 @@ All notable changes to `windupjs` are documented here. From **1.0** the project
 follows semantic versioning: the public CLI and programmatic API are stable, and
 breaking changes wait for a major bump. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.9.0
+Closing the loop on account profiles: you can now retire one, and the status can no longer imply an identity it doesn't have.
+
+- **`windup claude logout [--profile <name>] [--remove]`.** Signing out was the one step still delegated to the raw CLI, and doing it for a *profile* meant remembering to set `CLAUDE_CONFIG_DIR` first. Now it's one command: it names the account before dropping it, clears that profile's stored credential (each config dir has its own — other profiles are untouched), and `--remove` also deletes the profile's config dir so a retired client leaves nothing behind. `--remove` requires `--profile`: the default `~/.claude` is never removed.
+- **The status no longer implies an account it can't name.** A config dir can hold a valid token with no account metadata — `windup claude status` rendered that as `ready — logged in (pro plan)`, which *looks* like an identity for a feature whose entire purpose is telling accounts apart. It now reads `ready — account email not reported (pro plan)` and prints the two commands that repopulate it. New `isAnonymousSession`.
+
 ## 1.8.1
 Two rough edges the 1.8.0 profiles hit on first real use.
 

@@ -101,7 +101,15 @@ export function readinessLine(r: ClaudeReadiness): string {
   if (!r.installed) return `claude CLI: not installed — run \`windup claude login\` (installs it, then signs you in)`;
   if (!r.auth?.loggedIn) return `claude CLI: installed${r.version ? ` (v${r.version})` : ""}, not logged in — run \`windup claude login\``;
   const plan = r.auth.subscriptionType ? `${r.auth.subscriptionType} plan` : r.auth.authMethod ?? "logged in";
-  return `claude CLI: ready — ${r.auth.email ?? "logged in"} (${plan})`;
+  // No email means the CLI has a valid token for this config dir but no account
+  // metadata in it — for profiles, "which account is this?" is the whole point,
+  // so say the identity is unknown instead of implying it was reported.
+  return `claude CLI: ready — ${r.auth.email ?? "account email not reported"} (${plan})`;
+}
+
+/** True when connected but the CLI reports no account identity for this config dir (re-auth repopulates it). */
+export function isAnonymousSession(r: ClaudeReadiness): boolean {
+  return isReady(r) && !r.auth?.email;
 }
 
 /**
