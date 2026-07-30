@@ -808,19 +808,50 @@ const claude = program
   .description("Connect the `claude` CLI that --llm claude-code uses (plan with your Claude subscription)");
 claude
   .command("status")
-  .description("Show whether the claude CLI is installed and logged into your Claude plan")
-  .action(async () => {
-    const { checkClaudeReadiness, readinessLine, isReady } = await import("./claude-cli.js");
+  .description("Show whether the claude CLI is installed and logged into your Claude plan (which account is active here)")
+  .option("--profile <name>", "check a named account profile instead of the active one")
+  .action(async (opts: { profile?: string }) => {
+    const { checkClaudeReadiness, readinessLine, isReady, profileConfigDir } = await import("./claude-cli.js");
+    if (opts.profile) process.env.CLAUDE_CONFIG_DIR = profileConfigDir(opts.profile);
     const r = await checkClaudeReadiness();
-    console.log(readinessLine(r));
+    console.log(`${readinessLine(r)}${opts.profile ? `  [profile: ${opts.profile}]` : ""}`);
+    if (!opts.profile && process.env.CLAUDE_CONFIG_DIR) console.log(`  config dir: ${process.env.CLAUDE_CONFIG_DIR}`);
     // Non-zero when not ready, so scripts/CI can gate on `windup claude status`.
     if (!isReady(r)) process.exitCode = 1;
   });
 claude
   .command("login")
   .description("Sign the claude CLI into your Claude subscription (installs it if missing, then runs claude auth login)")
-  .action(async () => {
-    const { checkClaudeReadiness, readinessLine, isReady, runInteractive, INSTALL_CMD } = await import("./claude-cli.js");
+  .option("--profile <name>", "sign in as a NAMED account (its own config dir) and bind this project to it via .envrc — for holding several accounts side by side")
+  .option("--force", "sign in again even when already connected (logs out first) — how you switch accounts")
+  .action(async (opts: { profile?: string; force?: boolean }) => {
+    const { checkClaudeReadiness, readinessLine, isReady, runInteractive, INSTALL_CMD, profileConfigDir, ensureEnvrc } = await import("./claude-cli.js");
+
+    // --profile: this account gets its OWN config dir (the CLI keeps an
+    // independent session per dir), and the project is bound to it so every
+    // later run here — including the `claude` Windup spawns — uses that account.
+    let configDir: string | undefined;
+    if (opts.profile) {
+      configDir = profileConfigDir(opts.profile);
+      process.env.CLAUDE_CONFIG_DIR = configDir;
+      console.log(`profile "${opts.profile}" → config dir ${configDir}`);
+      const env = ensureEnvrc(process.cwd(), configDir);
+      if (env.outcome === "conflict") {
+        console.error(`\n${env.file} already binds another profile:\n  ${env.existing}\nEdit it by hand (or remove that line) and re-run — nothing was changed.`);
+        process.exitCode = 1;
+        return;
+      }
+      const what = { created: "wrote", appended: "appended to", already: "already bound in" }[env.outcome];
+      console.log(`${what} ${env.file}`);
+      const { spawnSync } = await import("node:child_process");
+      const direnv = spawnSync("direnv", ["allow", process.cwd()], { stdio: "ignore" });
+      console.log(
+        direnv.error
+          ? `  (direnv not found — this shell needs:  export CLAUDE_CONFIG_DIR="${configDir}")`
+          : `  direnv allowed — entering this directory now activates the profile`,
+      );
+    }
+
     let r = await checkClaudeReadiness();
 
     if (!r.installed) {
@@ -848,12 +879,30 @@ claude
       r = await checkClaudeReadiness();
     }
 
-    if (isReady(r)) {
+    // Already connected: say WHICH account, and how to switch. Without --force
+    // this used to stop here silently, so someone signing in "for another
+    // account" was told it worked while the old account stayed active.
+    if (isReady(r) && !opts.force) {
       console.log(`already connected — ${readinessLine(r)}`);
+      if (opts.profile) console.log(`this is profile "${opts.profile}"; the project is bound to it.`);
+      console.log(`to sign in as a DIFFERENT account here:  npx windup claude login${opts.profile ? ` --profile ${opts.profile}` : ""} --force`);
+      if (!opts.profile) console.log(`to hold several accounts side by side:  npx windup claude login --profile <name>   (per-account config dir + .envrc)`);
       console.log(`plan with it:  npx windup run <scenario> --llm claude-code`);
       return;
     }
+    if (isReady(r) && opts.force) {
+      // Switching means dropping the current token first — say whose, then do it.
+      console.log(`signing out of ${r.auth?.email ?? "the current account"} (--force), then signing in again...`);
+      await runInteractive("claude", ["auth", "logout"]);
+    }
 
+    // The sign-in is a browser flow driven from the terminal: with no TTY it can
+    // only hang (and a killed flow leaves you logged OUT). Fail fast instead.
+    if (!process.stdout.isTTY) {
+      console.error(`signing in needs an interactive terminal (it opens a browser flow). Run this yourself:  npx windup claude login${opts.profile ? ` --profile ${opts.profile}` : ""}`);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`opening the Claude sign-in flow (claude auth login) — authorize in your browser...`);
     const code = await runInteractive("claude", ["auth", "login", "--claudeai"]);
     if (code !== 0) {
@@ -864,6 +913,10 @@ claude
     r = await checkClaudeReadiness();
     if (isReady(r)) {
       console.log(readinessLine(r));
+      if (opts.profile) {
+        console.log(`profile "${opts.profile}" is bound to this project — \`cd\` here and this account is the one that plans.`);
+        console.log(`confirm anytime:  npx windup claude status`);
+      }
       console.log(`you're set — plan with your subscription:  npx windup run <scenario> --llm claude-code`);
     } else {
       console.error(`still not logged in after the flow. Try again, or run:  claude auth login`);

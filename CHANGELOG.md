@@ -4,6 +4,15 @@ All notable changes to `windupjs` are documented here. From **1.0** the project
 follows semantic versioning: the public CLI and programmatic API are stable, and
 breaking changes wait for a major bump. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.8.0
+One account per project, for anyone holding a personal Claude plan plus one per client — from a real workflow report.
+
+- **`windup claude login --profile <name>` — hold several Claude accounts side by side.** The CLI's login is **global** (one token, in one config dir), so every project planned on whichever account signed in last: work for a client burned the personal plan. The fix is one command per project: `--profile acme` gives that account its **own config dir** (`~/.claude-acme`, an independent session), **binds the project to it** by exporting `CLAUDE_CONFIG_DIR` in `.envrc`, runs `direnv allow`, and only then opens the sign-in. From there, `cd`-ing into the project makes that account the one that plans — including the `claude` Windup spawns, which inherits the environment. The `.envrc` is **never clobbered**: an existing file is appended to (other exports intact), a binding to the same profile is a no-op, and a binding to a *different* profile stops with the offending line printed and nothing changed. Without direnv, the command prints the `export` to run.
+- **`claude login` no longer claims success when it changed nothing.** Already connected, it used to print "already connected" and return — so someone running it *to switch accounts* was told it worked while the previous account stayed active (the silent version of the exact bug above). It now names the active account and how to switch (`--force`), and points at `--profile` for holding several. **`--force`** signs out of the current account (saying whose) before signing in again.
+- **`claude status --profile <name>`** checks a named account without switching to it, and the plain `status` now prints the active `CLAUDE_CONFIG_DIR` when one is set — so "which account will this project bill?" is one command.
+- **Fix: `claude login` with no TTY failed by hanging.** The sign-in is a browser flow driven from the terminal; with no TTY it waited forever, and a killed flow leaves you **logged out** (found the hard way). It now fails fast with the command to run yourself, matching the guard the install path already had.
+- New exported `profileSlug` / `profileConfigDir` / `ensureEnvrc`. A profile name is slugified before it becomes a directory (`../../etc` → `.claude-etc`), so it can never traverse paths.
+
 ## 1.7.0
 The two rough edges left by the 1.6.0 re-test. The first one inverts the tool's most important signal, so it led.
 

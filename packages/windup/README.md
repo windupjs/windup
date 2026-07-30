@@ -344,30 +344,27 @@ npx windup claude status   # anytime: "claude CLI: ready — you@example.com (ma
 
 That's it — no wrapper, no Python, no local server. Windup spawns `claude` in non-interactive mode for each plan (from an isolated temp dir, so it never picks up a project's `CLAUDE.md`).
 
-#### Switching account — and one account per project
+#### Several accounts — one per project (`--profile`)
 
-The CLI's login is **global**, not per project: the token lives in one place (the macOS Keychain / the config dir), so every project plans on whichever account signed in last. To check and to switch:
-
-```bash
-npx windup claude status    # which account is active right now (email + plan) — no tokens spent
-claude auth logout          # sign out of the current account
-npx windup claude login     # sign in again (browser) — now this account is the active one
-```
-
-If you juggle **several accounts** (a personal one plus one per client/company) and don't want a project billing the wrong plan, don't switch back and forth — give each account its **own config dir** via `CLAUDE_CONFIG_DIR`, then bind each project to one:
+The CLI's login is **global**: one token, in one config dir, so every project plans on whichever account signed in last. If you hold a personal plan plus one per client, that means client work quietly burns your own plan. Bind each project to its own account, once:
 
 ```bash
-# once per account — each config dir keeps its own independent session
-CLAUDE_CONFIG_DIR=~/.claude-acme      claude auth login
-CLAUDE_CONFIG_DIR=~/.claude-globex    claude auth login
-# your default ~/.claude stays untouched
-
-# then, in each project (with direnv):
-echo 'export CLAUDE_CONFIG_DIR=$HOME/.claude-acme' > .envrc && direnv allow
-npx windup claude status    # → confirms the Acme account is the one this project uses
+cd ~/work/acme
+npx windup claude login --profile acme     # own config dir + binds this project + signs in
+npx windup claude status                   # → confirms which account this project bills
 ```
 
-Windup spawns the `claude` CLI inheriting the environment, so the project's `CLAUDE_CONFIG_DIR` is what plans a cache miss there — no Windup setting needed. Two caveats: a project's `.claude/settings.json` **cannot** switch it (the config dir is resolved before those settings load), so use the shell/direnv; and remember that **cached replays call no LLM at all** — with `.windup/cache/` committed, a suite runs at `$0` without touching any account.
+`--profile acme` gives that account its **own config dir** (`~/.claude-acme` — an independent session), **binds the project** to it by exporting `CLAUDE_CONFIG_DIR` in `.envrc`, runs `direnv allow`, and then opens the sign-in. From then on, `cd`-ing into the project makes that account the one that plans — including the `claude` process Windup spawns, which inherits the environment. Repeat per project with a different name; your default `~/.claude` stays untouched as the unnamed profile.
+
+Your `.envrc` is never clobbered: an existing file is **appended to** (other exports intact), re-running is a no-op, and a binding to a *different* profile stops and shows you the line to edit. No direnv? The command prints the `export` to put in your shell.
+
+```bash
+npx windup claude status                 # which account is active here (email + plan) — no tokens spent
+npx windup claude status --profile acme  # check a named profile without switching to it
+npx windup claude login --force          # switch the active account (signs out first, saying whose)
+```
+
+Two things worth knowing: a project's `.claude/settings.json` **cannot** switch the account (the config dir is resolved before those settings load) — that's why the binding lives in `.envrc`; and **cached replays call no LLM at all**, so with `.windup/cache/` committed a suite runs at `$0` without touching any account.
 
 ```bash
 npx windup run checkout --llm claude-code                 # default model: claude-sonnet-4-6
@@ -483,8 +480,8 @@ Example GitHub Actions step:
 | `windup secret set <account> [--user u] [--password p]` | Register test credentials: values → `.env.local`, mapping → `windup.credentials.json` (interactive hidden prompts without flags) |
 | `windup secret list` | Accounts + whether each ENV is set (never prints values) |
 | `windup secret remove <account>` | Remove an account: drops the mapping and its `.env.local` values (alias: `rm`) |
-| `windup claude login` | Connect the `claude` CLI to your Claude subscription for `--llm claude-code` (installs it if missing, then signs in) |
-| `windup claude status` | Whether the `claude` CLI is installed and logged in (non-zero exit when not ready) |
+| `windup claude login [--profile <name>] [--force]` | Connect the `claude` CLI to your Claude subscription for `--llm claude-code` (installs it if missing, then signs in). `--profile` gives that account its own config dir and binds this project to it; `--force` switches the active account |
+| `windup claude status [--profile <name>]` | Which account is active here — email + plan (non-zero exit when not ready) |
 | `windup sig <url> [--repeat n]` | Structural page signature (diagnostics) |
 | `windup bench <scenario>` | Full validation protocol (generation, replay determinism, failure recovery) |
 | `windup cache clear` | Drop the trajectory cache (next runs re-plan) |

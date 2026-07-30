@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
 /**
  * Ergonomics for the `claude` CLI that `--llm claude-code` drives (SPEC §3,
@@ -99,4 +102,65 @@ export function readinessLine(r: ClaudeReadiness): string {
   if (!r.auth?.loggedIn) return `claude CLI: installed${r.version ? ` (v${r.version})` : ""}, not logged in — run \`windup claude login\``;
   const plan = r.auth.subscriptionType ? `${r.auth.subscriptionType} plan` : r.auth.authMethod ?? "logged in";
   return `claude CLI: ready — ${r.auth.email ?? "logged in"} (${plan})`;
+}
+
+/**
+ * ACCOUNT PROFILES (`windup claude login --profile <name>`).
+ *
+ * The claude CLI's login is GLOBAL: the token lives in one config dir (default
+ * `~/.claude`), so every project plans on whichever account signed in last —
+ * a problem when you hold a personal plan plus one per client. The CLI reads
+ * `CLAUDE_CONFIG_DIR`, and each dir keeps an INDEPENDENT session, so a profile
+ * is just "a config dir per account" plus a per-project binding (`.envrc`).
+ * Windup only orchestrates that; the auth itself stays in Anthropic's CLI.
+ */
+
+/** Filename-safe profile slug — non-alphanumerics collapse to `-`, so a name can never traverse paths. */
+export function profileSlug(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+/** Config dir for a profile: `~/.claude-<slug>` (the default `~/.claude` stays the unnamed profile). */
+export function profileConfigDir(name: string, home: string = homedir()): string {
+  const slug = profileSlug(name);
+  if (!slug) throw new Error(`invalid profile name "${name}" — use letters/digits (e.g. --profile acme)`);
+  return path.join(home, `.claude-${slug}`);
+}
+
+export type EnvrcOutcome = "created" | "appended" | "already" | "conflict";
+export interface EnvrcResult {
+  outcome: EnvrcOutcome;
+  file: string;
+  /** On "conflict": the CLAUDE_CONFIG_DIR line already there, pointing somewhere else. */
+  existing?: string;
+}
+
+/**
+ * Binds a project directory to a profile by exporting CLAUDE_CONFIG_DIR in its
+ * `.envrc` (direnv). NEVER clobbers an existing file: it appends when the file
+ * exists without the var, and reports a `conflict` (changing nothing) when the
+ * var is already there pointing elsewhere — the user decides.
+ */
+export function ensureEnvrc(cwd: string, configDir: string): EnvrcResult {
+  const file = path.join(cwd, ".envrc");
+  const line = `export CLAUDE_CONFIG_DIR="${configDir}"`;
+  if (!existsSync(file)) {
+    writeFileSync(file, `${line}\n`, { mode: 0o644 });
+    return { outcome: "created", file };
+  }
+  const current = readFileSync(file, "utf8");
+  const existing = current.split("\n").find((l) => /^\s*export\s+CLAUDE_CONFIG_DIR=/.test(l))?.trim();
+  if (existing) {
+    // Same target (quoted or not) = nothing to do; a different one is the user's call.
+    const points = existing.replace(/^\s*export\s+CLAUDE_CONFIG_DIR=/, "").replace(/^["']|["']$/g, "").trim();
+    return points === configDir ? { outcome: "already", file } : { outcome: "conflict", file, existing };
+  }
+  appendFileSync(file, `${current.endsWith("\n") || current === "" ? "" : "\n"}${line}\n`);
+  return { outcome: "appended", file };
 }
