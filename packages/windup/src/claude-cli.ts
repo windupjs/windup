@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -133,21 +133,22 @@ export function profileConfigDir(name: string, home: string = homedir()): string
   return path.join(home, `.claude-${slug}`);
 }
 
-export type EnvrcOutcome = "created" | "appended" | "already" | "conflict";
+export type EnvrcOutcome = "created" | "appended" | "already" | "conflict" | "replaced";
 export interface EnvrcResult {
   outcome: EnvrcOutcome;
   file: string;
-  /** On "conflict": the CLAUDE_CONFIG_DIR line already there, pointing somewhere else. */
+  /** On "conflict"/"replaced": the CLAUDE_CONFIG_DIR line that was already there, pointing elsewhere. */
   existing?: string;
 }
 
 /**
  * Binds a project directory to a profile by exporting CLAUDE_CONFIG_DIR in its
- * `.envrc` (direnv). NEVER clobbers an existing file: it appends when the file
- * exists without the var, and reports a `conflict` (changing nothing) when the
- * var is already there pointing elsewhere — the user decides.
+ * `.envrc` (direnv). NEVER clobbers by accident: it appends when the file exists
+ * without the var, and reports a `conflict` (changing nothing) when the var is
+ * already there pointing elsewhere. `replace` (the CLI's `--force`) rebinds that
+ * line instead — an explicit "yes, switch this project's account".
  */
-export function ensureEnvrc(cwd: string, configDir: string): EnvrcResult {
+export function ensureEnvrc(cwd: string, configDir: string, opts: { replace?: boolean } = {}): EnvrcResult {
   const file = path.join(cwd, ".envrc");
   const line = `export CLAUDE_CONFIG_DIR="${configDir}"`;
   if (!existsSync(file)) {
@@ -157,10 +158,28 @@ export function ensureEnvrc(cwd: string, configDir: string): EnvrcResult {
   const current = readFileSync(file, "utf8");
   const existing = current.split("\n").find((l) => /^\s*export\s+CLAUDE_CONFIG_DIR=/.test(l))?.trim();
   if (existing) {
-    // Same target (quoted or not) = nothing to do; a different one is the user's call.
+    // Same target (quoted or not) = nothing to do; a different one needs --force.
     const points = existing.replace(/^\s*export\s+CLAUDE_CONFIG_DIR=/, "").replace(/^["']|["']$/g, "").trim();
-    return points === configDir ? { outcome: "already", file } : { outcome: "conflict", file, existing };
+    if (points === configDir) return { outcome: "already", file };
+    if (!opts.replace) return { outcome: "conflict", file, existing };
+    // Rebind in place: only that line changes, every other export is preserved.
+    const rebound = current.split("\n").map((l) => (/^\s*export\s+CLAUDE_CONFIG_DIR=/.test(l) ? line : l)).join("\n");
+    writeFileSync(file, rebound);
+    return { outcome: "replaced", file, existing };
   }
   appendFileSync(file, `${current.endsWith("\n") || current === "" ? "" : "\n"}${line}\n`);
   return { outcome: "appended", file };
+}
+
+/** Named profiles that exist on this machine (`~/.claude-<slug>` dirs). */
+export function listProfiles(home: string = homedir()): string[] {
+  try {
+    return readdirSync(home)
+      .filter((f) => f.startsWith(".claude-"))
+      .map((f) => f.slice(".claude-".length))
+      .filter(Boolean)
+      .sort();
+  } catch {
+    return [];
+  }
 }

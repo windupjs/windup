@@ -4,6 +4,13 @@ All notable changes to `windupjs` are documented here. From **1.0** the project
 follows semantic versioning: the public CLI and programmatic API are stable, and
 breaking changes wait for a major bump. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.8.1
+Two rough edges the 1.8.0 profiles hit on first real use.
+
+- **`--force` now rebinds the project too.** Pointing an already-bound project at another account (`--profile fera` where `.envrc` binds `movepark`) stopped with "edit it by hand" — the exact friction the command exists to remove. `--force` now **rebinds that one line** (every other export preserved) and prints what it replaced; without it the guard still refuses, but it now names `--force` as the way out. New `ensureEnvrc(…, { replace })`.
+- **`--profile X --force` no longer signs a working account out.** `--force` meant "log out, then log in", so rebinding a project to a profile that was already connected would drop a perfectly good token. With `--profile`, `--force` now means *rebind this project* and leaves the profile's session alone (it reports the account and how to re-authenticate); without `--profile` it keeps the old meaning — switch the active account.
+- **`windup claude status` lists the profiles** on the machine and marks the one this directory resolves to, so "which accounts do I have, and which is active here?" is one command. New `listProfiles`.
+
 ## 1.8.0
 One account per project, for anyone holding a personal Claude plan plus one per client — from a real workflow report.
 

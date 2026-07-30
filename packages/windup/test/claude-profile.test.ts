@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ensureEnvrc, profileConfigDir, profileSlug } from "../src/claude-cli.js";
+import { ensureEnvrc, listProfiles, profileConfigDir, profileSlug } from "../src/claude-cli.js";
 
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(path.join(tmpdir(), "windup-profile-")); });
@@ -58,5 +58,37 @@ describe("ensureEnvrc (binds a project to a profile, never clobbers)", () => {
   it("handles an unquoted existing line pointing at the same dir", async () => {
     await writeFile(path.join(dir, ".envrc"), "export CLAUDE_CONFIG_DIR=/home/k/.claude-acme\n");
     expect(ensureEnvrc(dir, "/home/k/.claude-acme").outcome).toBe("already");
+  });
+
+  it("replace (--force) rebinds only that line, keeping every other export", async () => {
+    await writeFile(path.join(dir, ".envrc"), 'export DATABASE_URL=postgres://x\nexport CLAUDE_CONFIG_DIR="/home/k/.claude-acme"\nexport OTHER=1\n');
+    const r = ensureEnvrc(dir, "/home/k/.claude-globex", { replace: true });
+    expect(r.outcome).toBe("replaced");
+    expect(r.existing).toContain(".claude-acme"); // reports what it replaced
+    const body = await readFile(r.file, "utf8");
+    expect(body).toContain('export CLAUDE_CONFIG_DIR="/home/k/.claude-globex"');
+    expect(body).not.toContain(".claude-acme");
+    expect(body).toContain("export DATABASE_URL=postgres://x"); // untouched
+    expect(body).toContain("export OTHER=1");
+    expect(body.match(/CLAUDE_CONFIG_DIR/g)).toHaveLength(1); // rebound, not duplicated
+  });
+
+  it("replace on a fresh/absent binding behaves like create/append", async () => {
+    expect(ensureEnvrc(dir, "/home/k/.claude-acme", { replace: true }).outcome).toBe("created");
+    expect(ensureEnvrc(dir, "/home/k/.claude-acme", { replace: true }).outcome).toBe("already");
+  });
+});
+
+describe("listProfiles", () => {
+  it("lists ~/.claude-<slug> dirs as profile names, sorted", async () => {
+    await mkdir(path.join(dir, ".claude-globex"), { recursive: true });
+    await mkdir(path.join(dir, ".claude-acme"), { recursive: true });
+    await mkdir(path.join(dir, ".claude"), { recursive: true });      // the default profile: not named
+    await mkdir(path.join(dir, "unrelated"), { recursive: true });
+    expect(listProfiles(dir)).toEqual(["acme", "globex"]);
+  });
+
+  it("returns [] when the home dir can't be read", () => {
+    expect(listProfiles(path.join(dir, "does-not-exist"))).toEqual([]);
   });
 });

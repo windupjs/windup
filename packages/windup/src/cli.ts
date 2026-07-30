@@ -811,11 +811,18 @@ claude
   .description("Show whether the claude CLI is installed and logged into your Claude plan (which account is active here)")
   .option("--profile <name>", "check a named account profile instead of the active one")
   .action(async (opts: { profile?: string }) => {
-    const { checkClaudeReadiness, readinessLine, isReady, profileConfigDir } = await import("./claude-cli.js");
+    const { checkClaudeReadiness, readinessLine, isReady, profileConfigDir, listProfiles } = await import("./claude-cli.js");
     if (opts.profile) process.env.CLAUDE_CONFIG_DIR = profileConfigDir(opts.profile);
+    const active = process.env.CLAUDE_CONFIG_DIR;
     const r = await checkClaudeReadiness();
     console.log(`${readinessLine(r)}${opts.profile ? `  [profile: ${opts.profile}]` : ""}`);
-    if (!opts.profile && process.env.CLAUDE_CONFIG_DIR) console.log(`  config dir: ${process.env.CLAUDE_CONFIG_DIR}`);
+    if (!opts.profile && active) console.log(`  config dir: ${active}`);
+    // Which named profiles exist, and which one this directory resolves to.
+    const profiles = listProfiles();
+    if (profiles.length && !opts.profile) {
+      const marked = profiles.map((p) => (active && active === profileConfigDir(p) ? `${p} ←active here` : p));
+      console.log(`  profiles: ${marked.join(", ")}${active ? "" : "  (none active here — the default ~/.claude account is in use)"}`);
+    }
     // Non-zero when not ready, so scripts/CI can gate on `windup claude status`.
     if (!isReady(r)) process.exitCode = 1;
   });
@@ -835,14 +842,16 @@ claude
       configDir = profileConfigDir(opts.profile);
       process.env.CLAUDE_CONFIG_DIR = configDir;
       console.log(`profile "${opts.profile}" → config dir ${configDir}`);
-      const env = ensureEnvrc(process.cwd(), configDir);
+      const env = ensureEnvrc(process.cwd(), configDir, { replace: opts.force });
       if (env.outcome === "conflict") {
-        console.error(`\n${env.file} already binds another profile:\n  ${env.existing}\nEdit it by hand (or remove that line) and re-run — nothing was changed.`);
+        console.error(`\n${env.file} already binds another profile:\n  ${env.existing}`);
+        console.error(`re-run with --force to rebind this project to "${opts.profile}", or edit that line by hand — nothing was changed.`);
         process.exitCode = 1;
         return;
       }
-      const what = { created: "wrote", appended: "appended to", already: "already bound in" }[env.outcome];
+      const what = { created: "wrote", appended: "appended to", already: "already bound in", replaced: "rebound" }[env.outcome];
       console.log(`${what} ${env.file}`);
+      if (env.outcome === "replaced") console.log(`  replaced:  ${env.existing}`);
       const { spawnSync } = await import("node:child_process");
       const direnv = spawnSync("direnv", ["allow", process.cwd()], { stdio: "ignore" });
       console.log(
@@ -882,16 +891,24 @@ claude
     // Already connected: say WHICH account, and how to switch. Without --force
     // this used to stop here silently, so someone signing in "for another
     // account" was told it worked while the old account stayed active.
-    if (isReady(r) && !opts.force) {
+    //
+    // With --profile, `--force` means "rebind this project" (done above) — the
+    // profile's own session is left alone: dropping a working token is not what
+    // "point this project at that account" should do.
+    if (isReady(r) && (!opts.force || opts.profile)) {
       console.log(`already connected — ${readinessLine(r)}`);
-      if (opts.profile) console.log(`this is profile "${opts.profile}"; the project is bound to it.`);
-      console.log(`to sign in as a DIFFERENT account here:  npx windup claude login${opts.profile ? ` --profile ${opts.profile}` : ""} --force`);
-      if (!opts.profile) console.log(`to hold several accounts side by side:  npx windup claude login --profile <name>   (per-account config dir + .envrc)`);
+      if (opts.profile) {
+        console.log(`profile "${opts.profile}" is bound to this project — that account is the one that plans here.`);
+        console.log(`to re-authenticate it:  claude auth logout && npx windup claude login --profile ${opts.profile}`);
+      } else {
+        console.log(`to sign in as a DIFFERENT account here:  npx windup claude login --force`);
+        console.log(`to hold several accounts side by side:  npx windup claude login --profile <name>   (per-account config dir + .envrc)`);
+      }
       console.log(`plan with it:  npx windup run <scenario> --llm claude-code`);
       return;
     }
     if (isReady(r) && opts.force) {
-      // Switching means dropping the current token first — say whose, then do it.
+      // Switching the ACTIVE account (no profile): drop the current token first — say whose.
       console.log(`signing out of ${r.auth?.email ?? "the current account"} (--force), then signing in again...`);
       await runInteractive("claude", ["auth", "logout"]);
     }

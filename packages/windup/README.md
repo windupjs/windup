@@ -356,12 +356,13 @@ npx windup claude status                   # → confirms which account this pro
 
 `--profile acme` gives that account its **own config dir** (`~/.claude-acme` — an independent session), **binds the project** to it by exporting `CLAUDE_CONFIG_DIR` in `.envrc`, runs `direnv allow`, and then opens the sign-in. From then on, `cd`-ing into the project makes that account the one that plans — including the `claude` process Windup spawns, which inherits the environment. Repeat per project with a different name; your default `~/.claude` stays untouched as the unnamed profile.
 
-Your `.envrc` is never clobbered: an existing file is **appended to** (other exports intact), re-running is a no-op, and a binding to a *different* profile stops and shows you the line to edit. No direnv? The command prints the `export` to put in your shell.
+Your `.envrc` is never clobbered by accident: an existing file is **appended to** (other exports intact), re-running is a no-op, and a binding to a *different* profile stops and tells you to re-run with `--force` — which rebinds that one line and prints what it replaced. No direnv? The command prints the `export` to put in your shell.
 
 ```bash
 npx windup claude status                 # which account is active here (email + plan) — no tokens spent
 npx windup claude status --profile acme  # check a named profile without switching to it
-npx windup claude login --force          # switch the active account (signs out first, saying whose)
+npx windup claude login --profile acme --force  # point this project at another profile (rebinds .envrc)
+npx windup claude login --force          # switch the ACTIVE account (signs out first, saying whose)
 ```
 
 Two things worth knowing: a project's `.claude/settings.json` **cannot** switch the account (the config dir is resolved before those settings load) — that's why the binding lives in `.envrc`; and **cached replays call no LLM at all**, so with `.windup/cache/` committed a suite runs at `$0` without touching any account.
