@@ -18,6 +18,21 @@ import { effectiveFailOn } from "./diagnostics.js";
 import { progress, streamEvent } from "./progress.js";
 import { runHooks } from "./hooks.js";
 
+type Failure = NonNullable<RunMetrics["failure"]>;
+
+/**
+ * Keep a CAUGHT REGRESSION as the headline when the self-heal re-plan that follows
+ * it also fails. Without this the re-plan's own problem (a truncated reply, a bad
+ * key) overwrites the postcondition failure, and the run reads as "Windup had an
+ * API hiccup" instead of "the app is broken" — burying the finding the developer
+ * ran the test for. The re-plan's trouble becomes a secondary note.
+ */
+export function regressionWithReplanNote(regression: Failure, replanFailure: Failure | null): Failure {
+  const problem = replanFailure && replanFailure !== regression ? replanFailure.message : null;
+  if (!problem) return regression;
+  return { ...regression, message: `${regression.message}\n      note: the plan was invalidated and re-planned; the re-plan also failed (${problem})` };
+}
+
 export interface PlanGeneration {
   plan: Plan;
   llm_calls: number;
@@ -255,9 +270,16 @@ export async function runScenario(
       if (churn >= 2) {
         console.warn(`warning: "${scenario.scenario_id}" has re-planned ${churn + 1} times without stabilizing — the app may lack a stable selector for action ${result.failure?.action_id ?? "?"} (an accessibility gap) or have a race. Run with --suggest for a precise diagnosis, or pin a selector via hints.`);
       }
+      // The CAUGHT REGRESSION is the headline. Keep it: if the self-heal re-plan
+      // also fails, `generateAndExecute` would overwrite metrics.failure with its
+      // own problem (a truncated response, a missing key) and the run would read
+      // as "Windup had an API hiccup" — burying the very finding the developer ran
+      // the test for. The tool's own trouble must never speak louder than the bug.
+      const regression = result.failure;
       const failureContext = await buildReplanContext(scenario, cached.plan, result.failure, metrics, b, opts.suggest === true);
       const replanned = await generateAndExecute(scenario, planner, b, metrics, collector, failureContext, skipGoto, cached.plan.generated_by?.model);
       if (replanned.ok && opts.useCache) await saveCached(scenario, replanned.plan!, replanned.start_sig);
+      if (!replanned.ok && regression) metrics.failure = regressionWithReplanNote(regression, metrics.failure);
       return;
     }
     // Cache miss: isomorphic reuse (#1) before spending an LLM call, else plan.

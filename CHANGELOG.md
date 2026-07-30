@@ -4,6 +4,13 @@ All notable changes to `windupjs` are documented here. From **1.0** the project
 follows semantic versioning: the public CLI and programmatic API are stable, and
 breaking changes wait for a major bump. Format loosely follows [Keep a Changelog](https://keepachangelog.com).
 
+## 1.7.0
+The two rough edges left by the 1.6.0 re-test. The first one inverts the tool's most important signal, so it led.
+
+- **A caught regression is no longer drowned out by the self-heal that follows it (feedback).** When a cached plan failed its postcondition, Windup invalidated it and re-planned — and if that **re-plan** then failed (a truncated response, a bad key), the re-plan's problem *overwrote* the original failure. The run read `failure [plan_invalid]: degenerate/truncated response … transient API failure`, i.e. "Windup is having an API problem", when the truth was **the app is broken and the tool caught it**. The postcondition failure is now kept as the **primary** result — with its expected/actual intact (`postcondition failed: text_contains: body expected to contain "…", got "…"`) and the correct `verification` kind — and the re-plan's trouble is appended as a secondary `note:` line. The tool's own hiccup can no longer speak louder than the bug it just found.
+- **A truncated generation is retried differently, not identically.** Output truncation (not task difficulty) was driving the expensive 3-5 call path on element-heavy pages, and the retry re-sent the same request with the same ceiling — the retry least likely to work. After a truncation, every later call in that planning round **raises the output budget** (8k → 16k), and the message says what happened and what to do about it (very large prompt → narrow the task or switch model with `--llm`) instead of just "transient API failure". The retry reason in the report distinguishes the first truncation from a repeat.
+- The planning-cost note in the README now states the retry path explicitly: it exists, and it can cost 10-30× the best case — so a `$0.07` line in `windup costs` is expected, not a surprise.
+
 ## 1.6.0
 Follow-up to the 1.5.0 re-test. The 1.5.0 guard was right but half-done: it turned a false green into *no test at all*, and it blocklisted tag names instead of looking at the page. Both fixed — and the fix is deterministic, not "hope the model improves".
 

@@ -11,6 +11,10 @@ import { getContext } from "./context.js";
  * contributes, the initial page tree yields space to the map — the total
  * prompt stays ≈ constant (critical because of flash degeneration).
  */
+/** Output budget for a plan. A 30-action plan fits in ~3k tokens; the cap bounds a degenerate generation. */
+const MAX_OUTPUT_TOKENS = 8_192;
+/** Raised budget for a retry AFTER a truncation — repeating the same request with the same ceiling is the one retry least likely to help. */
+const RETRY_OUTPUT_TOKENS = 16_384;
 const PAGE_CONTEXT_MAX_CHARS = 32_000;
 const MAP_MAX_CHARS = 8_000;
 
@@ -192,13 +196,13 @@ export class LlmPlanner implements Planner {
   /** useMap: false = clean A/B without the map knowledge in the prompt (--no-map). */
   constructor(private readonly opts: { useMap?: boolean } = {}) {}
 
-  private call(client: LlmClient, prompt: string, seed: number) {
+  private call(client: LlmClient, prompt: string, seed: number, budget = MAX_OUTPUT_TOKENS) {
     return client.generate({
       prompt,
       schema: PLAN_GEMINI_SCHEMA,
       // A 30-action plan fits in ~3k tokens; the cap limits the cost
       // of degenerate generations (observed: 65k tokens in one run).
-      maxOutputTokens: 8192,
+      maxOutputTokens: budget,
       // temp > 0 on purpose: with temp 0 the degeneration (loop until
       // MAX_TOKENS) becomes deterministic per prompt — jitter + distinct
       // seeds per attempt escape the degenerate basin.
@@ -259,6 +263,11 @@ export class LlmPlanner implements Planner {
     //   loop until truncating at MAX_TOKENS) non-deterministically, with the
     //   SAME input that works other times. That is API pathology, not a plan
     //   error — re-call with another seed, up to 3x per semantic attempt.
+    // Once a generation has truncated, every later call in this generate() raises
+    // the output ceiling: repeating the identical request with the identical budget
+    // is the retry least likely to succeed (observed on element-heavy pages, where
+    // truncation — not task difficulty — drives the expensive 3-5 call path).
+    let truncatedOnce = false;
     for (let attempt = 1; attempt <= 2; attempt++) {
       let plan: Plan | null = null;
       let rawText = "";
@@ -266,8 +275,8 @@ export class LlmPlanner implements Planner {
       for (let apiTry = 1; apiTry <= 3 && !plan; apiTry++) {
         let response;
         try {
-          progress(scenario.scenario_id, `calling ${client.provider} (attempt ${attempt}.${apiTry})…`);
-          response = await this.call(client, prompt, attempt * 10 + apiTry);
+          progress(scenario.scenario_id, `calling ${client.provider} (attempt ${attempt}.${apiTry})${truncatedOnce ? " with a raised output budget" : ""}…`);
+          response = await this.call(client, prompt, attempt * 10 + apiTry, truncatedOnce ? RETRY_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (/fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|timeout|429|500|502|503/i.test(message)) {
@@ -288,8 +297,12 @@ export class LlmPlanner implements Planner {
           );
         }
         if (response.truncated) {
-          lastErrors = ["degenerate/truncated response at the token limit — transient API failure"];
-          retryReasons.push("truncated response");
+          lastErrors = [
+            `the model's reply hit the ${truncatedOnce ? RETRY_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS}-token output limit and was cut off (a degenerate generation, not a plan error). ` +
+              `Retrying with a raised budget. If this keeps happening on this page, the prompt is likely very large — try a more specific task, or a different model with --llm.`,
+          ];
+          retryReasons.push(truncatedOnce ? "truncated again (raised budget)" : "truncated response → raising the output budget");
+          truncatedOnce = true;
           continue;
         }
         try {
