@@ -344,6 +344,31 @@ npx windup claude status   # anytime: "claude CLI: ready — you@example.com (ma
 
 That's it — no wrapper, no Python, no local server. Windup spawns `claude` in non-interactive mode for each plan (from an isolated temp dir, so it never picks up a project's `CLAUDE.md`).
 
+#### Switching account — and one account per project
+
+The CLI's login is **global**, not per project: the token lives in one place (the macOS Keychain / the config dir), so every project plans on whichever account signed in last. To check and to switch:
+
+```bash
+npx windup claude status    # which account is active right now (email + plan) — no tokens spent
+claude auth logout          # sign out of the current account
+npx windup claude login     # sign in again (browser) — now this account is the active one
+```
+
+If you juggle **several accounts** (a personal one plus one per client/company) and don't want a project billing the wrong plan, don't switch back and forth — give each account its **own config dir** via `CLAUDE_CONFIG_DIR`, then bind each project to one:
+
+```bash
+# once per account — each config dir keeps its own independent session
+CLAUDE_CONFIG_DIR=~/.claude-acme      claude auth login
+CLAUDE_CONFIG_DIR=~/.claude-globex    claude auth login
+# your default ~/.claude stays untouched
+
+# then, in each project (with direnv):
+echo 'export CLAUDE_CONFIG_DIR=$HOME/.claude-acme' > .envrc && direnv allow
+npx windup claude status    # → confirms the Acme account is the one this project uses
+```
+
+Windup spawns the `claude` CLI inheriting the environment, so the project's `CLAUDE_CONFIG_DIR` is what plans a cache miss there — no Windup setting needed. Two caveats: a project's `.claude/settings.json` **cannot** switch it (the config dir is resolved before those settings load), so use the shell/direnv; and remember that **cached replays call no LLM at all** — with `.windup/cache/` committed, a suite runs at `$0` without touching any account.
+
 ```bash
 npx windup run checkout --llm claude-code                 # default model: claude-sonnet-4-6
 npx windup run checkout --llm claude-code:claude-opus-4-6
